@@ -12,11 +12,14 @@ interface SettingsModalProps {
   customInstruction: string;
   setCustomInstruction: (val: string) => void;
   chatSessions: any[];
+  hourlyUsage: number;
+  weeklyUsage: number;
+  resetUsage: () => void;
 }
 
 type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps';
 
-export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions }: SettingsModalProps) {
+export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions, hourlyUsage, weeklyUsage, resetUsage }: SettingsModalProps) {
   const [currentView, setCurrentView] = useState<SubView>('menu');
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -265,102 +268,62 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                 {currentView === 'usage' && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <div>
-                      <h3 className="text-2xl font-normal text-white mb-2">Batas Penggunaan Model</h3>
-                      <p className="text-gray-400 text-sm">Informasi batas waktu 5 jam dan kuota mingguan untuk masing-masing model.</p>
+                      <h3 className="text-2xl font-normal text-white mb-2">Batas Penggunaan Model Gabungan</h3>
+                      <p className="text-gray-400 text-sm">Persentase gabungan penggunaan seluruh model yang akan meningkat setelah setiap permintaan, hingga mencapai 100%.</p>
                     </div>
 
-                    <div className="space-y-5">
-                      {/* Tmpa ai v2 */}
-                      <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="text-lg font-semibold text-white">Tmpa ai v2</h4>
-                            <p className="text-xs text-gray-400">Kapasitas tingkat lanjut & andal</p>
-                          </div>
-                          <span className="text-xs font-semibold bg-red-950/40 text-red-400 px-2.5 py-1 rounded-full">Pro Model</span>
+                    <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="text-lg font-semibold text-white">Kuota Keseluruhan</h4>
+                          <p className="text-xs text-gray-400">Dihitung berdasarkan model yang digunakan dan waktu real-time</p>
                         </div>
-                        <div className="space-y-4 mt-6">
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas 5 Jam</span>
-                              <span className="text-red-400">Terpakai 4%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-red-500 rounded-full" style={{ width: '4%' }} />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas Mingguan</span>
-                              <span className="text-red-400">Terpakai 3%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-red-400 rounded-full" style={{ width: '3%' }} />
-                            </div>
-                          </div>
-                        </div>
+                        <button
+                          onClick={resetUsage}
+                          className="text-xs font-semibold bg-gray-800 text-gray-300 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition"
+                        >
+                          Reset Kuota
+                        </button>
                       </div>
+                      
+                      <div className="space-y-6 mt-6">
+                        <div>
+                          <div className="flex justify-between text-xs font-medium text-white mb-1.5">
+                            <span>Batas 5 Jam</span>
+                            <span className={hourlyUsage >= 100 ? "text-red-400" : "text-blue-400"}>Terpakai {hourlyUsage.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-4 bg-neutral-900 rounded-full overflow-hidden">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                hourlyUsage >= 100 ? "bg-red-500" : hourlyUsage > 75 ? "bg-amber-500" : "bg-blue-500"
+                              )} 
+                              style={{ width: `${hourlyUsage}%` }} 
+                            />
+                          </div>
+                        </div>
 
-                      {/* Tmpa ai v1 */}
-                      <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="text-lg font-semibold text-white">Tmpa ai v1</h4>
-                            <p className="text-xs text-gray-400">Stabil untuk percakapan harian</p>
+                        <div>
+                          <div className="flex justify-between text-xs font-medium text-white mb-1.5">
+                            <span>Batas Mingguan</span>
+                            <span className={weeklyUsage >= 100 ? "text-red-400" : "text-emerald-400"}>Terpakai {weeklyUsage.toFixed(1)}%</span>
                           </div>
-                          <span className="text-xs font-semibold bg-indigo-950/40 text-indigo-400 px-2.5 py-1 rounded-full">Standard</span>
-                        </div>
-                        <div className="space-y-4 mt-6">
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas 5 Jam</span>
-                              <span className="text-amber-400">Terpakai 3%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-amber-500 rounded-full" style={{ width: '3%' }} />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas Mingguan</span>
-                              <span className="text-amber-400">Terpakai 3%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-amber-400 rounded-full" style={{ width: '3%' }} />
-                            </div>
+                          <div className="h-4 bg-neutral-900 rounded-full overflow-hidden">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                weeklyUsage >= 100 ? "bg-red-500" : weeklyUsage > 75 ? "bg-amber-500" : "bg-emerald-500"
+                              )} 
+                              style={{ width: `${weeklyUsage}%` }} 
+                            />
                           </div>
                         </div>
-                      </div>
 
-                      {/* Dilo */}
-                      <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
-                        <div className="flex justify-between items-start mb-2">
-                          <div>
-                            <h4 className="text-lg font-semibold text-white">Dilo</h4>
-                            <p className="text-xs text-gray-400">Hemat energi dan kasual santai</p>
-                          </div>
-                          <span className="text-xs font-semibold bg-emerald-950/40 text-emerald-400 px-2.5 py-1 rounded-full">Lightweight</span>
-                        </div>
-                        <div className="space-y-4 mt-6">
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas 5 Jam</span>
-                              <span className="text-emerald-400 font-medium">Terpakai 2%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: '2%' }} />
-                            </div>
-                          </div>
-                          <div>
-                            <div className="flex justify-between text-xs font-medium text-white mb-1.5">
-                              <span>Batas Mingguan</span>
-                              <span className="text-blue-400">Terpakai 1.5%</span>
-                            </div>
-                            <div className="h-2 bg-neutral-900 rounded-full overflow-hidden">
-                              <div className="h-full bg-blue-500 rounded-full" style={{ width: '1.5%' }} />
-                            </div>
-                          </div>
-                        </div>
+                        {(hourlyUsage >= 100 || weeklyUsage >= 100) && (
+                          <p className="text-red-400 text-xs mt-3 bg-red-950/20 p-3 rounded-lg border border-red-900/30">
+                            Anda telah mencapai batas penggunaan. Semua model sementara dinonaktifkan.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

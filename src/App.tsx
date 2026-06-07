@@ -2,11 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import { Message, Connector } from './types';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search } from 'lucide-react';
+import { LandingPage } from './components/LandingPage';
+import { LoginPage } from './components/LoginPage';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -29,15 +32,95 @@ export default function App() {
     setConnectors(prev => prev.map(c => c.id === id ? { ...c, isActive: !c.isActive } : c));
   };
 
+  const [usageEvents, setUsageEvents] = useState<{h: number, w: number, ts: number}[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('ai_usage_events') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const getUsage = () => {
+    const now = Date.now();
+    const fiveHoursAgo = now - 5 * 60 * 60 * 1000;
+    const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    
+    let hourly = 0;
+    let weekly = 0;
+    
+    for (const ev of usageEvents) {
+      if (ev.ts > fiveHoursAgo) hourly += ev.h;
+      if (ev.ts > oneWeekAgo) weekly += ev.w;
+    }
+    
+    return { 
+      hourly: Math.min(100, hourly), 
+      weekly: Math.min(100, weekly) 
+    };
+  };
+
+  const usage = getUsage();
+  const isUsageLimitReached = usage.hourly >= 100 || usage.weekly >= 100;
+
+  const updateUsage = (model: string) => {
+    let h = 0, w = 0;
+    if (model === 'qwen3_coder') { h = 4; w = 3; }
+    else if (model === 'gpt_oss') { h = 3; w = 3; }
+    else { h = 2; w = 1.5; }
+    
+    const newEvent = { h, w, ts: Date.now() };
+    const now = Date.now();
+    const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const nextEvents = [...usageEvents.filter(e => e.ts > oneWeekAgo), newEvent];
+    
+    setUsageEvents(nextEvents);
+    localStorage.setItem('ai_usage_events', JSON.stringify(nextEvents));
+  };
+
+
   const [reasoningMode, setReasoningMode] = useState<'standar' | 'penalaran'>('standar');
   const [isReasoningSelectorOpen, setIsReasoningSelectorOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
+  const [appState, setAppState] = useState<'landing' | 'login' | 'chat'>('landing');
+  const [user, setUser] = useState<any>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleAuthRedirect = () => {
+    const landingUrl = "https://tmpa-sat-login.vercel.app/";
+    const primaryRedirect = "https://tmpa-chat.vercel.app/callback";
+    const primaryOrigin = "https://tmpa-chat.vercel.app/";
+    const currentOrigin = window.location.origin;
+    const currentCallback = `${currentOrigin}/callback`;
+
+    const params = new URLSearchParams();
+    params.set('redirect_url', primaryRedirect);
+    params.set('redirect_to', primaryRedirect);
+    params.set('redirectTo', primaryRedirect);
+    params.set('redirect', primaryRedirect);
+    params.set('redirect_orig', primaryOrigin);
+    params.set('dev_redirect', currentCallback);
+    params.set('dev_origin', currentOrigin);
+
+    window.location.href = `${landingUrl}?${params.toString()}`;
+  };
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("Gagal signOut manual:", err);
+    }
+    setUser(null);
+    setAppState('landing');
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('tmpa_chat_sessions');
@@ -52,6 +135,83 @@ export default function App() {
     if (savedInstruction) {
       setCustomInstruction(savedInstruction);
     }
+
+    async function checkAuthAndCallback() {
+      try {
+        // 1. Tangkap token dari URL (query param maupun hash)
+        const urlParams = new URLSearchParams(window.location.search);
+        let accessToken = urlParams.get('access_token');
+        let refreshToken = urlParams.get('refresh_token');
+
+        if (!accessToken || !refreshToken) {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          accessToken = accessToken || hashParams.get('access_token');
+          refreshToken = refreshToken || hashParams.get('refresh_token');
+        }
+
+        if (accessToken && refreshToken) {
+          setAuthChecking(true);
+          console.log("Menangkap token dari URL, mengeset sesi...");
+          
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken
+          });
+
+          if (error) {
+             throw error;
+          }
+
+          if (data && data.user) {
+            console.log("User otomatis login:", data.user);
+            setUser(data.user);
+            setAppState('chat');
+            
+            // Bersihkan URL dari parameter token demi keamanan
+            const cleanUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        } else {
+          // Jika tidak ada token di URL, cek apakah ada sesi aktif yang tersimpan
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          
+          if (session && session.user) {
+            setUser(session.user);
+            setAppState('chat');
+          } else {
+            // Jika berada di /callback tanpa token, kembalikan ke landing
+            if (window.location.pathname === '/callback') {
+              setAppState('landing');
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("Gagal verifikasi sesi:", err);
+        setAuthError(err.message || 'Gagal memverifikasi sesi login.');
+      } finally {
+        setAuthChecking(false);
+      }
+    }
+
+    checkAuthAndCallback();
+
+    // Listener perubahan state auth
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user) {
+        setUser(session.user);
+        setAppState('chat');
+      } else {
+        setUser(null);
+        setAppState('landing');
+      }
+    });
+
+    return () => {
+      if (authListener && authListener.subscription) {
+        authListener.subscription.unsubscribe();
+      }
+    };
   }, []);
 
   const handleCustomInstructionChange = (val: string) => {
@@ -105,6 +265,11 @@ export default function App() {
   };
 
   const handleSendMessage = async (text: string, overrideMessages?: Message[]) => {
+    if (isUsageLimitReached) {
+      alert("Telah mencapai batas penggunaan (100%). Menunggu reset.");
+      return;
+    }
+
     const baseMessages = overrideMessages ?? messages;
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -112,6 +277,8 @@ export default function App() {
       text,
     };
     
+    updateUsage(selectedModel);
+
     const updatedMessages = [...baseMessages, userMessage];
     setMessages(updatedMessages);
     setIsLoading(true);
@@ -234,10 +401,54 @@ export default function App() {
   const maxExpectedLength = 4000;
   const progressPercent = lastAiMessage ? Math.min((lastAiMessage.text.length / maxExpectedLength) * 100, 100) : 0;
 
+  const handleScroll = (e: React.UIEvent<HTMLElement>) => {
+    const target = e.target as HTMLElement;
+    const distanceToBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+    if (distanceToBottom > 150) {
+      setIsScrolledUp(true);
+    } else {
+      setIsScrolledUp(false);
+    }
+  };
+
   return (
     <>
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
-      <div className="flex flex-col h-screen bg-black text-gray-100 font-sans selection:bg-blue-600/30 overflow-hidden relative">
+      
+      {!showSplash && authChecking && (
+        <div className="min-h-screen flex flex-col justify-center items-center bg-[#00050b] text-white">
+          <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
+          <p className="text-gray-400 font-medium text-sm">Memverifikasi sesi dari website utama, silakan tunggu...</p>
+        </div>
+      )}
+
+      {!showSplash && !authChecking && authError && (
+        <div className="min-h-screen flex flex-col justify-center items-center bg-[#00050b] text-white px-6 text-center">
+          <div className="max-w-md bg-gray-900/50 border border-red-500/20 p-8 rounded-2xl backdrop-blur-xl">
+            <h2 className="text-xl font-bold text-red-400 mb-3">Gagal Memverifikasi Sesi</h2>
+            <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+              {authError}
+            </p>
+            <button
+              onClick={() => { setAuthError(null); setAppState('landing'); }}
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-medium transition-all"
+            >
+              Kembali ke Beranda
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {!showSplash && !authChecking && !authError && appState === 'landing' && (
+        <LandingPage onStart={handleAuthRedirect} />
+      )}
+      
+      {!showSplash && !authChecking && !authError && appState === 'login' && (
+        <LoginPage onLoginSuccess={() => setAppState('chat')} onBack={() => setAppState('landing')} />
+      )}
+      
+      {!showSplash && !authChecking && !authError && appState === 'chat' && (
+        <div className="flex flex-col h-screen bg-black text-gray-100 font-sans selection:bg-blue-600/30 overflow-hidden relative">
         {/* Header */}
       <header className="sticky top-0 z-20 bg-black/80 backdrop-blur-md border-b border-gray-900 border-opacity-80">
         <div className="max-w-5xl mx-auto px-3 md:px-4 h-14 flex items-center justify-between">
@@ -319,7 +530,7 @@ export default function App() {
       )}
 
       {/* Main Chat Area */}
-      <main className="flex-1 overflow-y-auto w-full scroll-smooth">
+      <main onScroll={handleScroll} className="flex-1 overflow-y-auto w-full scroll-smooth relative">
         {messages.length === 0 ? (
           <div className="min-h-full flex flex-col items-center justify-center px-4 py-8">
             <motion.div 
@@ -383,8 +594,27 @@ export default function App() {
         )}
       </main>
 
+      {/* Floating scroll to bottom button */}
+      <AnimatePresence>
+        {isScrolledUp && messages.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.9 }}
+            className="absolute bottom-[90px] md:bottom-[100px] right-6 z-30"
+          >
+            <button
+              onClick={scrollToBottom}
+              className="bg-gray-800/80 hover:bg-gray-700/90 text-white p-2.5 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.5)] border border-gray-700 backdrop-blur-sm transition-colors group"
+            >
+              <ArrowDown size={20} className="group-hover:text-blue-400 transition-colors" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Input Form */}
-      <footer className="bg-black border-t border-gray-900 pt-2 shrink-0">
+      <footer className="bg-black border-t border-gray-900 pt-2 shrink-0 relative z-20">
         <ChatInput 
           onSend={handleSendMessage} 
           isLoading={isLoading} 
@@ -392,6 +622,7 @@ export default function App() {
           connectors={connectors}
           onToggleConnector={toggleConnector}
           onShowAllConnectors={() => setIsConnectorsModalOpen(true)}
+          disabled={isUsageLimitReached}
         />
       </footer>
 
@@ -473,12 +704,19 @@ export default function App() {
                 <div className="flex items-center gap-3 px-2">
                   <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-black" />
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-white">TMPA User</span>
-                    <span className="text-xs text-gray-400 truncate w-[160px]">user@tmpa.example</span>
+                    <span className="text-sm font-medium text-white truncate w-[160px]">
+                      {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
+                    </span>
+                    <span className="text-xs text-gray-400 truncate w-[160px]">
+                      {user?.email || 'user@tmpa.example'}
+                    </span>
                   </div>
                 </div>
                 
-                <button className="flex items-center w-full gap-2 px-4 py-2.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-sm font-medium">
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center w-full gap-2 px-4 py-2.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                >
                   <LogOut size={16} />
                   Logout
                 </button>
@@ -702,6 +940,9 @@ export default function App() {
         customInstruction={customInstruction} 
         setCustomInstruction={handleCustomInstructionChange} 
         chatSessions={chatSessions} 
+        hourlyUsage={usage.hourly}
+        weeklyUsage={usage.weekly}
+        resetUsage={() => { setUsageEvents([]); localStorage.setItem('ai_usage_events', '[]'); }}
       />
 
       <ConnectorsModal
@@ -714,6 +955,7 @@ export default function App() {
         }}
       />
     </div>
+      )}
     </>
   );
 }
