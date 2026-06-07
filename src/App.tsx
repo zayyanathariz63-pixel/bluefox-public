@@ -138,6 +138,7 @@ export default function App() {
 
     async function checkAuthAndCallback() {
       try {
+        setAuthChecking(true);
         // 1. Tangkap token dari URL (query param maupun hash)
         const urlParams = new URLSearchParams(window.location.search);
         let accessToken = urlParams.get('access_token');
@@ -149,10 +150,26 @@ export default function App() {
           refreshToken = refreshToken || hashParams.get('refresh_token');
         }
 
+        // 2. Jika tidak ada di URL, coba cari di HTTP-Only cookies via Server API
+        if (!accessToken || !refreshToken) {
+          try {
+            console.log("Mendeteksi session dari HTTP-Only cookies via server...");
+            const res = await fetch("/api/auth/cookie-session");
+            if (res.ok) {
+              const data = await res.json();
+              if (data.access_token) {
+                accessToken = data.access_token;
+                refreshToken = data.refresh_token || data.access_token;
+                console.log("Session berhasil didapatkan dari HTTP-Only cookies!");
+              }
+            }
+          } catch (cookieErr) {
+            console.error("Gagal membaca cookie session dar server:", cookieErr);
+          }
+        }
+
         if (accessToken && refreshToken) {
-          setAuthChecking(true);
-          console.log("Menangkap token dari URL, mengeset sesi...");
-          
+          console.log("Mengeset sesi aktif menggunakan token...");
           const { data, error } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken
@@ -167,12 +184,14 @@ export default function App() {
             setUser(data.user);
             setAppState('chat');
             
-            // Bersihkan URL dari parameter token demi keamanan
-            const cleanUrl = window.location.origin + window.location.pathname;
-            window.history.replaceState({}, document.title, cleanUrl);
+            // Bersihkan URL dari parameter token demi keamanan jika didapat dari URL
+            if (window.location.search.includes('access_token') || window.location.hash.includes('access_token')) {
+              const cleanUrl = window.location.origin + window.location.pathname;
+              window.history.replaceState({}, document.title, cleanUrl);
+            }
           }
         } else {
-          // Jika tidak ada token di URL, cek apakah ada sesi aktif yang tersimpan
+          // Jika tidak ada token, cek apakah ada sesi lokal aktif yang tersimpan di memory/localStorage
           const { data: { session }, error } = await supabase.auth.getSession();
           if (error) throw error;
           

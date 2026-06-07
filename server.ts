@@ -9,6 +9,91 @@ async function startServer() {
 
   app.use(express.json());
 
+  // API Route to extract Supabase session from HTTP-Only cookies
+  app.get("/api/auth/cookie-session", (req, res) => {
+    const cookies: Record<string, string> = {};
+    const cookieHeader = req.headers.cookie;
+    if (cookieHeader) {
+      cookieHeader.split(';').forEach(cookie => {
+        const parts = cookie.split('=');
+        const name = parts[0].trim();
+        const val = parts.slice(1).join('=').trim();
+        cookies[name] = decodeURIComponent(val);
+      });
+    }
+
+    console.log("Sistem mendeteksi cookies:", Object.keys(cookies));
+
+    let accessToken = "";
+    let refreshToken = "";
+
+    // 1. Direct key matching
+    for (const [key, val] of Object.entries(cookies)) {
+      const lowerKey = key.toLowerCase();
+      if (lowerKey === 'access_token' || lowerKey === 'sb-access-token' || lowerKey.endsWith('access-token') || lowerKey.endsWith('access_token')) {
+        accessToken = val;
+      }
+      if (lowerKey === 'refresh_token' || lowerKey === 'sb-refresh-token' || lowerKey.endsWith('refresh-token') || lowerKey.endsWith('refresh_token')) {
+        refreshToken = val;
+      }
+    }
+
+    // 2. Look for Supabase auth-token style cookie matching sb-<project>-auth-token
+    if (!accessToken || !refreshToken) {
+      for (const [key, val] of Object.entries(cookies)) {
+        if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          try {
+            let parsedVal = val;
+            // Strip outer quotes if present
+            if (parsedVal.startsWith('"') && parsedVal.endsWith('"')) {
+              parsedVal = parsedVal.substring(1, parsedVal.length - 1);
+            }
+            
+            let parsedObj;
+            try {
+              parsedObj = JSON.parse(parsedVal);
+            } catch {
+              // Try base64 decoding if it is base64-encoded
+              const decoded = Buffer.from(parsedVal, 'base64').toString('utf8');
+              parsedObj = JSON.parse(decoded);
+            }
+
+            if (parsedObj) {
+              if (Array.isArray(parsedObj)) {
+                if (parsedObj[0]) accessToken = parsedObj[0];
+                if (parsedObj[1]) refreshToken = parsedObj[1];
+              } else if (typeof parsedObj === 'object') {
+                accessToken = parsedObj.access_token || parsedObj.accessToken || accessToken;
+                refreshToken = parsedObj.refresh_token || parsedObj.refreshToken || refreshToken;
+              }
+            }
+          } catch (e) {
+            console.error("Gagal mem-parse Supabase auth cookie:", e);
+          }
+        }
+      }
+    }
+
+    // 3. Robust Fallback: Check if any cookie value looks like a JWT token
+    if (!accessToken) {
+      for (const [key, val] of Object.entries(cookies)) {
+        if (val.startsWith('eyJ') && val.split('.').length === 3) {
+          accessToken = val;
+          console.log(`Menemukan JWT token di cookie: ${key}`);
+        }
+      }
+    }
+
+    if (accessToken) {
+      return res.json({
+        access_token: accessToken,
+        refresh_token: refreshToken || accessToken // Use access_token as fallback if refresh is not provided
+      });
+    }
+
+    return res.json({ access_token: null, refresh_token: null });
+  });
+
   // API Route for Chat (Supports NVIDIA API, OpenRouter, and Gemini Fallback)
   app.post("/api/chat", async (req, res) => {
     const cleanEmojis = (text: string, currentModel: string, reasoningMode: string) => {
