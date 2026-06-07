@@ -157,57 +157,70 @@ export default function App() {
             const res = await fetch("/api/auth/cookie-session");
             if (res.ok) {
               const data = await res.json();
-              if (data.access_token) {
+              if (data && data.access_token) {
                 accessToken = data.access_token;
                 refreshToken = data.refresh_token || data.access_token;
                 console.log("Session berhasil didapatkan dari HTTP-Only cookies!");
               }
             }
           } catch (cookieErr) {
-            console.error("Gagal membaca cookie session dar server:", cookieErr);
+            console.error("Gagal membaca cookie session dari server:", cookieErr);
           }
         }
 
         if (accessToken && refreshToken) {
           console.log("Mengeset sesi aktif menggunakan token...");
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
+          try {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken.trim(),
+              refresh_token: refreshToken.trim()
+            });
 
-          if (error) {
-             throw error;
-          }
-
-          if (data && data.user) {
-            console.log("User otomatis login:", data.user);
-            setUser(data.user);
-            setAppState('chat');
-            
-            // Bersihkan URL dari parameter token demi keamanan jika didapat dari URL
-            if (window.location.search.includes('access_token') || window.location.hash.includes('access_token')) {
-              const cleanUrl = window.location.origin + window.location.pathname;
-              window.history.replaceState({}, document.title, cleanUrl);
+            if (error) {
+              throw error;
             }
+
+            if (data && data.user) {
+              console.log("User otomatis login:", data.user);
+              setUser(data.user);
+              setAppState('chat');
+              
+              // Bersihkan URL dari parameter token demi keamanan jika didapat dari URL
+              if (window.location.search.includes('access_token') || window.location.hash.includes('access_token')) {
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+              }
+            } else {
+              setAppState('landing');
+            }
+          } catch (setSessError: any) {
+            console.error("Gagal setSession Supabase:", setSessError);
+            setAppState('landing');
           }
         } else {
           // Jika tidak ada token, cek apakah ada sesi lokal aktif yang tersimpan di memory/localStorage
-          const { data: { session }, error } = await supabase.auth.getSession();
-          if (error) throw error;
-          
-          if (session && session.user) {
-            setUser(session.user);
-            setAppState('chat');
-          } else {
-            // Jika berada di /callback tanpa token, kembalikan ke landing
-            if (window.location.pathname === '/callback') {
-              setAppState('landing');
+          try {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            if (error) throw error;
+            
+            if (session && session.user) {
+              setUser(session.user);
+              setAppState('chat');
+            } else {
+              // Jika berada di /callback tanpa token, kembalikan ke landing
+              if (window.location.pathname === '/callback') {
+                setAppState('landing');
+              }
             }
+          } catch (getSessError: any) {
+            console.warn("Supabase auth.getSession() gagal (kemungkinan dummy config atau jaringan):", getSessError);
+            setAppState('landing');
           }
         }
       } catch (err: any) {
-        console.error("Gagal verifikasi sesi:", err);
-        setAuthError(err.message || 'Gagal memverifikasi sesi login.');
+        console.error("Gagal verifikasi sesi utama:", err);
+        // Jangan tampilkan layar merah menyala yang mengganggu, kembalikan ke landing secara anggun
+        setAppState('landing');
       } finally {
         setAuthChecking(false);
       }
