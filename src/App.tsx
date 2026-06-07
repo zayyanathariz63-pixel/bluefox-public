@@ -112,6 +112,24 @@ export default function App() {
     window.location.href = `${landingUrl}?${params.toString()}`;
   };
 
+  const handleLandingStart = async () => {
+    if (user) {
+      setAppState('chat');
+      return;
+    }
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (!error && session && session.user) {
+        setUser(session.user);
+        setAppState('chat');
+        return;
+      }
+    } catch (err) {
+      console.warn("Gagal cek session saat klik Start:", err);
+    }
+    handleAuthRedirect();
+  };
+
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
@@ -472,7 +490,7 @@ export default function App() {
       )}
       
       {!showSplash && !authChecking && !authError && appState === 'landing' && (
-        <LandingPage onStart={handleAuthRedirect} />
+        <LandingPage onStart={handleLandingStart} />
       )}
       
       {!showSplash && !authChecking && !authError && appState === 'login' && (
