@@ -266,12 +266,8 @@ export default function App() {
                 setAppState('landing');
                 const cleanUrl = window.location.origin + window.location.pathname;
                 window.history.replaceState({}, document.title, cleanUrl);
-              } else if (window.location.pathname !== '/callback' && window.location.pathname !== '/callback.html') {
-                // Sesuai Bagian 1: Lempar ke pusat login jika belum pernah cek
-                const urlPulang = window.location.origin + "/callback.html"; // Kita buat seolah-olah callback.html
-                window.location.href = `https://tmpa-sat-login.vercel.app/check-sso.html?continue_to=${encodeURIComponent(urlPulang)}`;
-                return; // halt execution
               } else {
+                // Tetap di landing page, biarkan tombol "Get Started" yang memicu redirect
                 setAppState('landing');
               }
             }
