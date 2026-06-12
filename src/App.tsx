@@ -95,10 +95,10 @@ export default function App() {
 
   const handleAuthRedirect = () => {
     const landingUrl = "https://tmpa-sat-login.vercel.app/";
-    const primaryRedirect = "https://tmpa-chat.vercel.app/callback";
-    const primaryOrigin = "https://tmpa-chat.vercel.app/";
+    const primaryRedirect = "https://tmpa-blue.vercel.app/callback.html";
+    const primaryOrigin = "https://tmpa-blue.vercel.app/";
     const currentOrigin = window.location.origin;
-    const currentCallback = `${currentOrigin}/callback`;
+    const currentCallback = `${currentOrigin}/callback.html`;
 
     const params = new URLSearchParams();
     params.set('redirect_url', primaryRedirect);
@@ -161,11 +161,14 @@ export default function App() {
         const urlParams = new URLSearchParams(window.location.search);
         let accessToken = urlParams.get('access_token');
         let refreshToken = urlParams.get('refresh_token');
+        let status = urlParams.get('status');
+        const errorParam = urlParams.get('error');
 
         if (!accessToken || !refreshToken) {
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           accessToken = accessToken || hashParams.get('access_token');
           refreshToken = refreshToken || hashParams.get('refresh_token');
+          status = status || hashParams.get('status');
         }
 
         // 2. Jika tidak ada di URL, coba cari di HTTP-Only cookies via Server API
@@ -186,7 +189,34 @@ export default function App() {
           }
         }
 
-        if (accessToken && refreshToken) {
+        if (status === 'valid' && accessToken && refreshToken) {
+          console.log("Pusat Login menyatakan user valid! Menyinkronkan data...");
+          try {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken.trim(),
+              refresh_token: refreshToken.trim()
+            });
+
+            if (!sessionError) {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session && session.user) {
+                setUser(session.user);
+                setAppState('chat');
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+              } else {
+                setAppState('landing');
+              }
+            } else {
+               console.error("Gagal mengunci sesi lokal:", sessionError.message);
+               setAuthError('Gagal sinkronisasi sesi dari pusat.');
+               setAppState('landing');
+            }
+          } catch (e: any) {
+            console.error("Gagal verifikasi sesi SSO:", e);
+            setAppState('landing');
+          }
+        } else if (accessToken && refreshToken) {
           console.log("Mengeset sesi aktif menggunakan token...");
           try {
             const { data, error } = await supabase.auth.setSession({
@@ -225,8 +255,23 @@ export default function App() {
               setUser(session.user);
               setAppState('chat');
             } else {
-              // Jika berada di /callback tanpa token, kembalikan ke landing
-              if (window.location.pathname === '/callback') {
+              // Jika tidak ada sesi & tidak ada token
+              if (errorParam === 'unauthorized') {
+                // Pusat login mengembalikan unauthorized
+                setAppState('landing');
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+              } else if (errorParam === 'sync_failed') {
+                setAuthError('Gagal melakukan sinkronisasi data dengan sistem pusat.');
+                setAppState('landing');
+                const cleanUrl = window.location.origin + window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+              } else if (window.location.pathname !== '/callback' && window.location.pathname !== '/callback.html') {
+                // Sesuai Bagian 1: Lempar ke pusat login jika belum pernah cek
+                const urlPulang = window.location.origin + "/callback.html"; // Kita buat seolah-olah callback.html
+                window.location.href = `https://tmpa-sat-login.vercel.app/check-sso.html?continue_to=${encodeURIComponent(urlPulang)}`;
+                return; // halt execution
+              } else {
                 setAppState('landing');
               }
             }

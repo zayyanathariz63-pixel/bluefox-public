@@ -126,6 +126,14 @@ async function startServer() {
     }
   });
 
+  // API Route to securely expose Supabase client config to public static pages
+  app.get("/api/config", (req, res) => {
+    return res.json({
+      supabaseUrl: process.env.VITE_SUPABASE_URL || 'https://dummy.supabase.co',
+      supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || 'dummy_anon_key'
+    });
+  });
+
   // API Route for Chat (Supports NVIDIA API, OpenRouter, and Gemini Fallback)
   app.post("/api/chat", async (req, res) => {
     const cleanEmojis = (text: string, currentModel: string, reasoningMode: string) => {
