@@ -96,25 +96,6 @@ export default function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const handleAuthRedirect = () => {
-    const landingUrl = "https://tmpa-sat-login.vercel.app/";
-    const primaryRedirect = "https://tmpa-blue.vercel.app/callback.html";
-    const primaryOrigin = "https://tmpa-blue.vercel.app/";
-    const currentOrigin = window.location.origin;
-    const currentCallback = `${currentOrigin}/callback.html`;
-
-    const params = new URLSearchParams();
-    params.set('redirect_url', primaryRedirect);
-    params.set('redirect_to', primaryRedirect);
-    params.set('redirectTo', primaryRedirect);
-    params.set('redirect', primaryRedirect);
-    params.set('redirect_orig', primaryOrigin);
-    params.set('dev_redirect', currentCallback);
-    params.set('dev_origin', currentOrigin);
-
-    window.location.href = `${landingUrl}?${params.toString()}`;
-  };
-
   const handleLandingStart = async () => {
     if (user) {
       setAppState('chat');
