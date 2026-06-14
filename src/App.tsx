@@ -114,7 +114,7 @@ export default function App() {
     }
 
     // JIKA BELUM LOGIN DI CHAT: Tentukan alamat callback untuk pulang nanti
-    const urlPulang = window.location.origin + "/callback.html";
+    const urlPulang = "https://tmpa-chat.vercel.app/callback.html";
     
     // Oper user ke Pusat Login untuk dicek statusnya
     window.location.href = `https://tmpa-sat-login.vercel.app/?continue_to=${encodeURIComponent(urlPulang)}`;
