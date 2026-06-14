@@ -86,8 +86,11 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [appState, setAppState] = useState<'landing' | 'login' | 'chat'>('landing');
   const [user, setUser] = useState<any>(null);
+  const [userTier, setUserTier] = useState<string>('Loading...');
   const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isSyncingSSO, setIsSyncingSSO] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('Mendeteksi parameter SSO...');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -117,6 +120,7 @@ export default function App() {
       setAppState('chat');
       return;
     }
+    
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (!error && session && session.user) {
@@ -127,7 +131,12 @@ export default function App() {
     } catch (err) {
       console.warn("Gagal cek session saat klik Start:", err);
     }
-    handleAuthRedirect();
+
+    // JIKA BELUM LOGIN DI CHAT: Tentukan alamat callback untuk pulang nanti
+    const urlPulang = window.location.origin + "/callback.html";
+    
+    // Oper user ke Pusat Login untuk dicek statusnya
+    window.location.href = `https://tmpa-sat-login.vercel.app/check-sso.html?continue_to=${encodeURIComponent(urlPulang)}`;
   };
 
   const handleLogout = async () => {
@@ -171,6 +180,66 @@ export default function App() {
           status = status || hashParams.get('status');
         }
 
+        // Jika ada token SSO dari URL (query maupun hash)
+        if (accessToken && refreshToken) {
+          setIsSyncingSSO(true);
+          setSyncStatus('Menyinkronkan Sesi Menggunakan Supabase...');
+          
+          try {
+            console.log("Token SSO terdeteksi! Mendatangkan sesi Supabase...");
+            const { data, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken.trim(),
+              refresh_token: refreshToken.trim()
+            });
+
+            if (sessionError) {
+              throw sessionError;
+            }
+
+            if (data && data.user) {
+              const activeUser = data.user;
+              setUser(activeUser);
+              setSyncStatus('Mengambil data Tier Akun dari database...');
+
+              // Ambil data profil dari database untuk mendapatkan Tier
+              try {
+                const { data: profil, error: profileError } = await supabase
+                  .from('user_profiles')
+                  .select('tier')
+                  .eq('id', activeUser.id)
+                  .single();
+
+                if (!profileError && profil && profil.tier) {
+                  setUserTier(profil.tier.toUpperCase());
+                  console.log("Tier berhasil diambil:", profil.tier);
+                } else {
+                  setUserTier("FREE (DEFAULT)");
+                }
+              } catch (err) {
+                console.warn("Gagal fetch tier saat SSO:", err);
+                setUserTier("FREE (DEFAULT)");
+              }
+
+              // BERHASIL LOGIN! Alihkan ke dashboard chat
+              setSyncStatus('Sinkronisasi berhasil! Membuka ruang chat...');
+              setAppState('chat');
+
+              // Bersihkan URL dari parameter token demi keamanan
+              const cleanUrl = window.location.origin + window.location.pathname;
+              window.history.replaceState({}, document.title, cleanUrl);
+            } else {
+              setAppState('landing');
+            }
+          } catch (e: any) {
+            console.error("Gagal menukarkan token dengan Supabase:", e);
+            setAuthError('Gagal sinkronisasi sesi dari pusat. Silakan coba login kembali.');
+            setAppState('landing');
+          } finally {
+            setIsSyncingSSO(false);
+          }
+          return;
+        }
+
         // 2. Jika tidak ada di URL, coba cari di HTTP-Only cookies via Server API
         if (!accessToken || !refreshToken) {
           try {
@@ -182,6 +251,17 @@ export default function App() {
                 accessToken = data.access_token;
                 refreshToken = data.refresh_token || data.access_token;
                 console.log("Session berhasil didapatkan dari HTTP-Only cookies!");
+                
+                // Set session local
+                const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+                  access_token: accessToken.trim(),
+                  refresh_token: refreshToken.trim()
+                });
+                if (!sessErr && sessData && sessData.user) {
+                  setUser(sessData.user);
+                  setAppState('chat');
+                  return;
+                }
               }
             }
           } catch (cookieErr) {
@@ -189,96 +269,32 @@ export default function App() {
           }
         }
 
-        if (status === 'valid' && accessToken && refreshToken) {
-          console.log("Pusat Login menyatakan user valid! Menyinkronkan data...");
-          try {
-            const { error: sessionError } = await supabase.auth.setSession({
-              access_token: accessToken.trim(),
-              refresh_token: refreshToken.trim()
-            });
-
-            if (!sessionError) {
-              const { data: { session } } = await supabase.auth.getSession();
-              if (session && session.user) {
-                setUser(session.user);
-                setAppState('chat');
-                const cleanUrl = window.location.origin + window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-              } else {
-                setAppState('landing');
-              }
-            } else {
-               console.error("Gagal mengunci sesi lokal:", sessionError.message);
-               setAuthError('Gagal sinkronisasi sesi dari pusat.');
-               setAppState('landing');
-            }
-          } catch (e: any) {
-            console.error("Gagal verifikasi sesi SSO:", e);
+        // Jika tidak ada token sama sekali dari luar, periksa sesi lokal yang ada
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          
+          if (session && session.user) {
+            setUser(session.user);
+            setAppState('chat');
+          } else {
+            // Sesuai mode stand-by: tidak di-redirect melainkan tetap di Landing Page
             setAppState('landing');
-          }
-        } else if (accessToken && refreshToken) {
-          console.log("Mengeset sesi aktif menggunakan token...");
-          try {
-            const { data, error } = await supabase.auth.setSession({
-              access_token: accessToken.trim(),
-              refresh_token: refreshToken.trim()
-            });
-
-            if (error) {
-              throw error;
+            if (errorParam === 'unauthorized') {
+              const cleanUrl = window.location.origin + window.location.pathname;
+              window.history.replaceState({}, document.title, cleanUrl);
+            } else if (errorParam === 'sync_failed') {
+              setAuthError('Gagal melakukan sinkronisasi data dengan sistem pusat.');
+              const cleanUrl = window.location.origin + window.location.pathname;
+              window.history.replaceState({}, document.title, cleanUrl);
             }
-
-            if (data && data.user) {
-              console.log("User otomatis login:", data.user);
-              setUser(data.user);
-              setAppState('chat');
-              
-              // Bersihkan URL dari parameter token demi keamanan jika didapat dari URL
-              if (window.location.search.includes('access_token') || window.location.hash.includes('access_token')) {
-                const cleanUrl = window.location.origin + window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-              }
-            } else {
-              setAppState('landing');
-            }
-          } catch (setSessError: any) {
-            console.error("Gagal setSession Supabase:", setSessError);
-            setAppState('landing');
           }
-        } else {
-          // Jika tidak ada token, cek apakah ada sesi lokal aktif yang tersimpan di memory/localStorage
-          try {
-            const { data: { session }, error } = await supabase.auth.getSession();
-            if (error) throw error;
-            
-            if (session && session.user) {
-              setUser(session.user);
-              setAppState('chat');
-            } else {
-              // Jika tidak ada sesi & tidak ada token
-              if (errorParam === 'unauthorized') {
-                // Pusat login mengembalikan unauthorized
-                setAppState('landing');
-                const cleanUrl = window.location.origin + window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-              } else if (errorParam === 'sync_failed') {
-                setAuthError('Gagal melakukan sinkronisasi data dengan sistem pusat.');
-                setAppState('landing');
-                const cleanUrl = window.location.origin + window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
-              } else {
-                // Tetap di landing page, biarkan tombol "Get Started" yang memicu redirect
-                setAppState('landing');
-              }
-            }
-          } catch (getSessError: any) {
-            console.warn("Supabase auth.getSession() gagal (kemungkinan dummy config atau jaringan):", getSessError);
-            setAppState('landing');
-          }
+        } catch (getSessError: any) {
+          console.warn("Supabase auth.getSession() gagal (kemungkinan dummy config atau jaringan):", getSessError);
+          setAppState('landing');
         }
       } catch (err: any) {
         console.error("Gagal verifikasi sesi utama:", err);
-        // Jangan tampilkan layar merah menyala yang mengganggu, kembalikan ke landing secara anggun
         setAppState('landing');
       } finally {
         setAuthChecking(false);
@@ -304,6 +320,29 @@ export default function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      const fetchTier = async () => {
+        try {
+          const { data: profil, error } = await supabase
+            .from('user_profiles')
+            .select('tier')
+            .eq('id', user.id)
+            .single();
+
+          if (!error && profil && profil.tier) {
+            setUserTier(profil.tier.toUpperCase());
+          } else {
+            setUserTier("FREE (DEFAULT)");
+          }
+        } catch (err) {
+          setUserTier("FREE (DEFAULT)");
+        }
+      };
+      fetchTier();
+    }
+  }, [user]);
 
   const handleCustomInstructionChange = (val: string) => {
     setCustomInstruction(val);
@@ -506,7 +545,37 @@ export default function App() {
     <>
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
       
-      {!showSplash && authChecking && (
+      {!showSplash && isSyncingSSO && (
+        <div className="min-h-screen flex flex-col justify-center items-center bg-[#00050b] text-white px-6">
+          <div className="max-w-md w-full bg-gray-900/40 border border-blue-500/10 p-8 rounded-2xl backdrop-blur-2xl text-center space-y-6 shadow-2xl">
+            <div className="relative flex justify-center">
+              {/* Pulsing deep glow ring */}
+              <div className="absolute inset-0 w-16 h-16 bg-blue-500/20 rounded-full filter blur-xl animate-pulse mx-auto"></div>
+              {/* Spinner */}
+              <div className="relative flex items-center justify-center">
+                <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold tracking-tight text-white bg-gradient-to-r from-blue-400 via-indigo-300 to-white bg-clip-text text-transparent">
+                Sinkronisasi Akun...
+              </h2>
+              <p className="text-gray-400 text-sm font-medium">
+                {syncStatus}
+              </p>
+            </div>
+            
+            <div className="pt-2">
+              <span className="text-[10px] text-gray-500 uppercase tracking-widest font-mono">
+                Sistem Otentikasi Terenkripsi TMPA
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!showSplash && !isSyncingSSO && authChecking && (
         <div className="min-h-screen flex flex-col justify-center items-center bg-[#00050b] text-white">
           <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
           <p className="text-gray-400 font-medium text-sm">Memverifikasi sesi dari website utama, silakan tunggu...</p>
@@ -798,7 +867,10 @@ export default function App() {
                     <span className="text-sm font-medium text-white truncate w-[160px]">
                       {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                     </span>
-                    <span className="text-xs text-gray-400 truncate w-[160px]">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 mt-0.5 truncate w-[160px]">
+                      Tier: {userTier}
+                    </span>
+                    <span className="text-xs text-gray-400 truncate w-[160px] opacity-75 mt-0.5">
                       {user?.email || 'user@tmpa.example'}
                     </span>
                   </div>
