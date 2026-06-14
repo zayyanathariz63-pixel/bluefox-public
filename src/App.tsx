@@ -117,7 +117,7 @@ export default function App() {
     const urlPulang = window.location.origin + "/callback.html";
     
     // Oper user ke Pusat Login untuk dicek statusnya
-    window.location.href = `https://tmpa-sat-login.vercel.app/check-sso.html?continue_to=${encodeURIComponent(urlPulang)}`;
+    window.location.href = `https://tmpa-sat-login.vercel.app/?continue_to=${encodeURIComponent(urlPulang)}`;
   };
 
   const handleLogout = async () => {
@@ -180,24 +180,24 @@ export default function App() {
             if (data && data.user) {
               const activeUser = data.user;
               setUser(activeUser);
-              setSyncStatus('Mengambil data Tier Akun dari database...');
+              setSyncStatus('Mengambil data Paket Akun dari database...');
 
-              // Ambil data profil dari database untuk mendapatkan Tier
+              // Ambil data profil dari database untuk mendapatkan Plan/Paket
               try {
                 const { data: profil, error: profileError } = await supabase
-                  .from('user_profiles')
-                  .select('tier')
+                  .from('users')
+                  .select('plan')
                   .eq('id', activeUser.id)
                   .single();
 
-                if (!profileError && profil && profil.tier) {
-                  setUserTier(profil.tier.toUpperCase());
-                  console.log("Tier berhasil diambil:", profil.tier);
+                if (!profileError && profil && profil.plan) {
+                  setUserTier(profil.plan.toUpperCase());
+                  console.log("Plan berhasil diambil:", profil.plan);
                 } else {
                   setUserTier("FREE (DEFAULT)");
                 }
               } catch (err) {
-                console.warn("Gagal fetch tier saat SSO:", err);
+                console.warn("Gagal fetch plan saat SSO:", err);
                 setUserTier("FREE (DEFAULT)");
               }
 
@@ -307,13 +307,13 @@ export default function App() {
       const fetchTier = async () => {
         try {
           const { data: profil, error } = await supabase
-            .from('user_profiles')
-            .select('tier')
+            .from('users')
+            .select('plan')
             .eq('id', user.id)
             .single();
 
-          if (!error && profil && profil.tier) {
-            setUserTier(profil.tier.toUpperCase());
+          if (!error && profil && profil.plan) {
+            setUserTier(profil.plan.toUpperCase());
           } else {
             setUserTier("FREE (DEFAULT)");
           }
@@ -849,7 +849,7 @@ export default function App() {
                       {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                     </span>
                     <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 mt-0.5 truncate w-[160px]">
-                      Tier: {userTier}
+                      Plan: {userTier}
                     </span>
                     <span className="text-xs text-gray-400 truncate w-[160px] opacity-75 mt-0.5">
                       {user?.email || 'user@tmpa.example'}
