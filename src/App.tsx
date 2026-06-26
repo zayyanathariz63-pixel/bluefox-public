@@ -113,11 +113,8 @@ export default function App() {
       console.warn("Gagal cek session saat klik Start:", err);
     }
 
-    // JIKA BELUM LOGIN DI CHAT: Tentukan alamat callback untuk pulang nanti
-    const urlPulang = "https://tmpa-chat.vercel.app/callback.html";
-    
     // Oper user ke Pusat Login untuk dicek statusnya
-    window.location.href = `https://tmpa-pust-login.vercel.app/?continue_to=${encodeURIComponent(urlPulang)}`;
+    window.location.href = "https://tmpa.my.id/?callback=https://chat.tmpa.my.id";
   };
 
   const handleLogout = async () => {
