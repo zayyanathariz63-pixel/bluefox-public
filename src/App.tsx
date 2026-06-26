@@ -177,6 +177,25 @@ export default function App() {
             if (data && data.user) {
               const activeUser = data.user;
               setUser(activeUser);
+              
+              // SINKRONISASI DATABASE: Sinkronisasi ke tabel 'users' dengan .upsert()
+              setSyncStatus('Menyinkronkan profil pengguna ke database...');
+              const userEmail = activeUser.email || '';
+              const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
+              const userId = activeUser.id;
+
+              try {
+                await supabase
+                  .from('users')
+                  .upsert(
+                    [{ email: userEmail, nama: userName, user_id: userId, id: userId }], 
+                    { onConflict: 'email' }
+                  );
+                console.log("Sinkronisasi user berhasil!");
+              } catch (upsertErr) {
+                console.warn("Gagal melakukan upsert user saat SSO:", upsertErr);
+              }
+
               setSyncStatus('Mengambil data Paket Akun dari database...');
 
               // Ambil data profil dari database untuk mendapatkan Plan/Paket
