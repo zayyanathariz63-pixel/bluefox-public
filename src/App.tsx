@@ -11,6 +11,20 @@ import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { supabase } from './lib/supabase';
 
+// Fungsi untuk mengambil token dari cookie tmpa_session
+function getTmpaSession() {
+  const name = "tmpa_session=";
+  const decodedCookie = decodeURIComponent(document.cookie);
+  const ca = decodedCookie.split(';');
+  for(let i = 0; i < ca.length; i++) {
+    let c = ca[i].trim();
+    if (c.indexOf(name) === 0) {
+      return c.substring(name.length, c.length);
+    }
+  }
+  return "";
+}
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
@@ -237,7 +251,78 @@ export default function App() {
           return;
         }
 
-        // 2. Jika tidak ada di URL, coba cari di HTTP-Only cookies via Server API
+        // 2. Jika tidak ada di URL, coba cari di cookie klien 'tmpa_session'
+        const clientCookieToken = getTmpaSession();
+        if (clientCookieToken) {
+          console.log("User sudah login di Web Utama! Token ditemukan di cookie:", clientCookieToken);
+          try {
+            let parsedAccessToken = clientCookieToken;
+            let parsedRefreshToken = clientCookieToken;
+            
+            // Cek apakah cookie bertipe JSON yang berisi access_token dan refresh_token
+            if (clientCookieToken.trim().startsWith('{')) {
+              try {
+                const cookieObj = JSON.parse(clientCookieToken);
+                parsedAccessToken = cookieObj.access_token || cookieObj.accessToken || clientCookieToken;
+                parsedRefreshToken = cookieObj.refresh_token || cookieObj.refreshToken || parsedAccessToken;
+              } catch (e) {
+                console.warn("Gagal parse JSON dari cookie tmpa_session:", e);
+              }
+            }
+            
+            const { data: sessData, error: sessErr } = await supabase.auth.setSession({
+              access_token: parsedAccessToken.trim(),
+              refresh_token: parsedRefreshToken.trim()
+            });
+            
+            if (!sessErr && sessData && sessData.user) {
+              const activeUser = sessData.user;
+              setUser(activeUser);
+              
+              // SINKRONISASI DATABASE: Sinkronisasi ke tabel 'users' dengan .upsert()
+              setSyncStatus('Menyinkronkan profil pengguna ke database...');
+              const userEmail = activeUser.email || '';
+              const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
+              const userId = activeUser.id;
+
+              try {
+                await supabase
+                  .from('users')
+                  .upsert(
+                    [{ email: userEmail, nama: userName, user_id: userId, id: userId }], 
+                    { onConflict: 'email' }
+                  );
+                console.log("Sinkronisasi user berhasil via cookie tmpa_session!");
+              } catch (upsertErr) {
+                console.warn("Gagal melakukan upsert user saat sinkronisasi cookie:", upsertErr);
+              }
+
+              // Ambil plan
+              try {
+                const { data: profil, error: profileError } = await supabase
+                  .from('users')
+                  .select('plan')
+                  .eq('id', activeUser.id)
+                  .single();
+
+                if (!profileError && profil && profil.plan) {
+                  setUserTier(profil.plan.toUpperCase());
+                } else {
+                  setUserTier("FREE (DEFAULT)");
+                }
+              } catch (err) {
+                setUserTier("FREE (DEFAULT)");
+              }
+              
+              setAppState('chat');
+              return;
+            }
+          } catch (sessErr) {
+            console.error("Gagal inisialisasi sesi via cookie tmpa_session:", sessErr);
+          }
+        }
+
+        // 3. Jika tidak ada di URL atau cookie klien, coba cari di HTTP-Only cookies via Server API
         if (!accessToken || !refreshToken) {
           try {
             console.log("Mendeteksi session dari HTTP-Only cookies via server...");
