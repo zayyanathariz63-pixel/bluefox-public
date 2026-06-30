@@ -11,18 +11,21 @@ import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { supabase } from './lib/supabase';
 
-// Fungsi untuk mengambil token dari cookie tmpa_session
-function getTmpaSession() {
+// Fungsi pembaca cookie domain bersama (.tmpa.my.id)
+function getSharedTmpaSession() {
   const name = "tmpa_session=";
   const decodedCookie = decodeURIComponent(document.cookie);
   const ca = decodedCookie.split(';');
   for(let i = 0; i < ca.length; i++) {
     let c = ca[i].trim();
-    if (c.indexOf(name) === 0) {
-      return c.substring(name.length, c.length);
-    }
+    if (c.indexOf(name) === 0) return c.substring(name.length, c.length);
   }
   return "";
+}
+
+// Fungsi untuk mengambil token dari cookie tmpa_session
+function getTmpaSession() {
+  return getSharedTmpaSession();
 }
 
 export default function App() {
@@ -128,7 +131,7 @@ export default function App() {
     }
 
     // Oper user ke Pusat Login untuk dicek statusnya
-    window.location.href = "https://tmpa.my.id/?callback=https://chat.tmpa.my.id";
+    window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
   };
 
   const handleLogout = async () => {
@@ -251,10 +254,10 @@ export default function App() {
           return;
         }
 
-        // 2. Jika tidak ada di URL, coba cari di cookie klien 'tmpa_session'
-        const clientCookieToken = getTmpaSession();
+        // 2. Jika tidak ada di URL, coba cari di cookie klien 'tmpa_session' (cookie domain bersama .tmpa.my.id)
+        const clientCookieToken = getSharedTmpaSession();
         if (clientCookieToken) {
-          console.log("User sudah login di Web Utama! Token ditemukan di cookie:", clientCookieToken);
+          console.log("Token terdeteksi dari cookie jaringan! Menyelaraskan sesi chat...");
           try {
             let parsedAccessToken = clientCookieToken;
             let parsedRefreshToken = clientCookieToken;
@@ -314,70 +317,29 @@ export default function App() {
                 setUserTier("FREE (DEFAULT)");
               }
               
+              console.log("Akses TMPA Chat Terverifikasi! Memuat ruang obrolan...");
               setAppState('chat');
               return;
+            } else {
+              console.error("Gagal menyinkronkan sesi Supabase Chat:", sessErr?.message);
+              // Jika token di cookie ternyata sudah kedaluwarsa/rusak, lempar ke Pusat Login
+              window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+              return;
             }
-          } catch (sessErr) {
+          } catch (sessErr: any) {
             console.error("Gagal inisialisasi sesi via cookie tmpa_session:", sessErr);
+            window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+            return;
           }
-        }
-
-        // 3. Jika tidak ada di URL atau cookie klien, coba cari di HTTP-Only cookies via Server API
-        if (!accessToken || !refreshToken) {
-          try {
-            console.log("Mendeteksi session dari HTTP-Only cookies via server...");
-            const res = await fetch("/api/auth/cookie-session");
-            if (res.ok) {
-              const data = await res.json();
-              if (data && data.access_token) {
-                accessToken = data.access_token;
-                refreshToken = data.refresh_token || data.access_token;
-                console.log("Session berhasil didapatkan dari HTTP-Only cookies!");
-                
-                // Set session local
-                const { data: sessData, error: sessErr } = await supabase.auth.setSession({
-                  access_token: accessToken.trim(),
-                  refresh_token: refreshToken.trim()
-                });
-                if (!sessErr && sessData && sessData.user) {
-                  setUser(sessData.user);
-                  setAppState('chat');
-                  return;
-                }
-              }
-            }
-          } catch (cookieErr) {
-            console.error("Gagal membaca cookie session dari server:", cookieErr);
-          }
-        }
-
-        // Jika tidak ada token sama sekali dari luar, periksa sesi lokal yang ada
-        try {
-          const { data: { session }, error } = await supabase.auth.getSession();
-          if (error) throw error;
-          
-          if (session && session.user) {
-            setUser(session.user);
-            setAppState('chat');
-          } else {
-            // Sesuai mode stand-by: tidak di-redirect melainkan tetap di Landing Page
-            setAppState('landing');
-            if (errorParam === 'unauthorized') {
-              const cleanUrl = window.location.origin + window.location.pathname;
-              window.history.replaceState({}, document.title, cleanUrl);
-            } else if (errorParam === 'sync_failed') {
-              setAuthError('Gagal melakukan sinkronisasi data dengan sistem pusat.');
-              const cleanUrl = window.location.origin + window.location.pathname;
-              window.history.replaceState({}, document.title, cleanUrl);
-            }
-          }
-        } catch (getSessError: any) {
-          console.warn("Supabase auth.getSession() gagal (kemungkinan dummy config atau jaringan):", getSessError);
-          setAppState('landing');
+        } else {
+          console.log("Tidak ada sesi terdeteksi. Mengalihkan ke Pusat Login...");
+          // Jika cookie kosong, tendang user ke pusat login dan minta kembali ke domain chat setelah sukses
+          window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+          return;
         }
       } catch (err: any) {
         console.error("Gagal verifikasi sesi utama:", err);
-        setAppState('landing');
+        window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
       } finally {
         setAuthChecking(false);
       }
