@@ -131,7 +131,10 @@ export default function App() {
     }
 
     // Oper user ke Pusat Login untuk dicek statusnya
-    window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+    const redirectUrl = window.location.hostname === 'chat.tmpa.my.id'
+      ? 'https://chat.tmpa.my.id/'
+      : window.location.origin + '/';
+    window.location.href = `https://pustgin.tmpa.my.id/?redirect_url=${encodeURIComponent(redirectUrl)}`;
   };
 
   const handleLogout = async () => {
@@ -322,24 +325,49 @@ export default function App() {
               return;
             } else {
               console.error("Gagal menyinkronkan sesi Supabase Chat:", sessErr?.message);
-              // Jika token di cookie ternyata sudah kedaluwarsa/rusak, lempar ke Pusat Login
-              window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
-              return;
+              // Jika di production, lempar ke Pusat Login
+              if (window.location.hostname === 'chat.tmpa.my.id') {
+                window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+                return;
+              }
             }
           } catch (sessErr: any) {
             console.error("Gagal inisialisasi sesi via cookie tmpa_session:", sessErr);
-            window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+            if (window.location.hostname === 'chat.tmpa.my.id') {
+              window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+              return;
+            }
+          }
+        }
+
+        // Jika tidak ada di cookie bersama atau di URL, coba cari sesi lokal Supabase (berguna untuk lingkungan local/dev)
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (!error && session && session.user) {
+            setUser(session.user);
+            setAppState('chat');
             return;
           }
-        } else {
-          console.log("Tidak ada sesi terdeteksi. Mengalihkan ke Pusat Login...");
-          // Jika cookie kosong, tendang user ke pusat login dan minta kembali ke domain chat setelah sukses
+        } catch (localSessErr) {
+          console.warn("Gagal mendapatkan sesi lokal:", localSessErr);
+        }
+
+        // JIKALAU TIDAK ADA SESI SAMA SEKALI
+        if (window.location.hostname === 'chat.tmpa.my.id') {
+          console.log("Tidak ada sesi terdeteksi di production. Mengalihkan ke Pusat Login...");
           window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
           return;
+        } else {
+          console.log("Tidak ada sesi terdeteksi di development/preview. Tetap di landing page agar pengembang/tester bisa menguji aplikasi.");
+          setAppState('landing');
         }
       } catch (err: any) {
         console.error("Gagal verifikasi sesi utama:", err);
-        window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+        if (window.location.hostname === 'chat.tmpa.my.id') {
+          window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
+        } else {
+          setAppState('landing');
+        }
       } finally {
         setAuthChecking(false);
       }
