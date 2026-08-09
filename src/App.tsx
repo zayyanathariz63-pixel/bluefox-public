@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
-import { supabase } from './lib/supabase';
+import { supabase, exchangeSsoTicket } from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -190,12 +190,10 @@ export default function App() {
           try {
             setSyncStatus('Menukarkan tiket SSO...');
 
-            const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('exchange-sso-ticket', {
-              body: { ticket: ticketParam },
-            });
+            const edgeData = await exchangeSsoTicket(ticketParam);
 
-            if (edgeErr || !edgeData?.session) {
-              throw new Error(edgeData?.error || edgeErr?.message || 'Gagal memverifikasi tiket.');
+            if (!edgeData?.session) {
+              throw new Error(edgeData?.error || 'Gagal memverifikasi tiket.');
             }
 
             setSyncStatus('Menyiapkan sesi aplikasi...');

@@ -1,13 +1,48 @@
 import { createClient } from '@supabase/supabase-js';
 
-const env = (import.meta as any).env;
+const env = (import.meta as any).env || {};
 
-const supabaseUrl = env.VITE_SUPABASE_URL || 'https://dummy.supabase.co';
-const supabaseKey = env.VITE_SUPABASE_ANON_KEY || 'dummy_anon_key';
+export const supabaseUrl = env.VITE_SUPABASE_URL || 'https://jjlanjshpyklqayjzxyy.supabase.co';
+export const supabaseKey = env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey || 'dummy_anon_key');
 
 const hasValidConfig = supabaseUrl !== 'https://dummy.supabase.co';
+
+export const exchangeSsoTicket = async (ticketId: string) => {
+  // 1. Try SDK invoke first
+  try {
+    const { data, error } = await supabase.functions.invoke('exchange-sso-ticket', {
+      body: { ticket: ticketId },
+    });
+    if (!error && data?.session) {
+      return data;
+    }
+  } catch (e) {
+    console.warn("supabase.functions.invoke failed, falling back to direct fetch:", e);
+  }
+
+  // 2. Fallback to direct fetch call
+  const edgeFunctionUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/exchange-sso-ticket`;
+
+  const response = await fetch(edgeFunctionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+    },
+    body: JSON.stringify({ ticket: ticketId }),
+  });
+
+  const edgeData = await response.json();
+
+  if (!response.ok || !edgeData?.session) {
+    throw new Error(edgeData?.error || 'Gagal menukarkan tiket SSO');
+  }
+
+  return edgeData;
+};
 
 export const signInWithGoogle = async () => {
   if (!hasValidConfig) {
