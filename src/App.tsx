@@ -28,6 +28,24 @@ function getTmpaSession() {
   return getSharedTmpaSession();
 }
 
+export function redirectToSSO() {
+  const ACCOUNT_SSO_URL = 'https://account.tmpa.my.id/account';
+  const CLIENT_ID = 'bluefox-chat';
+  
+  let REDIRECT_URI = 'https://bluefox.tmpa.my.id';
+  if (window.location.hostname === 'chat.tmpa.my.id') {
+    REDIRECT_URI = 'https://chat.tmpa.my.id';
+  } else if (window.location.hostname !== 'bluefox.tmpa.my.id') {
+    REDIRECT_URI = window.location.origin;
+  }
+
+  const ssoUrl = new URL(ACCOUNT_SSO_URL);
+  ssoUrl.searchParams.set('client_id', CLIENT_ID);
+  ssoUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+
+  window.location.href = ssoUrl.toString();
+}
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
@@ -130,12 +148,7 @@ export default function App() {
       console.warn("Gagal cek session saat klik Start:", err);
     }
 
-    // Oper user ke SSO Hub account.tmpa.my.id/ticket dengan client_id & redirect_uri
-    const redirectUri = window.location.hostname === 'chat.tmpa.my.id'
-      ? 'https://chat.tmpa.my.id/ticket'
-      : window.location.origin + '/ticket';
-
-    window.location.href = `https://account.tmpa.my.id/ticket?client_id=tmpa_chat&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    redirectToSSO();
   };
 
   const handleLogout = async () => {
