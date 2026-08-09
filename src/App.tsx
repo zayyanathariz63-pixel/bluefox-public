@@ -130,11 +130,12 @@ export default function App() {
       console.warn("Gagal cek session saat klik Start:", err);
     }
 
-    // Oper user ke Pusat Login untuk dicek statusnya
-    const redirectUrl = window.location.hostname === 'chat.tmpa.my.id'
-      ? 'https://chat.tmpa.my.id/'
-      : window.location.origin + '/';
-    window.location.href = `https://pustgin.tmpa.my.id/?redirect_url=${encodeURIComponent(redirectUrl)}`;
+    // Oper user ke SSO Hub account.tmpa.my.id/ticket dengan client_id & redirect_uri
+    const redirectUri = window.location.hostname === 'chat.tmpa.my.id'
+      ? 'https://chat.tmpa.my.id/ticket'
+      : window.location.origin + '/ticket';
+
+    window.location.href = `https://account.tmpa.my.id/ticket?client_id=tmpa_chat&redirect_uri=${encodeURIComponent(redirectUri)}`;
   };
 
   const handleLogout = async () => {
@@ -164,41 +165,132 @@ export default function App() {
     async function checkAuthAndCallback() {
       try {
         setAuthChecking(true);
-        // 1. Tangkap token dari URL (query param maupun hash)
         const urlParams = new URLSearchParams(window.location.search);
+        const currentPath = window.location.pathname;
+
+        // 1. TANGKAP PARAMETER TIKET SSO (?ticket=... ATAU PATH /ticket)
+        const ticketParam = urlParams.get('ticket');
+        const isTicketPath = currentPath.startsWith('/ticket') || urlParams.has('ticket');
+
+        if (isTicketPath) {
+          const redirectUri = window.location.hostname === 'chat.tmpa.my.id'
+            ? 'https://chat.tmpa.my.id/ticket'
+            : window.location.origin + '/ticket';
+
+          if (!ticketParam) {
+            // Jika tidak ada tiket (misal membuka /ticket secara manual), lemparkan ke Hub account.tmpa.my.id untuk SSO
+            window.location.href = `https://account.tmpa.my.id/ticket?client_id=tmpa_chat&redirect_uri=${encodeURIComponent(redirectUri)}`;
+            return;
+          }
+
+          // Ada tiket -> Tukarkan via Edge Function exchange-sso-ticket
+          setIsSyncingSSO(true);
+          setSyncStatus('Memverifikasi tiket...');
+
+          try {
+            setSyncStatus('Menukarkan tiket SSO...');
+
+            const { data: edgeData, error: edgeErr } = await supabase.functions.invoke('exchange-sso-ticket', {
+              body: { ticket: ticketParam },
+            });
+
+            if (edgeErr || !edgeData?.session) {
+              throw new Error(edgeData?.error || edgeErr?.message || 'Gagal memverifikasi tiket.');
+            }
+
+            setSyncStatus('Menyiapkan sesi aplikasi...');
+
+            const { error: sessionErr } = await supabase.auth.setSession({
+              access_token: edgeData.session.access_token,
+              refresh_token: edgeData.session.refresh_token,
+            });
+
+            if (sessionErr) throw sessionErr;
+
+            // Simpan profil pengguna lokal jika ada
+            if (edgeData.user_profile) {
+              localStorage.setItem('tmpa_user_profile', JSON.stringify(edgeData.user_profile));
+            }
+
+            // Ambil user aktif dari Supabase
+            const { data: { user: activeUser } } = await supabase.auth.getUser();
+            if (activeUser) {
+              setUser(activeUser);
+
+              // Upsert user
+              try {
+                const userEmail = activeUser.email || '';
+                const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
+                const userId = activeUser.id;
+                await supabase
+                  .from('users')
+                  .upsert(
+                    [{ email: userEmail, nama: userName, user_id: userId, id: userId }],
+                    { onConflict: 'email' }
+                  );
+              } catch (uErr) {
+                console.warn("Gagal upsert user via ticket:", uErr);
+              }
+
+              // Ambil plan
+              try {
+                const { data: profil } = await supabase
+                  .from('users')
+                  .select('plan')
+                  .eq('id', activeUser.id)
+                  .single();
+
+                if (profil && profil.plan) {
+                  setUserTier(profil.plan.toUpperCase());
+                } else {
+                  setUserTier("FREE (DEFAULT)");
+                }
+              } catch (e) {
+                setUserTier("FREE (DEFAULT)");
+              }
+
+              setSyncStatus('Selesai! Membuka ruang chat...');
+              setAppState('chat');
+
+              // Clean URL
+              const cleanUrl = window.location.origin + '/';
+              window.history.replaceState({}, document.title, cleanUrl);
+              return;
+            }
+          } catch (ticketErr: any) {
+            console.error("Authentication Error via SSO ticket:", ticketErr);
+            alert(`Authentication Error: ${ticketErr.message || 'Gagal memverifikasi tiket.'}`);
+            window.location.href = 'https://account.tmpa.my.id/login';
+            return;
+          } finally {
+            setIsSyncingSSO(false);
+          }
+        }
+
+        // 2. Tangkap token dari URL lama (access_token & refresh_token jika ada)
         let accessToken = urlParams.get('access_token');
         let refreshToken = urlParams.get('refresh_token');
-        let status = urlParams.get('status');
-        const errorParam = urlParams.get('error');
 
         if (!accessToken || !refreshToken) {
           const hashParams = new URLSearchParams(window.location.hash.substring(1));
           accessToken = accessToken || hashParams.get('access_token');
           refreshToken = refreshToken || hashParams.get('refresh_token');
-          status = status || hashParams.get('status');
         }
 
-        // Jika ada token SSO dari URL (query maupun hash)
         if (accessToken && refreshToken) {
           setIsSyncingSSO(true);
           setSyncStatus('Menyinkronkan Sesi Menggunakan Supabase...');
           
           try {
-            console.log("Token SSO terdeteksi! Mendatangkan sesi Supabase...");
             const { data, error: sessionError } = await supabase.auth.setSession({
               access_token: accessToken.trim(),
               refresh_token: refreshToken.trim()
             });
 
-            if (sessionError) {
-              throw sessionError;
-            }
-
-            if (data && data.user) {
+            if (!sessionError && data && data.user) {
               const activeUser = data.user;
               setUser(activeUser);
               
-              // SINKRONISASI DATABASE: Sinkronisasi ke tabel 'users' dengan .upsert()
               setSyncStatus('Menyinkronkan profil pengguna ke database...');
               const userEmail = activeUser.email || '';
               const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
@@ -211,61 +303,50 @@ export default function App() {
                     [{ email: userEmail, nama: userName, user_id: userId, id: userId }], 
                     { onConflict: 'email' }
                   );
-                console.log("Sinkronisasi user berhasil!");
               } catch (upsertErr) {
                 console.warn("Gagal melakukan upsert user saat SSO:", upsertErr);
               }
 
-              setSyncStatus('Mengambil data Paket Akun dari database...');
-
-              // Ambil data profil dari database untuk mendapatkan Plan/Paket
               try {
-                const { data: profil, error: profileError } = await supabase
+                const { data: profil } = await supabase
                   .from('users')
                   .select('plan')
                   .eq('id', activeUser.id)
                   .single();
 
-                if (!profileError && profil && profil.plan) {
+                if (profil && profil.plan) {
                   setUserTier(profil.plan.toUpperCase());
-                  console.log("Plan berhasil diambil:", profil.plan);
                 } else {
                   setUserTier("FREE (DEFAULT)");
                 }
               } catch (err) {
-                console.warn("Gagal fetch plan saat SSO:", err);
                 setUserTier("FREE (DEFAULT)");
               }
 
-              // BERHASIL LOGIN! Alihkan ke dashboard chat
               setSyncStatus('Sinkronisasi berhasil! Membuka ruang chat...');
               setAppState('chat');
 
-              // Bersihkan URL dari parameter token demi keamanan
-              const cleanUrl = window.location.origin + window.location.pathname;
+              const cleanUrl = window.location.origin + '/';
               window.history.replaceState({}, document.title, cleanUrl);
+              return;
             } else {
               setAppState('landing');
             }
           } catch (e: any) {
             console.error("Gagal menukarkan token dengan Supabase:", e);
-            setAuthError('Gagal sinkronisasi sesi dari pusat. Silakan coba login kembali.');
             setAppState('landing');
           } finally {
             setIsSyncingSSO(false);
           }
-          return;
         }
 
-        // 2. Jika tidak ada di URL, coba cari di cookie klien 'tmpa_session' (cookie domain bersama .tmpa.my.id)
+        // 3. Coba cari di cookie klien 'tmpa_session' (cookie domain bersama .tmpa.my.id)
         const clientCookieToken = getSharedTmpaSession();
         if (clientCookieToken) {
-          console.log("Token terdeteksi dari cookie jaringan! Menyelaraskan sesi chat...");
           try {
             let parsedAccessToken = clientCookieToken;
             let parsedRefreshToken = clientCookieToken;
             
-            // Cek apakah cookie bertipe JSON yang berisi access_token dan refresh_token
             if (clientCookieToken.trim().startsWith('{')) {
               try {
                 const cookieObj = JSON.parse(clientCookieToken);
@@ -285,8 +366,6 @@ export default function App() {
               const activeUser = sessData.user;
               setUser(activeUser);
               
-              // SINKRONISASI DATABASE: Sinkronisasi ke tabel 'users' dengan .upsert()
-              setSyncStatus('Menyinkronkan profil pengguna ke database...');
               const userEmail = activeUser.email || '';
               const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
               const userId = activeUser.id;
@@ -298,20 +377,18 @@ export default function App() {
                     [{ email: userEmail, nama: userName, user_id: userId, id: userId }], 
                     { onConflict: 'email' }
                   );
-                console.log("Sinkronisasi user berhasil via cookie tmpa_session!");
               } catch (upsertErr) {
-                console.warn("Gagal melakukan upsert user saat sinkronisasi cookie:", upsertErr);
+                console.warn("Gagal upsert cookie user:", upsertErr);
               }
 
-              // Ambil plan
               try {
-                const { data: profil, error: profileError } = await supabase
+                const { data: profil } = await supabase
                   .from('users')
                   .select('plan')
                   .eq('id', activeUser.id)
                   .single();
 
-                if (!profileError && profil && profil.plan) {
+                if (profil && profil.plan) {
                   setUserTier(profil.plan.toUpperCase());
                 } else {
                   setUserTier("FREE (DEFAULT)");
@@ -320,27 +397,15 @@ export default function App() {
                 setUserTier("FREE (DEFAULT)");
               }
               
-              console.log("Akses TMPA Chat Terverifikasi! Memuat ruang obrolan...");
               setAppState('chat');
               return;
-            } else {
-              console.error("Gagal menyinkronkan sesi Supabase Chat:", sessErr?.message);
-              // Jika di production, lempar ke Pusat Login
-              if (window.location.hostname === 'chat.tmpa.my.id') {
-                window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
-                return;
-              }
             }
           } catch (sessErr: any) {
             console.error("Gagal inisialisasi sesi via cookie tmpa_session:", sessErr);
-            if (window.location.hostname === 'chat.tmpa.my.id') {
-              window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
-              return;
-            }
           }
         }
 
-        // Jika tidak ada di cookie bersama atau di URL, coba cari sesi lokal Supabase (berguna untuk lingkungan local/dev)
+        // 4. Coba cari sesi lokal Supabase
         try {
           const { data: { session }, error } = await supabase.auth.getSession();
           if (!error && session && session.user) {
@@ -352,22 +417,12 @@ export default function App() {
           console.warn("Gagal mendapatkan sesi lokal:", localSessErr);
         }
 
-        // JIKALAU TIDAK ADA SESI SAMA SEKALI
-        if (window.location.hostname === 'chat.tmpa.my.id') {
-          console.log("Tidak ada sesi terdeteksi di production. Mengalihkan ke Pusat Login...");
-          window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
-          return;
-        } else {
-          console.log("Tidak ada sesi terdeteksi di development/preview. Tetap di landing page agar pengembang/tester bisa menguji aplikasi.");
-          setAppState('landing');
-        }
+        // 5. TIDAK ADA SESI: TAMPILKAN LANDING PAGE (JANGAN LANGSUNG REDIRECT)
+        console.log("Tidak ada sesi terdeteksi. Menampilkan Landing Page.");
+        setAppState('landing');
       } catch (err: any) {
         console.error("Gagal verifikasi sesi utama:", err);
-        if (window.location.hostname === 'chat.tmpa.my.id') {
-          window.location.href = "https://pustgin.tmpa.my.id/?redirect_url=https://chat.tmpa.my.id/";
-        } else {
-          setAppState('landing');
-        }
+        setAppState('landing');
       } finally {
         setAuthChecking(false);
       }
