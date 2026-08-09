@@ -15,7 +15,7 @@ export const exchangeSsoTicket = async (ticketId: string) => {
     const { data, error } = await supabase.functions.invoke('exchange-sso-ticket', {
       body: { ticket: ticketId },
     });
-    if (!error && data?.session) {
+    if (!error && (data?.token_hash || data?.session)) {
       return data;
     }
   } catch (e) {
@@ -37,8 +37,12 @@ export const exchangeSsoTicket = async (ticketId: string) => {
 
   const edgeData = await response.json();
 
-  if (!response.ok || !edgeData?.session) {
-    throw new Error(edgeData?.error || 'Gagal menukarkan tiket SSO');
+  if (!response.ok || edgeData?.error) {
+    throw new Error(edgeData?.error || 'Tiket SSO tidak valid');
+  }
+
+  if (!edgeData?.token_hash && !edgeData?.session) {
+    throw new Error('Respon tiket SSO tidak mengandung token_hash atau session.');
   }
 
   return edgeData;

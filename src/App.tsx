@@ -185,33 +185,59 @@ export default function App() {
 
           // Ada tiket -> Tukarkan via Edge Function exchange-sso-ticket
           setIsSyncingSSO(true);
-          setSyncStatus('Memverifikasi tiket...');
+          setSyncStatus('Memproses autentikasi tiket SSO...');
+          console.log("[Bluefox Chat] Tiket SSO terdeteksi, memproses autentikasi...");
 
           try {
             setSyncStatus('Menukarkan tiket SSO...');
 
             const edgeData = await exchangeSsoTicket(ticketParam);
 
-            if (!edgeData?.session) {
-              throw new Error(edgeData?.error || 'Gagal memverifikasi tiket.');
-            }
-
             setSyncStatus('Menyiapkan sesi aplikasi...');
 
-            const { error: sessionErr } = await supabase.auth.setSession({
-              access_token: edgeData.session.access_token,
-              refresh_token: edgeData.session.refresh_token,
-            });
+            let activeUser = null;
 
-            if (sessionErr) throw sessionErr;
+            // Jika Edge Function mengembalikan token_hash
+            if (edgeData?.token_hash) {
+              const { data: authData, error: verifyError } = await supabase.auth.verifyOtp({
+                token_hash: edgeData.token_hash,
+                type: 'magiclink',
+              });
+
+              if (verifyError) {
+                alert(`[Auth Error] Gagal memverifikasi sesi: ${verifyError.message}`);
+                throw verifyError;
+              }
+
+              console.log("🎉 [Bluefox Chat] Berhasil Login sebagai:", authData.user?.email);
+              activeUser = authData.user;
+            } 
+            // Jika Edge Function mengembalikan session langsung
+            else if (edgeData?.session) {
+              const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+                access_token: edgeData.session.access_token,
+                refresh_token: edgeData.session.refresh_token,
+              });
+
+              if (sessionErr) {
+                alert(`[Auth Error] Gagal memasang sesi: ${sessionErr.message}`);
+                throw sessionErr;
+              }
+
+              activeUser = sessionData?.user;
+            }
 
             // Simpan profil pengguna lokal jika ada
-            if (edgeData.user_profile) {
+            if (edgeData?.user_profile) {
               localStorage.setItem('tmpa_user_profile', JSON.stringify(edgeData.user_profile));
             }
 
-            // Ambil user aktif dari Supabase
-            const { data: { user: activeUser } } = await supabase.auth.getUser();
+            // Jika belum terambil, coba ambil dari current session
+            if (!activeUser) {
+              const { data: { user } } = await supabase.auth.getUser();
+              activeUser = user;
+            }
+
             if (activeUser) {
               setUser(activeUser);
 
@@ -250,15 +276,17 @@ export default function App() {
               setSyncStatus('Selesai! Membuka ruang chat...');
               setAppState('chat');
 
-              // Clean URL
-              const cleanUrl = window.location.origin + '/';
+              // Bersihkan URL dari parameter ?ticket=... agar tampil cantik di browser
+              const cleanUrl = window.location.origin + window.location.pathname;
               window.history.replaceState({}, document.title, cleanUrl);
               return;
+            } else {
+              throw new Error("Gagal memperoleh data user dari tiket SSO.");
             }
           } catch (ticketErr: any) {
-            console.error("Authentication Error via SSO ticket:", ticketErr);
-            alert(`Authentication Error: ${ticketErr.message || 'Gagal memverifikasi tiket.'}`);
-            window.location.href = 'https://account.tmpa.my.id/login';
+            console.error("Gagal melakukan exchange tiket SSO di Bluefox:", ticketErr);
+            alert(`[Bluefox Login Gagal] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
+            setAppState('landing');
             return;
           } finally {
             setIsSyncingSSO(false);
