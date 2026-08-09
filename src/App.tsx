@@ -9,7 +9,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
-import { supabase, exchangeSsoTicket } from './lib/supabase';
+import { 
+  supabase, 
+  exchangeSsoTicket, 
+  listenToRealtimeMessages, 
+  sendMessageToSupabase, 
+  loadChatHistory 
+} from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -523,6 +529,51 @@ export default function App() {
     scrollToBottom();
   }, [messages, isLoading]);
 
+  // Realtime & Load Chat History integration with Supabase
+  useEffect(() => {
+    if (appState !== 'chat' || !currentSessionId) return;
+
+    const convId = currentSessionId;
+
+    // Ambil Riwayat Chat saat pertama kali membuka room
+    loadChatHistory(convId).then((data) => {
+      if (data && data.length > 0) {
+        const historyMsgs: Message[] = data.map((item: any) => ({
+          id: item.id?.toString() || Date.now().toString() + Math.random(),
+          role: (item.role === 'assistant' || item.role === 'model') ? 'model' : 'user',
+          text: item.content || item.text || '',
+        }));
+        setMessages(historyMsgs);
+      }
+    }).catch((e) => {
+      console.warn("Gagal memuat histori dari Supabase:", e);
+    });
+
+    // Mendengarkan Pesan Masuk secara REALTIME
+    const unsubscribe = listenToRealtimeMessages(convId, (newMessage) => {
+      console.log("[Realtime] Pesan baru diterima dari Supabase:", newMessage);
+      const uiMsg: Message = {
+        id: newMessage.id?.toString() || Date.now().toString(),
+        role: (newMessage.role === 'assistant' || newMessage.role === 'model') ? 'model' : 'user',
+        text: newMessage.content || newMessage.text || '',
+      };
+
+      setMessages((prev) => {
+        const exists = prev.some((m) => m.id === uiMsg.id || (m.text === uiMsg.text && m.role === uiMsg.role));
+        if (exists) return prev;
+        return [...prev, uiMsg];
+      });
+
+      if (newMessage.role === 'assistant' || newMessage.role === 'model') {
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [appState, currentSessionId]);
+
   const saveSessionsToLocal = (sessions: any[]) => {
     setChatSessions(sessions);
     localStorage.setItem('tmpa_chat_sessions', JSON.stringify(sessions));
@@ -606,61 +657,73 @@ export default function App() {
     
     saveSessionsToLocal(currentSessions);
 
+    // 1. Simpan pesan ke Supabase (Trigger Webhook di background -> Edge Function bluefox-processor)
     try {
-      abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
-
-      const history = baseMessages.map(m => ({
-        role: m.role,
-        text: m.text
-      }));
-
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
-        signal
-      });
-
-      if (!res.ok) {
-        throw new Error('Gagal mensintesis respons');
+      const { error: sbError } = await sendMessageToSupabase(text, sessionId);
+      if (sbError) {
+        console.warn("Gagal menyimpan pesan ke Supabase, mencoba fallback API lokal:", sbError);
+        throw sbError;
       }
+      // Berhasil disimpan ke Supabase!
+      // Realtime listener (listenToRealtimeMessages) akan menerima balasan AI otomatis
+    } catch (sbError) {
+      // Fallback jika Supabase database/webhook tidak tersedia
+      try {
+        abortControllerRef.current = new AbortController();
+        const signal = abortControllerRef.current.signal;
 
-      const data = await res.json();
-      
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        text: data.text,
-      };
+        const history = baseMessages.map(m => ({
+          role: m.role,
+          text: m.text
+        }));
 
-      const finalMessages = [...updatedMessages, aiMessage];
-      setMessages(finalMessages);
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
+          signal
+        });
 
-      const updateIdx = currentSessions.findIndex(s => s.id === sessionId);
-      if (updateIdx !== -1) {
-        currentSessions[updateIdx] = {
-          ...currentSessions[updateIdx],
-          messages: finalMessages,
-          updatedAt: Date.now()
+        if (!res.ok) {
+          throw new Error('Gagal mensintesis respons');
+        }
+
+        const data = await res.json();
+        
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: data.text,
         };
-        saveSessionsToLocal([...currentSessions]);
+
+        const finalMessages = [...updatedMessages, aiMessage];
+        setMessages(finalMessages);
+
+        const updateIdx = currentSessions.findIndex(s => s.id === sessionId);
+        if (updateIdx !== -1) {
+          currentSessions[updateIdx] = {
+            ...currentSessions[updateIdx],
+            messages: finalMessages,
+            updatedAt: Date.now()
+          };
+          saveSessionsToLocal([...currentSessions]);
+        }
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          console.log('Request aborted by user');
+          return;
+        }
+        console.error(error);
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan API Key diatur dengan benar.',
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      } finally {
+        setIsLoading(false);
+        abortControllerRef.current = null;
       }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('Request aborted by user');
-        return;
-      }
-      console.error(error);
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'model',
-        text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan API Key diatur dengan benar.',
-      };
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-      abortControllerRef.current = null;
     }
   };
 

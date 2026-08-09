@@ -81,4 +81,81 @@ export const getSession = async () => {
     const { data: { session }, error } = await supabase.auth.getSession();
     if (error) throw error;
     return session;
+};
+
+// ==========================================
+// A. Mendengarkan Pesan Masuk secara REALTIME
+// ==========================================
+export function listenToRealtimeMessages(conversationId: string, onNewMessage: (msg: any) => void) {
+  if (!conversationId) return () => {};
+
+  const channel = supabase
+    .channel(`room:${conversationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`
+      },
+      (payload) => {
+        const newMessage = payload.new;
+        onNewMessage(newMessage);
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        console.log('Realtime terhubung untuk room:', conversationId);
+      }
+    });
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
 }
+
+// ==========================================
+// B. Fungsi Kirim Pesan (Trigger Webhook di Background)
+// ==========================================
+export async function sendMessageToSupabase(text: string, conversationId: string) {
+  if (!text.trim() || !conversationId) return { data: null, error: 'Input tidak valid' };
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert([
+      {
+        conversation_id: conversationId,
+        role: 'user',
+        content: text
+      }
+    ])
+    .select();
+
+  if (error) {
+    console.error('Gagal mengirim pesan:', error.message);
+  }
+
+  return { data, error };
+}
+
+// ==========================================
+// C. Ambil Riwayat Chat Saat Pertama Kali Buka Web
+// ==========================================
+export async function loadChatHistory(conversationId: string) {
+  if (!conversationId) return [];
+
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Gagal memuat histori:', error.message);
+    return [];
+  }
+
+  return data || [];
+}
+
