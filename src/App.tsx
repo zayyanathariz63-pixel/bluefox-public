@@ -136,6 +136,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isExchangingRef = useRef(false);
 
   const handleLandingStart = async () => {
     if (user) {
@@ -201,6 +202,18 @@ export default function App() {
             window.location.href = `https://account.tmpa.my.id/ticket?client_id=tmpa_chat&redirect_uri=${encodeURIComponent(redirectUri)}`;
             return;
           }
+
+          // 🔒 2. CEK PENGUNCI: Jika sedang/sudah memproses tiket ini, STOP!
+          if (isExchangingRef.current) {
+            return;
+          }
+          
+          // Tandai bahwa proses penukaran sedang berjalan
+          isExchangingRef.current = true;
+
+          // Hapus parameter ticket dari URL browser secara diam-diam agar tidak dipanggil ulang
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
 
           // Ada tiket -> Tukarkan via Edge Function exchange-sso-ticket
           setIsSyncingSSO(true);
@@ -305,6 +318,7 @@ export default function App() {
           } catch (ticketErr: any) {
             console.error("Gagal melakukan exchange tiket SSO di Bluefox:", ticketErr);
             alert(`[Bluefox Login Gagal] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
+            isExchangingRef.current = false;
             setAppState('landing');
             return;
           } finally {
