@@ -486,12 +486,13 @@ export default function App() {
 
     checkAuthAndCallback();
 
-    // Listener perubahan state auth
+    // Listener perubahan state auth (menjaga sesi tetap hidup saat token direfresh otomatis)
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log("🔔 Auth Event terjadi:", event);
       if (session?.user) {
         setUser(session.user);
         setAppState('chat');
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setUser(null);
         setAppState('landing');
       }

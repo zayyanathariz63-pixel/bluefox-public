@@ -5,7 +5,18 @@ const env = (import.meta as any).env || {};
 export const supabaseUrl = env.VITE_SUPABASE_URL || 'https://jjlanjshpyklqayjzxyy.supabase.co';
 export const supabaseKey = env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseKey || 'dummy_anon_key');
+export const supabase = createClient(
+  supabaseUrl,
+  supabaseKey || 'dummy_anon_key',
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    },
+  }
+);
 
 const hasValidConfig = supabaseUrl !== 'https://dummy.supabase.co';
 
