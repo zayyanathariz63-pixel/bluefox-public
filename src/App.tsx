@@ -216,12 +216,10 @@ export default function App() {
 
           // Ada tiket -> Tukarkan via Edge Function exchange-sso-ticket
           setIsSyncingSSO(true);
-          setSyncStatus('Memproses autentikasi tiket SSO...');
+          setSyncStatus('🔄 Memverifikasi Sesi... Mohon tunggu sebentar, sedang menyambungkan akun Anda.');
           console.log("[Bluefox Chat] Tiket SSO terdeteksi, memproses autentikasi...");
 
           try {
-            setSyncStatus('Menukarkan tiket SSO...');
-
             const edgeData = await exchangeSsoTicket(ticketParam);
 
             setSyncStatus('Menyiapkan sesi aplikasi...');

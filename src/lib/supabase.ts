@@ -9,7 +9,13 @@ export const supabase = createClient(supabaseUrl, supabaseKey || 'dummy_anon_key
 
 const hasValidConfig = supabaseUrl !== 'https://dummy.supabase.co';
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const exchangeSsoTicket = async (ticketId: string) => {
+  // ⏳ JEDA 2 DETIK (2000 ms)
+  // Memberi napas ke Supabase DB untuk memastikan tiket dari 'account' sudah ter-commit
+  await delay(2000);
+
   // Use a single direct fetch to the Edge Function to prevent double execution on single-use tickets
   const edgeFunctionUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/exchange-sso-ticket`;
 
