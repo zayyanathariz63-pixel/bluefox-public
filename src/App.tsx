@@ -193,23 +193,22 @@ export default function App() {
         const isTicketPath = currentPath.startsWith('/ticket') || urlParams.has('ticket');
 
         if (isTicketPath) {
-          const redirectUri = window.location.hostname === 'chat.tmpa.my.id'
-            ? 'https://chat.tmpa.my.id/ticket'
-            : window.location.origin + '/ticket';
-
           if (!ticketParam) {
-            // Jika tidak ada tiket (misal membuka /ticket secara manual), lemparkan ke Hub account.tmpa.my.id untuk SSO
-            window.location.href = `https://account.tmpa.my.id/ticket?client_id=tmpa_chat&redirect_uri=${encodeURIComponent(redirectUri)}`;
+            // Jika tidak ada tiket (misal membuka /ticket secara manual), lemparkan ke Hub SSO
+            redirectToSSO();
             return;
           }
 
-          // 🔒 2. CEK PENGUNCI: Jika sedang/sudah memproses tiket ini, STOP!
-          if (isExchangingRef.current) {
+          // 🔒 2. CEK PENGUNCI: Gunakan sessionStorage & useRef agar tidak dieksekusi 2x
+          const ticketLockKey = `sso_lock_${ticketParam}`;
+          if (isExchangingRef.current || sessionStorage.getItem(ticketLockKey)) {
+            console.log("🔒 [Bluefox SSO] Tiket sedang/sudah diproses, mencegah eksekusi ganda:", ticketParam);
             return;
           }
-          
+
           // Tandai bahwa proses penukaran sedang berjalan
           isExchangingRef.current = true;
+          sessionStorage.setItem(ticketLockKey, 'processing');
 
           // Hapus parameter ticket dari URL browser secara diam-diam agar tidak dipanggil ulang
           const cleanUrl = window.location.origin + window.location.pathname;
@@ -309,7 +308,6 @@ export default function App() {
               setAppState('chat');
 
               // Bersihkan URL dari parameter ?ticket=... agar tampil cantik di browser
-              const cleanUrl = window.location.origin + window.location.pathname;
               window.history.replaceState({}, document.title, cleanUrl);
               return;
             } else {
@@ -317,8 +315,9 @@ export default function App() {
             }
           } catch (ticketErr: any) {
             console.error("Gagal melakukan exchange tiket SSO di Bluefox:", ticketErr);
-            alert(`[Bluefox Login Gagal] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
+            sessionStorage.removeItem(ticketLockKey);
             isExchangingRef.current = false;
+            alert(`[Bluefox Login Gagal] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
             setAppState('landing');
             return;
           } finally {
