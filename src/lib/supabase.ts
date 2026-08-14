@@ -326,30 +326,62 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 }
 
 // ==========================================
-// E. Panggil Edge Function 'bluefox-processor'
+// E. Panggil Edge Function 'bluefox-processor-'
+// URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
 // ==========================================
 export async function invokeBluefoxProcessor(
   message: string,
   conversationId?: string | null
 ) {
   try {
-    const { data, error } = await supabase.functions.invoke('bluefox-processor', {
+    // 1. Coba melalui supabase.functions.invoke dengan nama endpoint 'bluefox-processor-'
+    const { data, error } = await supabase.functions.invoke('bluefox-processor-', {
       body: {
         message,
         conversation_id: conversationId || null,
       },
     });
 
-    if (error) {
-      console.error('Gagal panggil bluefox-processor:', error);
-      return { data: null, error };
+    if (!error && data) {
+      return {
+        data: {
+          reply: data?.reply || data?.text || data?.message || data?.response || '',
+          conversation_id: data?.conversation_id || conversationId || null,
+          ...data,
+        },
+        error: null,
+      };
     }
 
+    // 2. Fallback: direct HTTP POST ke full URL jika invoke SDK mengalami kendala
+    const functionUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/bluefox-processor-`;
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || supabaseKey;
+
+    const res = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({
+        message,
+        conversation_id: conversationId || null,
+      }),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Edge Function error (${res.status}): ${errText}`);
+    }
+
+    const resData = await res.json();
     return {
       data: {
-        reply: data?.reply || data?.text || data?.message || '',
-        conversation_id: data?.conversation_id || conversationId || null,
-        ...data,
+        reply: resData?.reply || resData?.text || resData?.message || resData?.response || '',
+        conversation_id: resData?.conversation_id || conversationId || null,
+        ...resData,
       },
       error: null,
     };
