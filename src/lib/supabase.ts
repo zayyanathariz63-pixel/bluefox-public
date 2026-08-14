@@ -334,26 +334,45 @@ export async function invokeBluefoxProcessor(
   conversationId?: string | null
 ) {
   try {
-    // 1. Coba melalui supabase.functions.invoke dengan nama endpoint 'bluefox-processor-'
-    const { data, error } = await supabase.functions.invoke('bluefox-processor-', {
-      body: {
-        message,
-        conversation_id: conversationId || null,
-      },
-    });
+    // Pastikan conversation_id bernilai null jika string kosong atau tidak ada
+    const cleanConvId = (conversationId && typeof conversationId === 'string' && conversationId.trim() !== "")
+      ? conversationId.trim()
+      : null;
 
-    if (!error && data) {
-      return {
-        data: {
-          reply: data?.reply || data?.text || data?.message || data?.response || '',
-          conversation_id: data?.conversation_id || conversationId || null,
-          ...data,
-        },
-        error: null,
-      };
+    const requestBody = {
+      message: message.trim(),
+      conversation_id: cleanConvId,
+    };
+
+    console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
+
+    // 1. Coba melalui supabase.functions.invoke dengan nama endpoint 'bluefox-processor-'
+    try {
+      const { data, error } = await supabase.functions.invoke('bluefox-processor-', {
+        body: requestBody,
+      });
+
+      if (!error && data) {
+        console.log("📥 [Supabase Edge Function] Respons diterima (SDK):", data);
+        const replyText = data?.reply || data?.text || data?.message || data?.response || (typeof data === 'string' ? data : '');
+        const nextConvId = data?.conversation_id || data?.conversationId || cleanConvId;
+
+        return {
+          data: {
+            reply: replyText,
+            conversation_id: nextConvId,
+            ...data,
+          },
+          error: null,
+        };
+      } else if (error) {
+        console.warn("⚠️ [Supabase Edge Function] SDK invoke warning, mencoba direct HTTP fetch fallback:", error);
+      }
+    } catch (invokeErr) {
+      console.warn("⚠️ [Supabase Edge Function] SDK invoke exception, mencoba fallback HTTP:", invokeErr);
     }
 
-    // 2. Fallback: direct HTTP POST ke full URL jika invoke SDK mengalami kendala
+    // 2. Fallback: direct HTTP POST ke full URL https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
     const functionUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/bluefox-processor-`;
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token || supabaseKey;
@@ -365,28 +384,30 @@ export async function invokeBluefoxProcessor(
         'apikey': supabaseKey,
         ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({
-        message,
-        conversation_id: conversationId || null,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!res.ok) {
       const errText = await res.text();
+      console.error(`❌ [Edge Function] Direct fetch status ${res.status}:`, errText);
       throw new Error(`Edge Function error (${res.status}): ${errText}`);
     }
 
     const resData = await res.json();
+    console.log("📥 [Supabase Edge Function] Respons diterima (Direct Fetch):", resData);
+    const replyText = resData?.reply || resData?.text || resData?.message || resData?.response || (typeof resData === 'string' ? resData : '');
+    const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
+
     return {
       data: {
-        reply: resData?.reply || resData?.text || resData?.message || resData?.response || '',
-        conversation_id: resData?.conversation_id || conversationId || null,
+        reply: replyText,
+        conversation_id: nextConvId,
         ...resData,
       },
       error: null,
     };
   } catch (err: any) {
-    console.error('Exception invokeBluefoxProcessor:', err);
+    console.error('❌ Exception invokeBluefoxProcessor:', err);
     return { data: null, error: err?.message || 'Error Edge Function' };
   }
 }

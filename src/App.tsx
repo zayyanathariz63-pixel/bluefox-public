@@ -16,7 +16,8 @@ import {
   sendMessageToSupabase, 
   loadChatHistory,
   getValidUUID,
-  hasValidConfig
+  hasValidConfig,
+  invokeBluefoxProcessor
 } from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
@@ -648,9 +649,6 @@ export default function App() {
     setIsLoading(true);
 
     let sessionId = getValidUUID(currentSessionId);
-    if (!currentSessionId) {
-      setCurrentSessionId(sessionId);
-    }
     let currentSessions = [...chatSessions];
 
     const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
@@ -673,51 +671,61 @@ export default function App() {
     
     saveSessionsToLocal(currentSessions);
 
-    // 1. Simpan pesan user ke Supabase tabel messages
-    sendMessageToSupabase(text, sessionId, 'user').catch((err) => {
-      console.warn("Gagal menyimpan pesan user ke Supabase:", err);
-    });
-
     try {
       abortControllerRef.current = new AbortController();
-      const signal = abortControllerRef.current.signal;
+      let aiReplyText = '';
+      let effectiveConvId = currentSessionId || sessionId;
 
-      const history = baseMessages.map(m => ({
-        role: m.role,
-        text: m.text
-      }));
+      // 1. Prioritaskan Pemanggilan Supabase Edge Function 'bluefox-processor-'
+      const edgeRes = await invokeBluefoxProcessor(text, currentSessionId || null);
 
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
-        signal
-      });
+      if (!edgeRes.error && edgeRes.data && edgeRes.data.reply) {
+        aiReplyText = edgeRes.data.reply;
+        if (edgeRes.data.conversation_id) {
+          effectiveConvId = edgeRes.data.conversation_id;
+          setCurrentSessionId(effectiveConvId);
+        }
+      } else {
+        // 2. Fallback ke /api/chat jika Edge Function mengalami kendala
+        console.warn("⚠️ Menggunakan fallback API internal /api/chat:", edgeRes?.error);
+        const history = baseMessages.map(m => ({
+          role: m.role,
+          text: m.text
+        }));
 
-      if (!res.ok) {
-        throw new Error('Gagal mensintesis respons');
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
+          signal: abortControllerRef.current.signal
+        });
+
+        if (!res.ok) {
+          throw new Error('Gagal mensintesis respons');
+        }
+
+        const data = await res.json();
+        aiReplyText = data.text;
+
+        // Simpan pesan user & AI ke Supabase jika via fallback
+        sendMessageToSupabase(text, effectiveConvId, 'user').catch(() => {});
+        sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
       }
-
-      const data = await res.json();
       
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: data.text,
+        text: aiReplyText,
       };
 
       const finalMessages = [...updatedMessages, aiMessage];
       setMessages(finalMessages);
 
-      // 2. Simpan respons AI ke Supabase tabel messages
-      sendMessageToSupabase(data.text, sessionId, 'assistant').catch((err) => {
-        console.warn("Gagal menyimpan respons AI ke Supabase:", err);
-      });
-
-      const updateIdx = currentSessions.findIndex(s => s.id === sessionId);
+      const updateIdx = currentSessions.findIndex(s => s.id === sessionId || s.id === effectiveConvId);
       if (updateIdx !== -1) {
         currentSessions[updateIdx] = {
           ...currentSessions[updateIdx],
+          id: effectiveConvId,
           messages: finalMessages,
           updatedAt: Date.now()
         };
@@ -732,7 +740,7 @@ export default function App() {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan API Key diatur dengan benar.',
+        text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan koneksi atau Edge Function aktif.',
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
