@@ -15,7 +15,8 @@ import {
   listenToRealtimeMessages, 
   sendMessageToSupabase, 
   loadChatHistory,
-  getValidUUID
+  getValidUUID,
+  hasValidConfig
 } from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
@@ -507,7 +508,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (user) {
+    if (user && hasValidConfig) {
       const fetchTier = async () => {
         try {
           const { data: profil, error } = await supabase

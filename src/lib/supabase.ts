@@ -3,25 +3,47 @@ import { createClient } from '@supabase/supabase-js';
 const env = (import.meta as any).env || {};
 
 // Mendukung semua format environment variable dari Integrasi Vercel + Supabase
+const getEnvVar = (keys: string[]): string => {
+  for (const k of keys) {
+    if (env[k] && typeof env[k] === 'string' && env[k].trim() !== '') {
+      return env[k].trim();
+    }
+  }
+  if (typeof window !== 'undefined') {
+    for (const k of keys) {
+      const stored = window.localStorage.getItem(k) || (window as any)[k];
+      if (stored && typeof stored === 'string' && stored.trim() !== '') {
+        return stored.trim();
+      }
+    }
+  }
+  return '';
+};
+
 export const supabaseUrl: string = 
-  env.VITE_SUPABASE_URL ||
-  env.NEXT_PUBLIC_SUPABASE_URL ||
-  env.SUPABASE_URL ||
-  env.PUBLIC_SUPABASE_URL ||
+  getEnvVar(['VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL', 'PUBLIC_SUPABASE_URL']) ||
   'https://jjlanjshpyklqayjzxyy.supabase.co';
 
 export const supabaseKey: string = 
-  env.VITE_SUPABASE_ANON_KEY ||
-  env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  env.SUPABASE_ANON_KEY ||
-  env.SUPABASE_KEY ||
-  env.VITE_SUPABASE_KEY ||
-  env.PUBLIC_SUPABASE_ANON_KEY ||
-  '';
+  getEnvVar([
+    'VITE_SUPABASE_ANON_KEY', 
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY', 
+    'SUPABASE_ANON_KEY', 
+    'SUPABASE_KEY', 
+    'VITE_SUPABASE_KEY', 
+    'PUBLIC_SUPABASE_ANON_KEY'
+  ]) || '';
+
+export const hasValidConfig: boolean = Boolean(
+  supabaseUrl && 
+  supabaseKey && 
+  supabaseKey.length > 20 && 
+  supabaseUrl !== 'https://dummy.supabase.co'
+);
 
 export const supabase = createClient(
   supabaseUrl,
-  supabaseKey || 'dummy_anon_key',
+  supabaseKey || 'anon-key-placeholder',
   {
     auth: {
       persistSession: true,
@@ -31,8 +53,6 @@ export const supabase = createClient(
     },
   }
 );
-
-const hasValidConfig = supabaseUrl !== 'https://dummy.supabase.co';
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -106,32 +126,37 @@ export const getSession = async () => {
 // A. Mendengarkan Pesan Masuk secara REALTIME
 // ==========================================
 export function listenToRealtimeMessages(conversationId: string, onNewMessage: (msg: any) => void) {
-  if (!conversationId) return () => {};
+  if (!conversationId || !hasValidConfig) return () => {};
 
-  const channel = supabase
-    .channel(`room:${conversationId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'messages',
-        filter: `conversation_id=eq.${conversationId}`
-      },
-      (payload) => {
-        const newMessage = payload.new;
-        onNewMessage(newMessage);
-      }
-    )
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        console.log('Realtime terhubung untuk room:', conversationId);
-      }
-    });
+  try {
+    const channel = supabase
+      .channel(`room:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`
+        },
+        (payload) => {
+          const newMessage = payload.new;
+          onNewMessage(newMessage);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime terhubung untuk room:', conversationId);
+        }
+      });
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn("Gagal inisialisasi Realtime channel:", err);
+    return () => {};
+  }
 }
 
 // Helper untuk memastikan format UUID valid
@@ -158,6 +183,10 @@ export async function sendMessageToSupabase(
   role: 'user' | 'assistant' = 'user'
 ) {
   if (!text.trim() || !conversationId) return { data: null, error: 'Input tidak valid' };
+  if (!hasValidConfig) {
+    console.log("ℹ️ [Supabase] Config anon key belum diatur, melewati sinkronisasi tabel messages.");
+    return { data: null, error: null };
+  }
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -211,14 +240,14 @@ export async function sendMessageToSupabase(
     }
 
     if (error) {
-      console.error('❌ Gagal insert pesan ke tabel messages:', error.message, error);
+      console.warn('⚠️ Gagal insert pesan ke tabel messages (cek RLS/Permissions):', error.message);
       return { data: null, error: error.message };
     }
 
     console.log('✅ Berhasil insert pesan ke tabel messages:', data);
     return { data, error: null };
   } catch (err: any) {
-    console.error('❌ Exception sendMessageToSupabase:', err);
+    console.warn('⚠️ Exception sendMessageToSupabase:', err?.message || err);
     return { data: null, error: err?.message || 'Error tidak diketahui' };
   }
 }
@@ -227,7 +256,7 @@ export async function sendMessageToSupabase(
 // C. Ambil Riwayat Chat Saat Pertama Kali Buka Web
 // ==========================================
 export async function loadChatHistory(conversationId: string) {
-  if (!conversationId) return [];
+  if (!conversationId || !hasValidConfig) return [];
 
   try {
     const { data, error } = await supabase
@@ -237,13 +266,13 @@ export async function loadChatHistory(conversationId: string) {
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Gagal memuat histori:', error.message);
+      console.warn('Gagal memuat histori messages:', error.message);
       return [];
     }
 
     return data || [];
   } catch (err) {
-    console.error('Exception loadChatHistory:', err);
+    console.warn('Exception loadChatHistory:', err);
     return [];
   }
 }
