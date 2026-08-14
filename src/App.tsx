@@ -511,18 +511,21 @@ export default function App() {
     if (user && hasValidConfig) {
       const fetchTier = async () => {
         try {
+          // Gunakan .maybeSingle() agar PostgREST tidak mengembalikan status HTTP 406 (Not Acceptable) jika baris user belum dibuat
           const { data: profil, error } = await supabase
             .from('users')
             .select('plan')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
 
-          if (!error && profil && profil.plan) {
+          if (!error && profil?.plan) {
             setUserTier(profil.plan.toUpperCase());
+          } else if (user.user_metadata?.plan || (user as any).app_metadata?.plan) {
+            setUserTier((user.user_metadata?.plan || (user as any).app_metadata?.plan).toUpperCase());
           } else {
             setUserTier("FREE (DEFAULT)");
           }
-        } catch (err) {
+        } catch {
           setUserTier("FREE (DEFAULT)");
         }
       };
