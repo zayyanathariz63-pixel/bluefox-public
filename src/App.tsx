@@ -144,11 +144,28 @@ export default function App() {
   const usage = getUsage();
   const isUsageLimitReached = usage.hourly >= 100 || usage.weekly >= 100;
 
-  const updateUsage = (model: string) => {
+  const updateUsage = (model: string, isVision?: boolean) => {
     let h = 0, w = 0;
-    if (model === 'agnes-2.0-flash' || model === 'qwen3_coder') { h = 4; w = 3; }
-    else if (model === 'laguna-s-2.1' || model === 'gpt_oss') { h = 3; w = 3; }
-    else { h = 2; w = 1.5; }
+    if (model === 'agnes-2.0-flash' || model === 'qwen3_coder') {
+      if (isVision) {
+        h = 19; // Vision: 19% per 5 jam
+        w = 14; // Vision: 14% weekly
+      } else {
+        h = 13; // Non vision: 13% per 5 jam
+        w = 10; // Non vision: 10% weekly
+      }
+    } else if (model === 'tencent-hy3-free' || model === 'gpt_oss') {
+      // Tmpa ai v1
+      h = 12; // 12% per 5 jam
+      w = 9;  // 9% weekly
+    } else if (model === 'laguna-s-2.1' || model === 'mistral_nemotron') {
+      // Dilo
+      h = 8;  // 8% per 5 jam
+      w = 6;  // 6% weekly
+    } else {
+      h = 12;
+      w = 9;
+    }
     
     const newEvent = { h, w, ts: Date.now() };
     const now = Date.now();
@@ -688,7 +705,8 @@ export default function App() {
       text: userText,
     };
     
-    updateUsage(selectedModel);
+    const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
+    updateUsage(currentEffectiveModel, isVisionActive);
 
     const updatedMessages = [...baseMessages, userMessage];
     setMessages(updatedMessages);
@@ -936,31 +954,22 @@ export default function App() {
             </button>
           </div>
 
-          {/* Model Selector & Vision Trigger */}
+          {/* Model Selector Trigger */}
           <div className="flex items-center gap-2">
             <div 
               onClick={() => setIsModelSelectorOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 hover:bg-gray-800 border border-gray-800 transition-colors cursor-pointer text-xs font-semibold text-gray-300 active:scale-95"
             >
               <span>Model: <strong className="text-blue-500">
-                {selectedModel === 'agnes-2.0-flash' ? 'Tmpa ai v2' : selectedModel === 'laguna-s-2.1' ? 'Tmpa ai v1' : 'Dilo'}
+                {selectedModel === 'agnes-2.0-flash' ? 'Tmpa ai v2' : selectedModel === 'tencent-hy3-free' ? 'Tmpa ai v1' : 'Dilo'}
               </strong></span>
+              {isVisionActive && (
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">
+                  <Eye size={10} /> Vision
+                </span>
+              )}
               <ChevronDown size={14} className="text-gray-400 shrink-0" />
             </div>
-
-            <button
-              onClick={() => setIsVisionSelectorOpen(true)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all text-xs font-semibold active:scale-95 cursor-pointer ${
-                isVisionActive 
-                  ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/60 shadow-[0_0_10px_rgba(6,182,212,0.25)]' 
-                  : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-              }`}
-              title="Pengaturan Mode Vision"
-            >
-              {isVisionActive ? <Eye size={13} className="text-cyan-400" /> : <EyeOff size={13} />}
-              <span>Vision</span>
-              {isVisionActive && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>}
-            </button>
           </div>
 
           <div className="relative shrink-0">
@@ -1243,7 +1252,7 @@ export default function App() {
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
                 <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-900">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Model AI (Router Bynara)</h3>
+                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Model AI</h3>
                     <p className="text-xs text-gray-400 mt-0.5">Tentukan model yang disukai untuk memproses obrolan Anda</p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -1321,37 +1330,7 @@ export default function App() {
                     </p>
                   </button>
 
-                  {/* Tmpa ai v1 (laguna-s-2.1) Choice */}
-                  <button 
-                    onClick={() => handleSelectModel('laguna-s-2.1')}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
-                      isVisionActive 
-                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
-                        : selectedModel === 'laguna-s-2.1'
-                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
-                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
-                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
-                      }`}>
-                        <Cpu size={18} />
-                      </div>
-                      {isVisionActive && (
-                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
-                          <Lock size={11} /> Terkunci
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v1</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
-                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
-                    </p>
-                  </button>
-
-                  {/* Dilo (tencent-hy3-free) Choice */}
+                  {/* Tmpa ai v1 (tencent-hy3-free) Choice */}
                   <button 
                     onClick={() => handleSelectModel('tencent-hy3-free')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
@@ -1366,6 +1345,36 @@ export default function App() {
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
                         selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
                       }`}>
+                        <Cpu size={18} />
+                      </div>
+                      {isVisionActive && (
+                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
+                          <Lock size={11} /> Terkunci
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v1</h4>
+                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
+                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
+                    </p>
+                  </button>
+
+                  {/* Dilo (laguna-s-2.1) Choice */}
+                  <button 
+                    onClick={() => handleSelectModel('laguna-s-2.1')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
+                      isVisionActive 
+                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
+                        : selectedModel === 'laguna-s-2.1'
+                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
+                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                      }`}>
                         <Layers size={18} />
                       </div>
                       {isVisionActive && (
@@ -1375,7 +1384,7 @@ export default function App() {
                       )}
                     </div>
                     <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Dilo</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">powered by tencent-hy3-free</span>
+                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
                     <p className="text-xs text-gray-400 mt-2 leading-relaxed">
                       Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.
                     </p>

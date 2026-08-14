@@ -164,16 +164,16 @@ async function startServer() {
         "tencent-hy3-free": "tencent-hy3-free",
         // Legacy aliases
         qwen3_coder: "agnes-2.0-flash",
-        mistral_nemotron: "tencent-hy3-free",
-        gpt_oss: "laguna-s-2.1"
+        gpt_oss: "tencent-hy3-free",
+        mistral_nemotron: "laguna-s-2.1"
       };
  
       const requestedModelId = modelMapping[model] || "agnes-2.0-flash";
  
       const friendlyNameMap: { [key: string]: string } = {
         "agnes-2.0-flash": "Tmpa ai v2 (agnes-2.0-flash)",
-        "laguna-s-2.1": "Tmpa ai v1 (laguna-s-2.1)",
-        "tencent-hy3-free": "Dilo (tencent-hy3-free)"
+        "tencent-hy3-free": "Tmpa ai v1 (tencent-hy3-free)",
+        "laguna-s-2.1": "Dilo (laguna-s-2.1)"
       };
  
       const requestedFriendlyName = friendlyNameMap[requestedModelId] || model;
