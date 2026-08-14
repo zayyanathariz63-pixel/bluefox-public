@@ -122,6 +122,7 @@ export default function App() {
   };
 
 
+  const [errorState, setErrorState] = useState<string | null>(null);
   const [reasoningMode, setReasoningMode] = useState<'standar' | 'penalaran'>('standar');
   const [isReasoningSelectorOpen, setIsReasoningSelectorOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -630,23 +631,29 @@ export default function App() {
   };
 
   const handleSendMessage = async (text: string, overrideMessages?: Message[]) => {
+    const userText = text.trim();
+    if (!userText || isLoading) return;
+
     if (isUsageLimitReached) {
       alert("Telah mencapai batas penggunaan (100%). Menunggu reset.");
       return;
     }
 
+    // 1. Set State Loading & Tampilkan pesan User di UI lebih dulu (Optimistic UI)
+    setIsLoading(true);
+    setErrorState(null);
+
     const baseMessages = overrideMessages ?? messages;
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      text,
+      text: userText,
     };
     
     updateUsage(selectedModel);
 
     const updatedMessages = [...baseMessages, userMessage];
     setMessages(updatedMessages);
-    setIsLoading(true);
 
     let sessionId = getValidUUID(currentSessionId);
     let currentSessions = [...chatSessions];
@@ -655,7 +662,7 @@ export default function App() {
     if (sessionIdx === -1) {
       const newSession = {
         id: sessionId,
-        title: text.length > 30 ? text.substring(0, 30) + '...' : text,
+        title: userText.length > 30 ? userText.substring(0, 30) + '...' : userText,
         messages: updatedMessages,
         updatedAt: Date.now(),
         model: selectedModel
@@ -676,22 +683,30 @@ export default function App() {
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
-      // 1. Prioritaskan Pemanggilan Supabase Edge Function 'bluefox-processor-'
-      const edgeRes = await invokeBluefoxProcessor(text, currentSessionId || null);
+      // 2. Panggil Edge Function dan WAJIB ditunggu (await)
+      const edgeRes = await invokeBluefoxProcessor(userText, currentSessionId || null);
 
-      if (edgeRes.data && edgeRes.data.success && edgeRes.data.reply) {
+      // 3. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
+      if (edgeRes.error && !edgeRes.data) {
+        console.error("SDK Error:", edgeRes.error);
+        throw new Error(typeof edgeRes.error === 'string' ? edgeRes.error : "Gagal terhubung ke server. Periksa koneksi internetmu.");
+      }
+
+      // 4. Cek Error kustom dari Edge Function
+      if (edgeRes.data && edgeRes.data.success === false) {
+        throw new Error(edgeRes.data.error || "Gagal memproses pesan di AI server.");
+      }
+
+      // 5. Jika SUKSES dan balasan AI ada
+      if (edgeRes.data && edgeRes.data.reply) {
         aiReplyText = edgeRes.data.reply;
         if (edgeRes.data.conversation_id) {
           effectiveConvId = edgeRes.data.conversation_id;
           setCurrentSessionId(effectiveConvId);
         }
-      } else if (edgeRes.data && edgeRes.data.success === false) {
-        // Edge function mengembalikan error spesifik (API Key / DB Error, dsb)
-        console.error("❌ Detail Error Asli dari Server Edge Function:", edgeRes.data.error);
-        aiReplyText = `⚠️ Error dari Server Edge Function: ${edgeRes.data.error || 'Terjadi kesalahan internal pada Edge Function'}`;
       } else {
-        // 2. Fallback ke /api/chat jika Edge Function mengalami kendala koneksi
-        console.warn("⚠️ Menggunakan fallback API internal /api/chat:", edgeRes?.error);
+        // Fallback jika respons kosong / menggunakan fallback internal API
+        console.warn("⚠️ Menggunakan fallback API internal /api/chat");
         const history = baseMessages.map(m => ({
           role: m.role,
           text: m.text
@@ -700,23 +715,23 @@ export default function App() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
+          body: JSON.stringify({ history, message: userText, model: selectedModel, customInstruction, reasoningMode }),
           signal: abortControllerRef.current.signal
         });
 
         if (!res.ok) {
           const errData = await res.json().catch(() => ({}));
-          throw new Error(errData?.error || 'Gagal mensintesis respons dari server internal');
+          throw new Error(errData?.error || "Format respons dari server tidak sesuai.");
         }
 
         const data = await res.json();
-        aiReplyText = data.text;
+        aiReplyText = data.text || "Tidak ada respons yang diterima.";
 
-        // Simpan pesan user & AI ke Supabase jika via fallback
-        sendMessageToSupabase(text, effectiveConvId, 'user').catch(() => {});
+        sendMessageToSupabase(userText, effectiveConvId, 'user').catch(() => {});
         sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
       }
       
+      // Tampilkan balasan AI ke UI
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
@@ -736,19 +751,24 @@ export default function App() {
         };
         saveSessionsToLocal([...currentSessions]);
       }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
         console.log('Request aborted by user');
         return;
       }
-      console.error(error);
+      // Tangkap error dan tampilkan di UI secara halus
+      console.error("Catch Block Frontend Error:", err);
+      const errMsg = err?.message || "Terjadi kesalahan saat memuat balasan.";
+      setErrorState(errMsg);
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan koneksi atau Edge Function aktif.',
+        text: `⚠️ ${errMsg}`,
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
+      // 6. Matikan indikator Loading setelah SEMUA proses selesai
       setIsLoading(false);
       abortControllerRef.current = null;
     }
