@@ -190,46 +190,53 @@ export async function sendMessageToSupabase(
 
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    const userId = session?.user?.id || null;
+    const rawUserId = session?.user?.id;
+    const userId = (rawUserId && typeof rawUserId === 'string' && rawUserId.trim() !== "") ? rawUserId.trim() : null;
+    const validConvId = getValidUUID(conversationId);
 
-    // 1. Coba pastikan record di tabel 'conversations' ada jika ada Foreign Key constraint
+    // 1. Pastikan record di tabel 'conversations' ada (dengan payload bersih)
     try {
+      const convPayload: Record<string, any> = {
+        id: validConvId,
+        title: text.length > 40 ? text.substring(0, 40) + '...' : text,
+        updated_at: new Date().toISOString(),
+      };
+      
+      // Hanya masukkan user_id jika nilainya BENAR-BENAR ADA (bukan null/undefined/string kosong)
+      if (userId) {
+        convPayload.user_id = userId;
+      }
+
       await supabase
         .from('conversations')
-        .upsert(
-          {
-            id: conversationId,
-            user_id: userId,
-            title: text.length > 40 ? text.substring(0, 40) + '...' : text,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' }
-        );
+        .upsert([convPayload], { onConflict: 'id' });
     } catch {
       // Abaikan jika tabel conversations tidak dibuat
     }
 
-    // 2. Siapkan payload pesan
-    const payload: any = {
-      conversation_id: conversationId,
+    // 2. Siapkan payload pesan yang bersih
+    const msgPayload: Record<string, any> = {
+      conversation_id: validConvId,
       role: role,
       content: text,
     };
+
+    // Hanya masukkan user_id jika nilainya BENAR-BENAR ADA
     if (userId) {
-      payload.user_id = userId;
+      msgPayload.user_id = userId;
     }
 
-    console.log(`📤 [Supabase] Menginsert pesan (${role}) ke tabel messages:`, payload);
+    console.log(`📤 [Supabase] Menginsert pesan (${role}) ke tabel messages:`, msgPayload);
 
     let { data, error } = await supabase
       .from('messages')
-      .insert([payload])
+      .insert([msgPayload])
       .select();
 
     // Fallback jika nama kolom content menggunakan text atau message
     if (error && error.message?.includes('column "content" does not exist')) {
-      const fallbackPayload: any = {
-        conversation_id: conversationId,
+      const fallbackPayload: Record<string, any> = {
+        conversation_id: validConvId,
         role: role,
         text: text,
       };
@@ -276,4 +283,46 @@ export async function loadChatHistory(conversationId: string) {
     return [];
   }
 }
+
+// ==========================================
+// D. Helper Pembuatan Conversation Bersih
+// ==========================================
+export async function createConversation(title: string = 'Chat Baru', customId?: string) {
+  if (!hasValidConfig) return { data: null, error: null };
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const rawUserId = session?.user?.id;
+    const userId = (rawUserId && typeof rawUserId === 'string' && rawUserId.trim() !== "") ? rawUserId.trim() : null;
+
+    const payload: Record<string, any> = {
+      title: title.trim() || 'Chat Baru',
+    };
+
+    if (customId && customId.trim() !== "") {
+      payload.id = getValidUUID(customId);
+    }
+
+    // Hanya masukkan user_id jika nilainya BENAR-BENAR ADA (bukan null/undefined/string kosong)
+    if (userId) {
+      payload.user_id = userId;
+    }
+
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert([payload])
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Gagal buat conversation:", error.message);
+    }
+
+    return { data, error };
+  } catch (err: any) {
+    console.warn("Exception createConversation:", err);
+    return { data: null, error: err?.message || 'Error' };
+  }
+}
+
 
