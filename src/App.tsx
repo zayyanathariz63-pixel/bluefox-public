@@ -4,7 +4,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2 } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -55,12 +55,23 @@ export function redirectToSSO() {
   window.location.href = ssoUrl.toString();
 }
 
+export type SupportedModel = 'agnes-2.0-flash' | 'laguna-s-2.1' | 'tencent-hy3-free';
+
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatSessions, setChatSessions] = useState<any[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<'qwen3_coder' | 'mistral_nemotron' | 'gpt_oss'>('qwen3_coder');
+  const [selectedModel, setSelectedModel] = useState<SupportedModel>('agnes-2.0-flash');
+  const [isVisionActive, setIsVisionActive] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('tmpa_vision_active') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+  const [isVisionSelectorOpen, setIsVisionSelectorOpen] = useState(false);
+  const [visionLockedNotice, setVisionLockedNotice] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConnectorsModalOpen, setIsConnectorsModalOpen] = useState(false);
 
@@ -74,6 +85,33 @@ export default function App() {
 
   const toggleConnector = (id: string) => {
     setConnectors(prev => prev.map(c => c.id === id ? { ...c, isActive: !c.isActive } : c));
+  };
+
+  const handleEnableVision = () => {
+    setIsVisionActive(true);
+    setSelectedModel('agnes-2.0-flash');
+    try {
+      localStorage.setItem('tmpa_vision_active', 'true');
+    } catch {}
+    setIsVisionSelectorOpen(false);
+  };
+
+  const handleDisableVision = () => {
+    setIsVisionActive(false);
+    try {
+      localStorage.setItem('tmpa_vision_active', 'false');
+    } catch {}
+    setIsVisionSelectorOpen(false);
+  };
+
+  const handleSelectModel = (modelId: SupportedModel) => {
+    if (isVisionActive && modelId !== 'agnes-2.0-flash') {
+      setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Agnes AI (agnes-2.0-flash). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
+      setTimeout(() => setVisionLockedNotice(null), 4000);
+      return;
+    }
+    setSelectedModel(modelId);
+    setIsModelSelectorOpen(false);
   };
 
   const [usageEvents, setUsageEvents] = useState<{h: number, w: number, ts: number}[]>(() => {
@@ -108,8 +146,8 @@ export default function App() {
 
   const updateUsage = (model: string) => {
     let h = 0, w = 0;
-    if (model === 'qwen3_coder') { h = 4; w = 3; }
-    else if (model === 'gpt_oss') { h = 3; w = 3; }
+    if (model === 'agnes-2.0-flash' || model === 'qwen3_coder') { h = 4; w = 3; }
+    else if (model === 'laguna-s-2.1' || model === 'gpt_oss') { h = 3; w = 3; }
     else { h = 2; w = 1.5; }
     
     const newEvent = { h, w, ts: Date.now() };
@@ -684,7 +722,8 @@ export default function App() {
       let effectiveConvId = currentSessionId || sessionId;
 
       // 2. Panggil Edge Function dan WAJIB ditunggu (await)
-      const edgeRes = await invokeBluefoxProcessor(userText, currentSessionId || null);
+      const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
+      const edgeRes = await invokeBluefoxProcessor(userText, currentSessionId || null, currentEffectiveModel, isVisionActive);
 
       // 3. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
       if (edgeRes.error && !edgeRes.data) {
@@ -897,15 +936,31 @@ export default function App() {
             </button>
           </div>
 
-          {/* Model Selector Trigger */}
-          <div 
-            onClick={() => setIsModelSelectorOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 hover:bg-gray-800 border border-gray-800 transition-colors cursor-pointer text-xs font-semibold text-gray-300 active:scale-95"
-          >
-            <span>Model: <strong className="text-blue-500">
-              {selectedModel === 'qwen3_coder' ? 'tmpa v2' : selectedModel === 'mistral_nemotron' ? 'Dilo' : 'tmpa v1'}
-            </strong></span>
-            <ChevronDown size={14} className="text-gray-400 shrink-0" />
+          {/* Model Selector & Vision Trigger */}
+          <div className="flex items-center gap-2">
+            <div 
+              onClick={() => setIsModelSelectorOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 hover:bg-gray-800 border border-gray-800 transition-colors cursor-pointer text-xs font-semibold text-gray-300 active:scale-95"
+            >
+              <span>Model: <strong className="text-blue-500">
+                {selectedModel === 'agnes-2.0-flash' ? 'Tmpa ai v2' : selectedModel === 'laguna-s-2.1' ? 'Tmpa ai v1' : 'Dilo'}
+              </strong></span>
+              <ChevronDown size={14} className="text-gray-400 shrink-0" />
+            </div>
+
+            <button
+              onClick={() => setIsVisionSelectorOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all text-xs font-semibold active:scale-95 cursor-pointer ${
+                isVisionActive 
+                  ? 'bg-cyan-950/60 border-cyan-500/50 text-cyan-300 hover:bg-cyan-900/60 shadow-[0_0_10px_rgba(6,182,212,0.25)]' 
+                  : 'bg-gray-900 border-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+              }`}
+              title="Pengaturan Mode Vision"
+            >
+              {isVisionActive ? <Eye size={13} className="text-cyan-400" /> : <EyeOff size={13} />}
+              <span>Vision</span>
+              {isVisionActive && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>}
+            </button>
           </div>
 
           <div className="relative shrink-0">
@@ -1186,12 +1241,26 @@ export default function App() {
               className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-gray-950 border-b border-gray-900 shadow-2xl z-40 overflow-y-auto"
             >
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-950">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-900">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Model AI (OpenRouter)</h3>
+                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Model AI (Router Bynara)</h3>
                     <p className="text-xs text-gray-400 mt-0.5">Tentukan model yang disukai untuk memproses obrolan Anda</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        setIsModelSelectorOpen(false);
+                        setIsVisionSelectorOpen(true);
+                      }}
+                      className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
+                        isVisionActive 
+                          ? 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/30' 
+                          : 'text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800'
+                      }`}
+                    >
+                      {isVisionActive ? <Eye size={14} className="text-cyan-400" /> : <EyeOff size={14} />}
+                      Vision {isVisionActive ? '(Aktif)' : ''}
+                    </button>
                     <button 
                       onClick={() => {
                         setIsModelSelectorOpen(false);
@@ -1210,77 +1279,221 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {visionLockedNotice && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className="mb-4 p-3 rounded-xl bg-cyan-950/70 border border-cyan-500/50 text-cyan-200 text-xs flex items-center gap-2"
+                  >
+                    <Lock size={14} className="text-cyan-400 shrink-0" />
+                    <span>{visionLockedNotice}</span>
+                  </motion.div>
+                )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                  {/* Qwen Choice */}
+                  {/* Tmpa ai v2 (agnes-2.0-flash) Choice */}
                   <button 
-                    onClick={() => {
-                      setSelectedModel('qwen3_coder');
-                      setIsModelSelectorOpen(false);
-                    }}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
-                      selectedModel === 'qwen3_coder' 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10' 
+                    onClick={() => handleSelectModel('agnes-2.0-flash')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
+                      selectedModel === 'agnes-2.0-flash' 
+                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 ring-1 ring-blue-500/30' 
                         : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
                     }`}
                   >
-                    <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center mb-3.5 md:mb-4 ${
-                      selectedModel === 'qwen3_coder' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
-                    }`}>
-                      <Bot size={18} />
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'agnes-2.0-flash' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                      }`}>
+                        <Bot size={18} />
+                      </div>
+                      {isVisionActive && (
+                        <span className="text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Eye size={10} /> Vision Aktif
+                        </span>
+                      )}
                     </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">tmpa v2</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by qwen3-coder-450B-A35B-NVIDIA</span>
+                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v2</h4>
+                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by agnes-2.0-flash</span>
                     <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                      Model pemrograman dengan 480 Miliar parameter (A35B aktif) yang sangat andal untuk coding, analisis program, dan bantuan teknis.
+                      Model AI cerdas multimodal berkecepatan tinggi dengan kapabilitas analisis visual komprehensif, coding, dan penalaran mutakhir.
                     </p>
                   </button>
 
-                  {/* Mistral Nemotron Choice */}
+                  {/* Tmpa ai v1 (laguna-s-2.1) Choice */}
                   <button 
-                    onClick={() => {
-                      setSelectedModel('mistral_nemotron');
-                      setIsModelSelectorOpen(false);
-                    }}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
-                      selectedModel === 'mistral_nemotron' 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                    onClick={() => handleSelectModel('laguna-s-2.1')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
+                      isVisionActive 
+                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
+                        : selectedModel === 'laguna-s-2.1'
+                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
+                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
                     }`}
                   >
-                    <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center mb-3.5 md:mb-4 ${
-                      selectedModel === 'mistral_nemotron' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
-                    }`}>
-                      <Layers size={18} />
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                      }`}>
+                        <Cpu size={18} />
+                      </div>
+                      {isVisionActive && (
+                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
+                          <Lock size={11} /> Terkunci
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v1</h4>
+                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
+                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
+                    </p>
+                  </button>
+
+                  {/* Dilo (tencent-hy3-free) Choice */}
+                  <button 
+                    onClick={() => handleSelectModel('tencent-hy3-free')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
+                      isVisionActive 
+                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
+                        : selectedModel === 'tencent-hy3-free'
+                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
+                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                      }`}>
+                        <Layers size={18} />
+                      </div>
+                      {isVisionActive && (
+                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
+                          <Lock size={11} /> Terkunci
+                        </span>
+                      )}
                     </div>
                     <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Dilo</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">powered by Mistral-nemotron NVIDIA</span>
+                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">powered by tencent-hy3-free</span>
                     <p className="text-xs text-gray-400 mt-2 leading-relaxed">
                       Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.
                     </p>
                   </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
-                  {/* GPT OSS Choice */}
+      <AnimatePresence>
+        {isVisionSelectorOpen && (
+          <div className="fixed inset-0 z-30 flex flex-col justify-end">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/75 backdrop-blur-sm" 
+              onClick={() => setIsVisionSelectorOpen(false)}
+            />
+            
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="relative w-full max-h-[80vh] md:max-h-[60vh] bg-gray-950 border-t border-gray-900 shadow-2xl z-40 overflow-y-auto rounded-t-3xl"
+            >
+              <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
+                <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-900">
+                  <div>
+                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight flex items-center gap-2">
+                      <Eye size={20} className="text-cyan-400" />
+                      Pengaturan Mode Vision
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-0.5">Tentukan apakah mode pemrosesan visual aktif atau nonaktif</p>
+                  </div>
                   <button 
-                    onClick={() => {
-                      setSelectedModel('gpt_oss');
-                      setIsModelSelectorOpen(false);
-                    }}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
-                      selectedModel === 'gpt_oss' 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10' 
+                    onClick={() => setIsVisionSelectorOpen(false)}
+                    className="text-xs font-semibold text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800 px-3 py-1.5 rounded-full transition-all cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+                
+                <div className="flex flex-col gap-3 md:gap-4">
+                  {/* Option: Aktifkan Vision */}
+                  <button 
+                    onClick={handleEnableVision}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
+                      isVisionActive 
+                        ? 'bg-cyan-950/40 border-cyan-500 shadow-sm shadow-cyan-500/20 ring-1 ring-cyan-500/40' 
                         : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
                     }`}
                   >
-                    <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center mb-3.5 md:mb-4 ${
-                      selectedModel === 'gpt_oss' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
-                    }`}>
-                      <Cpu size={18} />
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isVisionActive ? 'bg-cyan-500 text-black shadow-[0_0_12px_rgba(6,182,212,0.5)]' : 'bg-gray-800 text-gray-400'}`}>
+                          <Eye size={18} />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-white text-sm md:text-base flex items-center gap-2">
+                            Aktifkan Vision (Agnes AI)
+                            {isVisionActive && (
+                              <span className="text-[11px] font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 px-2 py-0.5 rounded-full">
+                                Sedang Digunakan
+                              </span>
+                            )}
+                          </h4>
+                          <span className="text-[10px] text-cyan-400 font-mono">model: agnes-2.0-flash</span>
+                        </div>
+                      </div>
+                      {isVisionActive && (
+                        <div className="w-6 h-6 rounded-full bg-cyan-500 text-black flex items-center justify-center">
+                          <Check size={14} className="stroke-[3]" />
+                        </div>
+                      )}
                     </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">tmpa v1</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by gpt-oos-20B-NVIDIA</span>
-                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
-                      Model open-source modular 20B parameter yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
+                    <p className="text-xs text-gray-300 leading-relaxed pl-12">
+                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-300">Agnes AI (agnes-2.0-flash)</strong> sehingga model tidak dapat diubah selama mode Vision menyala.
+                    </p>
+                  </button>
+
+                  {/* Option: No Vision */}
+                  <button 
+                    onClick={handleDisableVision}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
+                      !isVisionActive 
+                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 ring-1 ring-blue-500/30' 
+                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${!isVisionActive ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                          <EyeOff size={18} />
+                        </div>
+                        <div>
+                          <h4 className="font-semibold text-white text-sm md:text-base flex items-center gap-2">
+                            No Vision
+                            {!isVisionActive && (
+                              <span className="text-[11px] font-medium bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-full">
+                                Standar Teks
+                              </span>
+                            )}
+                          </h4>
+                          <span className="text-[10px] text-gray-400 font-mono">Bebas memilih model</span>
+                        </div>
+                      </div>
+                      {!isVisionActive && (
+                        <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center">
+                          <Check size={14} className="stroke-[3]" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 leading-relaxed pl-12">
+                      Mode percakapan standar tanpa analisis visual khusus. Anda bebas memilih model apa saja (Tmpa ai v2, Tmpa ai v1, atau Dilo).
                     </p>
                   </button>
                 </div>

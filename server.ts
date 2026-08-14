@@ -156,19 +156,24 @@ async function startServer() {
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
  
       const modelMapping: { [key: string]: string } = {
-        qwen3_coder: "qwen/qwen-2.5-coder-32b-instruct:free",
-        mistral_nemotron: "mistralai/mistral-nemo:free",
-        gpt_oss: "google/gemma-2-9b-it:free"
+        agnes_2_0_flash: "agnes-2.0-flash",
+        laguna_s_2_1: "laguna-s-2.1",
+        tencent_hy3_free: "tencent-hy3-free",
+        "agnes-2.0-flash": "agnes-2.0-flash",
+        "laguna-s-2.1": "laguna-s-2.1",
+        "tencent-hy3-free": "tencent-hy3-free",
+        // Legacy aliases
+        qwen3_coder: "agnes-2.0-flash",
+        mistral_nemotron: "tencent-hy3-free",
+        gpt_oss: "laguna-s-2.1"
       };
  
-      const requestedModelId = modelMapping[model] || "qwen/qwen-2.5-coder-32b-instruct:free";
+      const requestedModelId = modelMapping[model] || "agnes-2.0-flash";
  
       const friendlyNameMap: { [key: string]: string } = {
-        "qwen/qwen-2.5-coder-32b-instruct:free": "tmpa v2 (free)",
-        "mistralai/mistral-nemo:free": "Dilo",
-        "google/gemma-2-9b-it:free": "tmpa v1 (free)",
-        "meta-llama/llama-3.2-3b-instruct:free": "Llama 3.2 3B Instruct (free)",
-        "cognitivecomputations/dolphin-mistral-24b-venice-edition:free": "Dolphin Mistral 24B (free)"
+        "agnes-2.0-flash": "Tmpa ai v2 (agnes-2.0-flash)",
+        "laguna-s-2.1": "Tmpa ai v1 (laguna-s-2.1)",
+        "tencent-hy3-free": "Dilo (tencent-hy3-free)"
       };
  
       const requestedFriendlyName = friendlyNameMap[requestedModelId] || model;
@@ -384,18 +389,16 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
           }
         }
   
-        // 2. Try OpenRouter if OpenRouter key is present
+        // 2. Try Router Bynara / OpenRouter
         if (!successfullyGenerated && openRouterKey && openRouterKey !== "YOUR_OPENROUTER_API_KEY" && openRouterKey.trim() !== "") {
           try {
             const modelsToTry = [requestedModelId];
-            const allOpenRouterFreeModels = [
-              "qwen/qwen-2.5-coder-32b-instruct:free",
-              "qwen/qwen-2.5-72b-instruct:free",
-              "google/gemma-2-9b-it:free",
-              "meta-llama/llama-3.2-3b-instruct:free",
-              "mistralai/mistral-nemo:free"
+            const allRouterModels = [
+              "agnes-2.0-flash",
+              "laguna-s-2.1",
+              "tencent-hy3-free"
             ];
-            for (const mId of allOpenRouterFreeModels) {
+            for (const mId of allRouterModels) {
               if (!modelsToTry.includes(mId)) {
                 modelsToTry.push(mId);
               }
@@ -405,8 +408,10 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
 
             for (const attemptModelId of modelsToTry) {
               try {
-                console.log(`Trying OpenRouter model: ${attemptModelId}`);
-                const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                console.log(`Trying Router Bynara model: ${attemptModelId}`);
+                
+                // Coba endpoint router.bynara.id
+                let response = await fetch("https://router.bynara.id/v1/chat/completions", {
                   method: "POST",
                   headers: {
                     "Authorization": `Bearer ${openRouterKey}`,
@@ -422,6 +427,25 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
                   })
                 });
 
+                if (!response.ok && response.status === 404) {
+                  // Fallback ke /api/v1 jika endpoint menggunakan prefix /api/v1
+                  response = await fetch("https://router.bynara.id/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                      "Authorization": `Bearer ${openRouterKey}`,
+                      "Content-Type": "application/json",
+                      "HTTP-Referer": "https://ai.studio/build",
+                      "X-Title": "tmpa chat"
+                    },
+                    body: JSON.stringify({
+                      model: attemptModelId,
+                      messages: currentMessages,
+                      temperature: 0.7,
+                      max_tokens: 2048
+                    })
+                  });
+                }
+
                 if (response.status === 429) {
                   const errText = await response.text();
                   throw new Error(`429 - Terlalu Banyak Permintaan`);
@@ -429,12 +453,12 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
 
                 if (!response.ok) {
                   const errText = await response.text();
-                  throw new Error(`${response.status} - Masalah Koneksi`);
+                  throw new Error(`${response.status} - Masalah Koneksi: ${errText}`);
                 }
 
                 const data = await response.json();
                 if (data.error) {
-                  throw new Error(`OpenRouter Error: ${data.error.message || 'Limit Sistem'}`);
+                  throw new Error(`Router Error: ${data.error.message || 'Limit Sistem'}`);
                 }
 
                 const generatedText = data.choices?.[0]?.message?.content || "";
@@ -444,7 +468,7 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
                   break;
                 }
               } catch (err: any) {
-                console.warn(`Attempt with OpenRouter ${attemptModelId} failed. Error: ${err.message}`);
+                console.warn(`Attempt with Router Bynara ${attemptModelId} failed. Error: ${err.message}`);
                 lastErrorMsg = err.message;
                 await new Promise(resolve => setTimeout(resolve, 300));
               }
@@ -453,17 +477,17 @@ BALAS HANYA DENGAN "YA" ATAU "TIDAK".`;
             if (currentResponseText) {
               successfullyGenerated = true;
               if (nvidiaKey && nvidiaError) {
-                currentNote = `\n\n---\n*💡 Catatan: Koneksi langsung **NVIDIA NIM API** sedang mengalami kendala (${nvidiaError.split(' - ')[0]}). Kami mengalihkan respons secara otomatis menggunakan cadangan **OpenRouter** agar pengalaman Anda tetap lancar.*`;
-              } else if (usedModelId !== requestedModelId && model !== "mistral_nemotron") {
+                currentNote = `\n\n---\n*💡 Catatan: Koneksi langsung **NVIDIA NIM API** sedang mengalami kendala (${nvidiaError.split(' - ')[0]}). Kami mengalihkan respons secara otomatis menggunakan **Router Bynara** agar pengalaman Anda tetap lancar.*`;
+              } else if (usedModelId !== requestedModelId && model !== "tencent-hy3-free") {
                 const usedFriendlyName = friendlyNameMap[usedModelId] || usedModelId;
                 currentNote = `\n\n---\n*💡 Catatan: Model **${requestedFriendlyName}** saat ini sedang sibuk. Kami mengalihkan respons secara otomatis ke cadangan **${usedFriendlyName}**.*`;
               }
             } else {
-              throw new Error(`Semua model gratis OpenRouter mengalami masa sibuk.`);
+              throw new Error(`Semua model di Router Bynara mengalami masa sibuk (${lastErrorMsg}).`);
             }
           } catch (err: any) {
             openRouterError = err.message;
-            console.error("OpenRouter completely failed, trying Gemini fallback:", err);
+            console.error("Router Bynara completely failed, trying Gemini fallback:", err);
           }
         }
   

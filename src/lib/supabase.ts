@@ -331,7 +331,9 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // ==========================================
 export async function invokeBluefoxProcessor(
   message: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  model?: string,
+  isVisionActive?: boolean
 ) {
   try {
     // Pastikan conversation_id bernilai null jika string kosong atau tidak ada
@@ -342,6 +344,8 @@ export async function invokeBluefoxProcessor(
     const requestBody = {
       message: message.trim(),
       conversation_id: cleanConvId,
+      model: isVisionActive ? 'agnes-2.0-flash' : (model || 'agnes-2.0-flash'),
+      vision: isVisionActive || false,
     };
 
     console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
