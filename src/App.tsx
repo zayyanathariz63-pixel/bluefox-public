@@ -679,14 +679,18 @@ export default function App() {
       // 1. Prioritaskan Pemanggilan Supabase Edge Function 'bluefox-processor-'
       const edgeRes = await invokeBluefoxProcessor(text, currentSessionId || null);
 
-      if (!edgeRes.error && edgeRes.data && edgeRes.data.reply) {
+      if (edgeRes.data && edgeRes.data.success && edgeRes.data.reply) {
         aiReplyText = edgeRes.data.reply;
         if (edgeRes.data.conversation_id) {
           effectiveConvId = edgeRes.data.conversation_id;
           setCurrentSessionId(effectiveConvId);
         }
+      } else if (edgeRes.data && edgeRes.data.success === false) {
+        // Edge function mengembalikan error spesifik (API Key / DB Error, dsb)
+        console.error("❌ Detail Error Asli dari Server Edge Function:", edgeRes.data.error);
+        aiReplyText = `⚠️ Error dari Server Edge Function: ${edgeRes.data.error || 'Terjadi kesalahan internal pada Edge Function'}`;
       } else {
-        // 2. Fallback ke /api/chat jika Edge Function mengalami kendala
+        // 2. Fallback ke /api/chat jika Edge Function mengalami kendala koneksi
         console.warn("⚠️ Menggunakan fallback API internal /api/chat:", edgeRes?.error);
         const history = baseMessages.map(m => ({
           role: m.role,
@@ -701,7 +705,8 @@ export default function App() {
         });
 
         if (!res.ok) {
-          throw new Error('Gagal mensintesis respons');
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData?.error || 'Gagal mensintesis respons dari server internal');
         }
 
         const data = await res.json();

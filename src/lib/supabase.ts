@@ -352,21 +352,38 @@ export async function invokeBluefoxProcessor(
         body: requestBody,
       });
 
-      if (!error && data) {
+      if (error) {
+        console.error("❌ [Supabase SDK Error]:", error);
+      } else if (data) {
         console.log("📥 [Supabase Edge Function] Respons diterima (SDK):", data);
+
+        // Jika Edge Function mengirim balasan error (misal: success === false atau ada error field)
+        if (data.success === false || data.error) {
+          console.error("❌ Detail Error Asli dari Server:", data.error || data.message);
+          return {
+            data: {
+              success: false,
+              error: data.error || data.message || 'Error tidak diketahui dari server',
+              reply: '',
+              conversation_id: cleanConvId,
+              ...data,
+            },
+            error: data.error || data.message || 'Server error',
+          };
+        }
+
         const replyText = data?.reply || data?.text || data?.message || data?.response || (typeof data === 'string' ? data : '');
         const nextConvId = data?.conversation_id || data?.conversationId || cleanConvId;
 
         return {
           data: {
+            success: true,
             reply: replyText,
             conversation_id: nextConvId,
             ...data,
           },
           error: null,
         };
-      } else if (error) {
-        console.warn("⚠️ [Supabase Edge Function] SDK invoke warning, mencoba direct HTTP fetch fallback:", error);
       }
     } catch (invokeErr) {
       console.warn("⚠️ [Supabase Edge Function] SDK invoke exception, mencoba fallback HTTP:", invokeErr);
@@ -390,16 +407,40 @@ export async function invokeBluefoxProcessor(
     if (!res.ok) {
       const errText = await res.text();
       console.error(`❌ [Edge Function] Direct fetch status ${res.status}:`, errText);
-      throw new Error(`Edge Function error (${res.status}): ${errText}`);
+      return {
+        data: {
+          success: false,
+          error: `Edge Function HTTP ${res.status}: ${errText}`,
+          reply: '',
+          conversation_id: cleanConvId,
+        },
+        error: `Edge Function error (${res.status}): ${errText}`,
+      };
     }
 
     const resData = await res.json();
     console.log("📥 [Supabase Edge Function] Respons diterima (Direct Fetch):", resData);
+
+    if (resData.success === false || resData.error) {
+      console.error("❌ Detail Error Asli dari Server (Fetch):", resData.error || resData.message);
+      return {
+        data: {
+          success: false,
+          error: resData.error || resData.message || 'Error dari server',
+          reply: '',
+          conversation_id: cleanConvId,
+          ...resData,
+        },
+        error: resData.error || resData.message,
+      };
+    }
+
     const replyText = resData?.reply || resData?.text || resData?.message || resData?.response || (typeof resData === 'string' ? resData : '');
     const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
 
     return {
       data: {
+        success: true,
         reply: replyText,
         conversation_id: nextConvId,
         ...resData,
