@@ -325,4 +325,38 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
   }
 }
 
+// ==========================================
+// E. Panggil Edge Function 'bluefox-processor'
+// ==========================================
+export async function invokeBluefoxProcessor(
+  message: string,
+  conversationId?: string | null
+) {
+  try {
+    const { data, error } = await supabase.functions.invoke('bluefox-processor', {
+      body: {
+        message,
+        conversation_id: conversationId || null,
+      },
+    });
+
+    if (error) {
+      console.error('Gagal panggil bluefox-processor:', error);
+      return { data: null, error };
+    }
+
+    return {
+      data: {
+        reply: data?.reply || data?.text || data?.message || '',
+        conversation_id: data?.conversation_id || conversationId || null,
+        ...data,
+      },
+      error: null,
+    };
+  } catch (err: any) {
+    console.error('Exception invokeBluefoxProcessor:', err);
+    return { data: null, error: err?.message || 'Error Edge Function' };
+  }
+}
+
 
