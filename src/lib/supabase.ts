@@ -2,8 +2,22 @@ import { createClient } from '@supabase/supabase-js';
 
 const env = (import.meta as any).env || {};
 
-export const supabaseUrl = env.VITE_SUPABASE_URL || 'https://jjlanjshpyklqayjzxyy.supabase.co';
-export const supabaseKey = env.VITE_SUPABASE_ANON_KEY || '';
+// Mendukung semua format environment variable dari Integrasi Vercel + Supabase
+export const supabaseUrl: string = 
+  env.VITE_SUPABASE_URL ||
+  env.NEXT_PUBLIC_SUPABASE_URL ||
+  env.SUPABASE_URL ||
+  env.PUBLIC_SUPABASE_URL ||
+  'https://jjlanjshpyklqayjzxyy.supabase.co';
+
+export const supabaseKey: string = 
+  env.VITE_SUPABASE_ANON_KEY ||
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  env.SUPABASE_ANON_KEY ||
+  env.SUPABASE_KEY ||
+  env.VITE_SUPABASE_KEY ||
+  env.PUBLIC_SUPABASE_ANON_KEY ||
+  '';
 
 export const supabase = createClient(
   supabaseUrl,
