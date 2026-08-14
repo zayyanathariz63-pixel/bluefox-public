@@ -14,7 +14,8 @@ import {
   exchangeSsoTicket, 
   listenToRealtimeMessages, 
   sendMessageToSupabase, 
-  loadChatHistory 
+  loadChatHistory,
+  getValidUUID
 } from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
@@ -642,12 +643,14 @@ export default function App() {
     setMessages(updatedMessages);
     setIsLoading(true);
 
-    let sessionId = currentSessionId;
+    let sessionId = getValidUUID(currentSessionId);
+    if (!currentSessionId) {
+      setCurrentSessionId(sessionId);
+    }
     let currentSessions = [...chatSessions];
 
-    if (!sessionId) {
-      sessionId = Date.now().toString();
-      setCurrentSessionId(sessionId);
+    const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
+    if (sessionIdx === -1) {
       const newSession = {
         id: sessionId,
         title: text.length > 30 ? text.substring(0, 30) + '...' : text,
@@ -657,85 +660,80 @@ export default function App() {
       };
       currentSessions = [newSession, ...currentSessions];
     } else {
-      const idx = currentSessions.findIndex(s => s.id === sessionId);
-      if (idx !== -1) {
-        currentSessions[idx] = {
-          ...currentSessions[idx],
-          messages: updatedMessages,
-          updatedAt: Date.now()
-        };
-      }
+      currentSessions[sessionIdx] = {
+        ...currentSessions[sessionIdx],
+        messages: updatedMessages,
+        updatedAt: Date.now()
+      };
     }
     
     saveSessionsToLocal(currentSessions);
 
-    // 1. Simpan pesan ke Supabase (Trigger Webhook di background -> Edge Function bluefox-processor)
+    // 1. Simpan pesan user ke Supabase tabel messages
+    sendMessageToSupabase(text, sessionId, 'user').catch((err) => {
+      console.warn("Gagal menyimpan pesan user ke Supabase:", err);
+    });
+
     try {
-      const { error: sbError } = await sendMessageToSupabase(text, sessionId);
-      if (sbError) {
-        console.warn("Gagal menyimpan pesan ke Supabase, mencoba fallback API lokal:", sbError);
-        throw sbError;
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
+      const history = baseMessages.map(m => ({
+        role: m.role,
+        text: m.text
+      }));
+
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
+        signal
+      });
+
+      if (!res.ok) {
+        throw new Error('Gagal mensintesis respons');
       }
-      // Berhasil disimpan ke Supabase!
-      // Realtime listener (listenToRealtimeMessages) akan menerima balasan AI otomatis
-    } catch (sbError) {
-      // Fallback jika Supabase database/webhook tidak tersedia
-      try {
-        abortControllerRef.current = new AbortController();
-        const signal = abortControllerRef.current.signal;
 
-        const history = baseMessages.map(m => ({
-          role: m.role,
-          text: m.text
-        }));
+      const data = await res.json();
+      
+      const aiMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: data.text,
+      };
 
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history, message: text, model: selectedModel, customInstruction, reasoningMode }),
-          signal
-        });
+      const finalMessages = [...updatedMessages, aiMessage];
+      setMessages(finalMessages);
 
-        if (!res.ok) {
-          throw new Error('Gagal mensintesis respons');
-        }
+      // 2. Simpan respons AI ke Supabase tabel messages
+      sendMessageToSupabase(data.text, sessionId, 'assistant').catch((err) => {
+        console.warn("Gagal menyimpan respons AI ke Supabase:", err);
+      });
 
-        const data = await res.json();
-        
-        const aiMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'model',
-          text: data.text,
+      const updateIdx = currentSessions.findIndex(s => s.id === sessionId);
+      if (updateIdx !== -1) {
+        currentSessions[updateIdx] = {
+          ...currentSessions[updateIdx],
+          messages: finalMessages,
+          updatedAt: Date.now()
         };
-
-        const finalMessages = [...updatedMessages, aiMessage];
-        setMessages(finalMessages);
-
-        const updateIdx = currentSessions.findIndex(s => s.id === sessionId);
-        if (updateIdx !== -1) {
-          currentSessions[updateIdx] = {
-            ...currentSessions[updateIdx],
-            messages: finalMessages,
-            updatedAt: Date.now()
-          };
-          saveSessionsToLocal([...currentSessions]);
-        }
-      } catch (error: any) {
-        if (error.name === 'AbortError') {
-          console.log('Request aborted by user');
-          return;
-        }
-        console.error(error);
-        const errorMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'model',
-          text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan API Key diatur dengan benar.',
-        };
-        setMessages(prev => [...prev, errorMessage]);
-      } finally {
-        setIsLoading(false);
-        abortControllerRef.current = null;
+        saveSessionsToLocal([...currentSessions]);
       }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Request aborted by user');
+        return;
+      }
+      console.error(error);
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: 'Maaf, terjadi kesalahan saat mencoba menghubungi server. Pastikan API Key diatur dengan benar.',
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 

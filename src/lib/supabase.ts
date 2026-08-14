@@ -120,28 +120,93 @@ export function listenToRealtimeMessages(conversationId: string, onNewMessage: (
   };
 }
 
+// Helper untuk memastikan format UUID valid
+export function getValidUUID(id?: string | null): string {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (id && uuidRegex.test(id)) {
+    return id;
+  }
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 // ==========================================
-// B. Fungsi Kirim Pesan (Trigger Webhook di Background)
+// B. Fungsi Kirim Pesan (Insert ke tabel messages)
 // ==========================================
-export async function sendMessageToSupabase(text: string, conversationId: string) {
+export async function sendMessageToSupabase(
+  text: string, 
+  conversationId: string, 
+  role: 'user' | 'assistant' = 'user'
+) {
   if (!text.trim() || !conversationId) return { data: null, error: 'Input tidak valid' };
 
-  const { data, error } = await supabase
-    .from('messages')
-    .insert([
-      {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id || null;
+
+    // 1. Coba pastikan record di tabel 'conversations' ada jika ada Foreign Key constraint
+    try {
+      await supabase
+        .from('conversations')
+        .upsert(
+          {
+            id: conversationId,
+            user_id: userId,
+            title: text.length > 40 ? text.substring(0, 40) + '...' : text,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'id' }
+        );
+    } catch {
+      // Abaikan jika tabel conversations tidak dibuat
+    }
+
+    // 2. Siapkan payload pesan
+    const payload: any = {
+      conversation_id: conversationId,
+      role: role,
+      content: text,
+    };
+    if (userId) {
+      payload.user_id = userId;
+    }
+
+    console.log(`📤 [Supabase] Menginsert pesan (${role}) ke tabel messages:`, payload);
+
+    let { data, error } = await supabase
+      .from('messages')
+      .insert([payload])
+      .select();
+
+    // Fallback jika nama kolom content menggunakan text atau message
+    if (error && error.message?.includes('column "content" does not exist')) {
+      const fallbackPayload: any = {
         conversation_id: conversationId,
-        role: 'user',
-        content: text
-      }
-    ])
-    .select();
+        role: role,
+        text: text,
+      };
+      if (userId) fallbackPayload.user_id = userId;
+      const resFallback = await supabase.from('messages').insert([fallbackPayload]).select();
+      data = resFallback.data;
+      error = resFallback.error;
+    }
 
-  if (error) {
-    console.error('Gagal mengirim pesan:', error.message);
+    if (error) {
+      console.error('❌ Gagal insert pesan ke tabel messages:', error.message, error);
+      return { data: null, error: error.message };
+    }
+
+    console.log('✅ Berhasil insert pesan ke tabel messages:', data);
+    return { data, error: null };
+  } catch (err: any) {
+    console.error('❌ Exception sendMessageToSupabase:', err);
+    return { data: null, error: err?.message || 'Error tidak diketahui' };
   }
-
-  return { data, error };
 }
 
 // ==========================================
@@ -150,17 +215,22 @@ export async function sendMessageToSupabase(text: string, conversationId: string
 export async function loadChatHistory(conversationId: string) {
   if (!conversationId) return [];
 
-  const { data, error } = await supabase
-    .from('messages')
-    .select('*')
-    .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true });
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error('Gagal memuat histori:', error.message);
+    if (error) {
+      console.error('Gagal memuat histori:', error.message);
+      return [];
+    }
+
+    return data || [];
+  } catch (err) {
+    console.error('Exception loadChatHistory:', err);
     return [];
   }
-
-  return data || [];
 }
 
