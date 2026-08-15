@@ -685,9 +685,9 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleSendMessage = async (text: string, overrideMessages?: Message[]) => {
+  const handleSendMessage = async (text: string, overrideMessages?: Message[], imageUrl?: string | null) => {
     const userText = text.trim();
-    if (!userText || isLoading) return;
+    if ((!userText && !imageUrl) || isLoading) return;
 
     if (isUsageLimitReached) {
       alert("Telah mencapai batas penggunaan (100%). Menunggu reset.");
@@ -705,6 +705,7 @@ export default function App() {
       text: userText,
     };
     
+    // Determinasi model: Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash' (tmpa_v2)
     const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
     updateUsage(currentEffectiveModel, isVisionActive);
 
@@ -740,8 +741,13 @@ export default function App() {
       let effectiveConvId = currentSessionId || sessionId;
 
       // 2. Panggil Edge Function dan WAJIB ditunggu (await)
-      const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
-      const edgeRes = await invokeBluefoxProcessor(userText, currentSessionId || null, currentEffectiveModel, isVisionActive);
+      const edgeRes = await invokeBluefoxProcessor(
+        userText,
+        currentSessionId || null,
+        currentEffectiveModel,
+        isVisionActive,
+        imageUrl || null
+      );
 
       // 3. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
       if (edgeRes.error && !edgeRes.data) {
@@ -756,6 +762,10 @@ export default function App() {
 
       // 5. Jika SUKSES dan balasan AI ada
       if (edgeRes.data && edgeRes.data.reply) {
+        if (edgeRes.data.model_used) {
+          console.log("Model Terpakai:", edgeRes.data.model_used);
+        }
+        console.log("Balasan AI:", edgeRes.data.reply);
         aiReplyText = edgeRes.data.reply;
         if (edgeRes.data.conversation_id) {
           effectiveConvId = edgeRes.data.conversation_id;

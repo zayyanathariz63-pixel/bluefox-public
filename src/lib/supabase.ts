@@ -329,11 +329,24 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // E. Panggil Edge Function 'bluefox-processor-'
 // URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
 // ==========================================
+export const MODEL_MAPPING: Record<string, string> = {
+  tmpa_v2: "agnes-2.0-flash", // Support Vision
+  tmpa_v1: "laguna-s-2.1",
+  dilo: "tencent-hy3-free",
+  "agnes-2.0-flash": "agnes-2.0-flash",
+  "laguna-s-2.1": "laguna-s-2.1",
+  "tencent-hy3-free": "tencent-hy3-free",
+  qwen3_coder: "agnes-2.0-flash",
+  gpt_oss: "laguna-s-2.1",
+  mistral_nemotron: "tencent-hy3-free",
+};
+
 export async function invokeBluefoxProcessor(
   message: string,
   conversationId?: string | null,
   model?: string,
-  isVisionActive?: boolean
+  isVisionActive?: boolean,
+  imageUrl?: string | null
 ) {
   try {
     // Pastikan conversation_id bernilai null jika string kosong atau tidak ada
@@ -341,11 +354,21 @@ export async function invokeBluefoxProcessor(
       ? conversationId.trim()
       : null;
 
+    // Determinasi model sesuai kesepakatan:
+    // Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash'
+    // Jika Vision Matikan -> Gunakan model pilihan user
+    const selectedKey = model || 'tmpa_v2';
+    const finalModel = isVisionActive 
+      ? MODEL_MAPPING.tmpa_v2 
+      : (MODEL_MAPPING[selectedKey] || selectedKey || MODEL_MAPPING.tmpa_v2);
+
     const requestBody = {
       message: message.trim(),
       conversation_id: cleanConvId,
-      model: isVisionActive ? 'agnes-2.0-flash' : (model || 'agnes-2.0-flash'),
-      vision: isVisionActive || false,
+      model: finalModel,
+      is_vision: Boolean(isVisionActive),
+      vision: Boolean(isVisionActive),
+      image_url: imageUrl || null,
     };
 
     console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
