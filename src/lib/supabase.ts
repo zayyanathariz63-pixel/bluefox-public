@@ -480,4 +480,222 @@ export async function invokeBluefoxProcessor(
   }
 }
 
+// ==========================================
+// F. Manajemen Limit Penggunaan AI (user_limits)
+// ==========================================
+export type AiModelCode = 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo';
+
+export function getModelLimitCode(model: string, isVision?: boolean): AiModelCode {
+  if (isVision) return 'v2_vision';
+  if (model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'qwen3_coder') {
+    return 'v2_non_vision';
+  }
+  if (model === 'tencent-hy3-free' || model === 'tmpa_v1' || model === 'gpt_oss') {
+    return 'v1';
+  }
+  if (model === 'laguna-s-2.1' || model === 'dilo' || model === 'mistral_nemotron') {
+    return 'dilo';
+  }
+  return 'v1';
+}
+
+export async function getUserLimits(userId: string) {
+  try {
+    if (!userId) return null;
+    const { data, error } = await supabase
+      .from('user_limits')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("⚠️ Gagal mengambil user_limits:", error.message);
+      return null;
+    }
+
+    if (!data) return null;
+
+    const now = new Date();
+    let used5h = Number(data.used_5h || 0);
+    let usedWeekly = Number(data.used_weekly || 0);
+
+    // Cek apakah waktu reset 5 jam telah lewat
+    if (data.reset_5h_at && now > new Date(data.reset_5h_at)) {
+      used5h = 0;
+    }
+
+    // Cek apakah waktu reset mingguan telah lewat
+    if (data.reset_weekly_at && now > new Date(data.reset_weekly_at)) {
+      usedWeekly = 0;
+    }
+
+    return {
+      used_5h: used5h,
+      used_weekly: usedWeekly,
+      remaining_5h: Math.max(0, 100 - used5h),
+      remaining_weekly: Math.max(0, 100 - usedWeekly),
+      reset_5h_at: data.reset_5h_at,
+      reset_weekly_at: data.reset_weekly_at,
+    };
+  } catch (err) {
+    console.warn("Exception getUserLimits:", err);
+    return null;
+  }
+}
+
+export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
+  try {
+    if (!userId) {
+      console.warn("User ID tidak ditemukan untuk consumeAiLimit");
+      return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
+    }
+
+    console.log(`📊 [Limit] Mengonsumsi limit untuk user ${userId} model ${modelCode}`);
+
+    // 1. Coba panggil RPC Supabase 'consume_ai_limit'
+    try {
+      const { data, error } = await supabase.rpc('consume_ai_limit', {
+        p_user_id: userId,
+        p_model: modelCode,
+      });
+
+      if (!error && data) {
+        console.log("📥 [RPC consume_ai_limit] Sukses:", data);
+        if (data.success === false) {
+          return {
+            success: false,
+            message: data.message || "Batas kuota penggunaan AI Anda telah habis. Harap tunggu waktu reset.",
+            remaining_5h: data.remaining_5h ?? 0,
+            remaining_weekly: data.remaining_weekly ?? 0,
+            used_5h: data.used_5h ?? 100,
+            used_weekly: data.used_weekly ?? 100,
+          };
+        }
+
+        const remaining5h = data.remaining_5h ?? Math.max(0, 100 - Number(data.used_5h || 0));
+        const remainingWeekly = data.remaining_weekly ?? Math.max(0, 100 - Number(data.used_weekly || 0));
+
+        console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}%`);
+
+        return {
+          success: true,
+          remaining_5h: remaining5h,
+          remaining_weekly: remainingWeekly,
+          used_5h: Number(data.used_5h ?? (100 - remaining5h)),
+          used_weekly: Number(data.used_weekly ?? (100 - remainingWeekly)),
+        };
+      }
+      if (error) {
+        console.warn("⚠️ RPC consume_ai_limit tidak tersedia atau error, menjalankan fallback tabel user_limits:", error.message);
+      }
+    } catch (rpcErr) {
+      console.warn("⚠️ Exception RPC consume_ai_limit, fallback ke tabel user_limits:", rpcErr);
+    }
+
+    // 2. Fallback: Langsung update tabel 'public.user_limits'
+    let add5h = 12;
+    let addWeekly = 9;
+    if (modelCode === 'v2_vision') {
+      add5h = 19;
+      addWeekly = 14;
+    } else if (modelCode === 'v2_non_vision') {
+      add5h = 13;
+      addWeekly = 10;
+    } else if (modelCode === 'v1') {
+      add5h = 12;
+      addWeekly = 9;
+    } else if (modelCode === 'dilo') {
+      add5h = 8;
+      addWeekly = 6;
+    }
+
+    const { data: existingRow, error: selectErr } = await supabase
+      .from('user_limits')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (selectErr && selectErr.code !== 'PGRST116') {
+      console.error("❌ Gagal membaca user_limits:", selectErr);
+    }
+
+    const now = new Date();
+    let currentUsed5h = 0;
+    let currentUsedWeekly = 0;
+    let reset5hAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    let resetWeeklyAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    if (existingRow) {
+      currentUsed5h = Number(existingRow.used_5h || 0);
+      currentUsedWeekly = Number(existingRow.used_weekly || 0);
+      reset5hAt = existingRow.reset_5h_at || reset5hAt;
+      resetWeeklyAt = existingRow.reset_weekly_at || resetWeeklyAt;
+
+      // Cek apakah periode 5 jam sudah reset
+      if (existingRow.reset_5h_at && now > new Date(existingRow.reset_5h_at)) {
+        currentUsed5h = 0;
+        reset5hAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+      }
+
+      // Cek apakah periode mingguan sudah reset
+      if (existingRow.reset_weekly_at && now > new Date(existingRow.reset_weekly_at)) {
+        currentUsedWeekly = 0;
+        resetWeeklyAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+    }
+
+    const nextUsed5h = currentUsed5h + add5h;
+    const nextUsedWeekly = currentUsedWeekly + addWeekly;
+
+    if (nextUsed5h > 100 || nextUsedWeekly > 100) {
+      const remaining5h = Math.max(0, 100 - currentUsed5h);
+      const remainingWeekly = Math.max(0, 100 - currentUsedWeekly);
+      console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}% (Limit Tercapai)`);
+      return {
+        success: false,
+        message: "Batas kuota penggunaan AI Anda telah habis. Harap tunggu waktu reset.",
+        remaining_5h: remaining5h,
+        remaining_weekly: remainingWeekly,
+        used_5h: currentUsed5h,
+        used_weekly: currentUsedWeekly,
+      };
+    }
+
+    // Update / Insert row baru
+    const payload = {
+      user_id: userId,
+      used_5h: nextUsed5h,
+      reset_5h_at: reset5hAt,
+      used_weekly: nextUsedWeekly,
+      reset_weekly_at: resetWeeklyAt,
+    };
+
+    const { error: upsertErr } = await supabase
+      .from('user_limits')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    if (upsertErr) {
+      console.error("❌ Gagal update tabel user_limits:", upsertErr);
+    } else {
+      console.log("✅ Tabel user_limits berhasil diperbarui:", payload);
+    }
+
+    const remaining5h = Math.max(0, 100 - nextUsed5h);
+    const remainingWeekly = Math.max(0, 100 - nextUsedWeekly);
+    console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}%`);
+
+    return {
+      success: true,
+      remaining_5h: remaining5h,
+      remaining_weekly: remainingWeekly,
+      used_5h: nextUsed5h,
+      used_weekly: nextUsedWeekly,
+    };
+  } catch (err: any) {
+    console.error("❌ Exception consumeAiLimit:", err);
+    return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
+  }
+}
+
+
 

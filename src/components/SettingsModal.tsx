@@ -326,6 +326,64 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         )}
                       </div>
                     </div>
+
+                    <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
+                      <h4 className="text-base font-semibold text-white mb-1">Konsumsi Kuota Tiap Model</h4>
+                      <p className="text-xs text-gray-400 mb-4">Pengurangan kuota otomatis dicatat ke basis data setiap kali AI membalas pesan Anda</p>
+                      
+                      <div className="grid sm:grid-cols-3 gap-3">
+                        <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-xl p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white">Tmpa ai v2</span>
+                            <span className="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-800/50 px-1.5 py-0.5 rounded">Vision Ready</span>
+                          </div>
+                          <div className="text-[11px] text-gray-400 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Non-Vision:</span>
+                              <span className="text-gray-200 font-mono">13% (5h) · 10% (w)</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Vision:</span>
+                              <span className="text-cyan-300 font-mono font-medium">19% (5h) · 14% (w)</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-xl p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white">Tmpa ai v1</span>
+                            <span className="text-[10px] bg-blue-950 text-blue-400 border border-blue-800/50 px-1.5 py-0.5 rounded">Standar</span>
+                          </div>
+                          <div className="text-[11px] text-gray-400 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Per 5 Jam:</span>
+                              <span className="text-gray-200 font-mono">12%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Mingguan:</span>
+                              <span className="text-gray-200 font-mono">9%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-neutral-900/60 border border-neutral-800/80 rounded-xl p-3.5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-white">Dilo</span>
+                            <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/50 px-1.5 py-0.5 rounded">Hemat</span>
+                          </div>
+                          <div className="text-[11px] text-gray-400 space-y-1">
+                            <div className="flex justify-between">
+                              <span>Per 5 Jam:</span>
+                              <span className="text-gray-200 font-mono">8%</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>Mingguan:</span>
+                              <span className="text-gray-200 font-mono">6%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 

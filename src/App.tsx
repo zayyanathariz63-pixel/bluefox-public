@@ -17,7 +17,10 @@ import {
   loadChatHistory,
   getValidUUID,
   hasValidConfig,
-  invokeBluefoxProcessor
+  invokeBluefoxProcessor,
+  consumeAiLimit,
+  getUserLimits,
+  getModelLimitCode
 } from './lib/supabase';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
@@ -114,6 +117,8 @@ export default function App() {
     setIsModelSelectorOpen(false);
   };
 
+  const [dbLimits, setDbLimits] = useState<{ used5h: number; usedWeekly: number } | null>(null);
+
   const [usageEvents, setUsageEvents] = useState<{h: number, w: number, ts: number}[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('ai_usage_events') || '[]');
@@ -123,6 +128,13 @@ export default function App() {
   });
 
   const getUsage = () => {
+    if (dbLimits) {
+      return {
+        hourly: Math.min(100, Math.max(0, dbLimits.used5h)),
+        weekly: Math.min(100, Math.max(0, dbLimits.usedWeekly)),
+      };
+    }
+
     const now = Date.now();
     const fiveHoursAgo = now - 5 * 60 * 60 * 1000;
     const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
@@ -566,7 +578,7 @@ export default function App() {
 
   useEffect(() => {
     if (user && hasValidConfig) {
-      const fetchTier = async () => {
+      const fetchTierAndLimits = async () => {
         try {
           // Gunakan .maybeSingle() agar PostgREST tidak mengembalikan status HTTP 406 (Not Acceptable) jika baris user belum dibuat
           const { data: profil, error } = await supabase
@@ -585,8 +597,21 @@ export default function App() {
         } catch {
           setUserTier("FREE (DEFAULT)");
         }
+
+        // Sinkronisasi limit dari tabel user_limits
+        try {
+          const limits = await getUserLimits(user.id);
+          if (limits) {
+            setDbLimits({
+              used5h: limits.used_5h,
+              usedWeekly: limits.used_weekly,
+            });
+          }
+        } catch (lErr) {
+          console.warn("Gagal inisialisasi user_limits:", lErr);
+        }
       };
-      fetchTier();
+      fetchTierAndLimits();
     }
   }, [user]);
 
@@ -798,6 +823,33 @@ export default function App() {
         sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
       }
       
+      // Update limit penggunaan ke tabel public.user_limits via RPC consume_ai_limit
+      try {
+        let activeUserId = user?.id;
+        if (!activeUserId) {
+          const { data: sessData } = await supabase.auth.getSession();
+          activeUserId = sessData?.session?.user?.id;
+        }
+
+        if (activeUserId) {
+          const modelCode = getModelLimitCode(selectedModel, isVisionActive);
+          const limitRes = await consumeAiLimit(activeUserId, modelCode);
+
+          if (limitRes && !limitRes.success) {
+            alert(limitRes.message || "Batas penggunaan AI telah tercapai.");
+          }
+
+          if (limitRes && limitRes.used_5h !== undefined) {
+            setDbLimits({
+              used5h: limitRes.used_5h,
+              usedWeekly: limitRes.used_weekly,
+            });
+          }
+        }
+      } catch (limitErr) {
+        console.warn("Gagal update user_limits saat menerima jawaban AI:", limitErr);
+      }
+
       // Tampilkan balasan AI ke UI
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
