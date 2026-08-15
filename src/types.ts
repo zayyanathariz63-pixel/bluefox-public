@@ -27,7 +27,7 @@ export interface CustomApiKey {
   provider: string;
   baseUrl?: string;
   apiKey: string;
-  model?: string;
+  model: string;
   isActive: boolean;
   createdAt: number;
 }

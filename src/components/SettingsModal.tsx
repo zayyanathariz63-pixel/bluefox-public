@@ -17,7 +17,10 @@ import {
   resetCustomApiUsage, 
   MAX_CUSTOM_APIS,
   CUSTOM_API_MINUTE_LIMIT,
-  CUSTOM_API_DAILY_LIMIT
+  CUSTOM_API_DAILY_LIMIT,
+  PROVIDER_PRESETS,
+  isSelfHostedProvider,
+  getProviderPreset
 } from '../lib/customApi';
 
 interface SettingsModalProps {
@@ -48,10 +51,16 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
   // Form input states
   const [formName, setFormName] = useState('');
   const [formProvider, setFormProvider] = useState('OpenAI');
-  const [formBaseUrl, setFormBaseUrl] = useState('');
+  const [formBaseUrl, setFormBaseUrl] = useState('https://api.openai.com/v1');
   const [formApiKey, setFormApiKey] = useState('');
   const [formModel, setFormModel] = useState('');
   const [formIsActive, setFormIsActive] = useState(true);
+
+  const selectedPreset = useMemo(() => {
+    return getProviderPreset(formProvider) || PROVIDER_PRESETS[0];
+  }, [formProvider]);
+
+  const isCurrentSelfHost = selectedPreset.isSelfHosted;
 
   // Decorative Toggle states to match screenshot
   const [liveStopResponse, setLiveStopResponse] = useState(true);
@@ -143,7 +152,15 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
       return;
     }
     if (!formApiKey.trim()) {
-      showToast('API Key wajib diisi!');
+      showToast('API Key / Token wajib diisi!');
+      return;
+    }
+    if (!formModel.trim()) {
+      showToast('Model ID wajib diisi agar edge function dapat meneruskan request!');
+      return;
+    }
+    if (isCurrentSelfHost && !formBaseUrl.trim()) {
+      showToast('Base URL wajib diisi untuk provider Self-Hosted!');
       return;
     }
 
@@ -164,7 +181,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     setCustomApis(getCustomApis());
     setIsAddFormOpen(false);
     setFormName('');
-    setFormBaseUrl('');
+    setFormBaseUrl('https://api.openai.com/v1');
     setFormApiKey('');
     setFormModel('');
     setFormIsActive(true);
@@ -765,25 +782,37 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
 
                             <div>
                               <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
-                                Provider / Layanan
+                                Provider / Layanan <span className="text-red-400">*</span>
                               </label>
                               <select 
                                 value={formProvider}
                                 onChange={(e) => {
-                                  setFormProvider(e.target.value);
-                                  if (e.target.value === 'OpenAI' && !formBaseUrl) setFormBaseUrl('https://api.openai.com/v1');
-                                  else if (e.target.value === 'Groq' && !formBaseUrl) setFormBaseUrl('https://api.groq.com/openai/v1');
-                                  else if (e.target.value === 'OpenRouter' && !formBaseUrl) setFormBaseUrl('https://openrouter.ai/api/v1');
+                                  const selectedId = e.target.value;
+                                  setFormProvider(selectedId);
+                                  const preset = getProviderPreset(selectedId);
+                                  if (preset) {
+                                    setFormBaseUrl(preset.defaultBaseUrl);
+                                    if (preset.sampleModels && preset.sampleModels.length > 0 && !formModel) {
+                                      setFormModel(preset.sampleModels[0]);
+                                    }
+                                  }
                                 }}
-                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm font-medium"
                               >
-                                <option value="OpenAI">OpenAI (api.openai.com)</option>
-                                <option value="Groq">Groq (api.groq.com)</option>
-                                <option value="OpenRouter">OpenRouter (openrouter.ai)</option>
-                                <option value="Anthropic">Anthropic (Claude)</option>
-                                <option value="Gemini">Google Gemini</option>
-                                <option value="DeepSeek">DeepSeek</option>
-                                <option value="Custom">Custom Endpoint / Self-Hosted</option>
+                                <optgroup label="── Cloud AI Providers ──" className="bg-[#121214] text-gray-300 font-semibold">
+                                  {PROVIDER_PRESETS.filter(p => !p.isSelfHosted).map((p) => (
+                                    <option key={p.id} value={p.id} className="text-white py-1">
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                                <optgroup label="── Self-Hosted & Local Engine ──" className="bg-[#121214] text-emerald-400 font-semibold">
+                                  {PROVIDER_PRESETS.filter(p => p.isSelfHosted).map((p) => (
+                                    <option key={p.id} value={p.id} className="text-white py-1">
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
                               </select>
                             </div>
                           </div>
@@ -801,33 +830,82 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                                 className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm font-mono"
                                 required
                               />
+                              <p className="text-[11px] text-gray-500 mt-1">
+                                {isCurrentSelfHost ? 'Untuk Ollama/LocalAI bisa diisi token atau teks sembarang.' : 'Kunci API rahasia dari akun provider Anda.'}
+                              </p>
                             </div>
 
                             <div>
-                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
-                                Model ID (Opsional)
-                              </label>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block">
+                                  Model ID <span className="text-red-400">*</span>
+                                </label>
+                                <span className="text-[10px] text-emerald-400 font-mono">Wajib untuk Edge Function</span>
+                              </div>
                               <input 
                                 type="text"
                                 value={formModel}
                                 onChange={(e) => setFormModel(e.target.value)}
-                                placeholder="Contoh: gpt-4o, llama-3.3-70b, dll."
-                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm"
+                                placeholder={selectedPreset.placeholderModel}
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm font-mono"
+                                required
                               />
+                              {selectedPreset.sampleModels && selectedPreset.sampleModels.length > 0 && (
+                                <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                  <span className="text-[10px] text-gray-500">Pilihan cepat:</span>
+                                  {selectedPreset.sampleModels.map(m => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      onClick={() => setFormModel(m)}
+                                      className={cn(
+                                        "text-[10px] px-2 py-0.5 rounded-md border font-mono transition cursor-pointer",
+                                        formModel === m
+                                          ? "bg-emerald-950 text-emerald-300 border-emerald-600 font-semibold"
+                                          : "bg-neutral-900 text-gray-400 border-neutral-800 hover:text-white hover:border-neutral-700"
+                                      )}
+                                    >
+                                      {m}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
 
                           <div>
-                            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
-                              Base URL / Endpoint (Opsional)
-                            </label>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block">
+                                Base URL / Endpoint {isCurrentSelfHost ? <span className="text-red-400 font-bold">* (Wajib untuk Self-Hosted)</span> : <span className="text-gray-500 font-normal">(Opsional untuk Cloud)</span>}
+                              </label>
+                              {isCurrentSelfHost ? (
+                                <span className="text-[10px] bg-red-950/80 text-red-300 border border-red-800/50 px-2 py-0.5 rounded font-mono">
+                                  Wajib Diisi
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-gray-500 font-mono">
+                                  Default: {selectedPreset.defaultBaseUrl || 'Standar Provider'}
+                                </span>
+                              )}
+                            </div>
                             <input 
                               type="text"
                               value={formBaseUrl}
                               onChange={(e) => setFormBaseUrl(e.target.value)}
-                              placeholder="https://api.openai.com/v1"
-                              className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm"
+                              placeholder={isCurrentSelfHost ? "Contoh: http://localhost:11434/v1 atau http://IP_VPS:8000/v1" : (selectedPreset.defaultBaseUrl || "https://api.openai.com/v1")}
+                              className={cn(
+                                "w-full bg-[#161619] border rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none text-sm font-mono transition",
+                                isCurrentSelfHost 
+                                  ? "border-emerald-800/70 focus:border-emerald-500" 
+                                  : "border-neutral-800 focus:border-emerald-500"
+                              )}
+                              required={isCurrentSelfHost}
                             />
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              {isCurrentSelfHost 
+                                ? '⚠️ Provider Self-Hosted memerlukan Base URL lengkap (misal Ollama: http://localhost:11434/v1, vLLM: http://localhost:8000/v1).'
+                                : 'Opsional. Jika dikosongkan, sistem akan otomatis menggunakan Base URL resmi provider tersebut.'}
+                            </p>
                           </div>
 
                           <div className="flex items-center gap-2 pt-1">

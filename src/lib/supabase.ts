@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getActiveCustomApi } from './customApi';
 
 const env = (import.meta as any).env || {};
 
@@ -354,15 +355,19 @@ export async function invokeBluefoxProcessor(
       ? conversationId.trim()
       : null;
 
-    // Determinasi model sesuai kesepakatan:
-    // Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash'
-    // Jika Vision Matikan -> Gunakan model pilihan user
+    // Determinasi model:
+    // 1. Jika ada Custom API aktif -> Gunakan Model ID dari Custom API
+    // 2. Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash'
+    // 3. Jika Vision Matikan -> Gunakan model pilihan user
+    const activeCustomApi = getActiveCustomApi();
     const selectedKey = model || 'tmpa_v2';
-    const finalModel = isVisionActive 
-      ? MODEL_MAPPING.tmpa_v2 
-      : (MODEL_MAPPING[selectedKey] || selectedKey || MODEL_MAPPING.tmpa_v2);
+    const finalModel = activeCustomApi
+      ? activeCustomApi.model
+      : isVisionActive 
+        ? MODEL_MAPPING.tmpa_v2 
+        : (MODEL_MAPPING[selectedKey] || selectedKey || MODEL_MAPPING.tmpa_v2);
 
-    const requestBody = {
+    const requestBody: Record<string, any> = {
       message: message.trim(),
       conversation_id: cleanConvId,
       model: finalModel,
@@ -370,6 +375,20 @@ export async function invokeBluefoxProcessor(
       vision: Boolean(isVisionActive),
       image_url: imageUrl || null,
     };
+
+    if (activeCustomApi) {
+      requestBody.custom_api = {
+        name: activeCustomApi.name,
+        provider: activeCustomApi.provider,
+        base_url: activeCustomApi.baseUrl,
+        api_key: activeCustomApi.apiKey,
+        model: activeCustomApi.model,
+      };
+      requestBody.custom_model = activeCustomApi.model;
+      requestBody.provider = activeCustomApi.provider;
+      requestBody.base_url = activeCustomApi.baseUrl;
+      requestBody.api_key = activeCustomApi.apiKey;
+    }
 
     console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
 

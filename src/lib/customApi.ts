@@ -4,9 +4,186 @@ export interface CustomApiKey {
   provider: string;
   baseUrl?: string;
   apiKey: string;
-  model?: string;
+  model: string;
   isActive: boolean;
   createdAt: number;
+}
+
+export interface ProviderPreset {
+  id: string;
+  name: string;
+  defaultBaseUrl: string;
+  isSelfHosted: boolean;
+  sampleModels: string[];
+  placeholderModel: string;
+  description: string;
+}
+
+export const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    id: 'OpenAI',
+    name: 'OpenAI (Official)',
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    isSelfHosted: false,
+    sampleModels: ['gpt-4o', 'gpt-4o-mini', 'o1', 'o3-mini', 'gpt-4-turbo'],
+    placeholderModel: 'Contoh: gpt-4o, gpt-4o-mini, o3-mini',
+    description: 'Endpoint resmi OpenAI'
+  },
+  {
+    id: 'Groq',
+    name: 'Groq (Ultra-Fast LPU)',
+    defaultBaseUrl: 'https://api.groq.com/openai/v1',
+    isSelfHosted: false,
+    sampleModels: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768', 'deepseek-r1-distill-llama-70b'],
+    placeholderModel: 'Contoh: llama-3.3-70b-versatile, deepseek-r1-distill-llama-70b',
+    description: 'Inferensi LPU super cepat'
+  },
+  {
+    id: 'OpenRouter',
+    name: 'OpenRouter (All-in-One)',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    isSelfHosted: false,
+    sampleModels: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'deepseek/deepseek-r1', 'meta-llama/llama-3.3-70b-instruct'],
+    placeholderModel: 'Contoh: anthropic/claude-3.5-sonnet, openai/gpt-4o',
+    description: 'Ratusan model AI dalam 1 endpoint'
+  },
+  {
+    id: 'DeepSeek',
+    name: 'DeepSeek AI',
+    defaultBaseUrl: 'https://api.deepseek.com/v1',
+    isSelfHosted: false,
+    sampleModels: ['deepseek-chat', 'deepseek-reasoner'],
+    placeholderModel: 'Contoh: deepseek-chat, deepseek-reasoner',
+    description: 'DeepSeek V3 dan R1 Reasoning'
+  },
+  {
+    id: 'Gemini',
+    name: 'Google Gemini (OpenAI Compat)',
+    defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    isSelfHosted: false,
+    sampleModels: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+    placeholderModel: 'Contoh: gemini-2.0-flash, gemini-1.5-pro',
+    description: 'Google Gemini via OpenAI compatible API'
+  },
+  {
+    id: 'Anthropic',
+    name: 'Anthropic (Claude)',
+    defaultBaseUrl: 'https://api.anthropic.com/v1',
+    isSelfHosted: false,
+    sampleModels: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'],
+    placeholderModel: 'Contoh: claude-3-5-sonnet-20241022',
+    description: 'Model Claude 3.5 Sonnet / Haiku'
+  },
+  {
+    id: 'Mistral',
+    name: 'Mistral AI',
+    defaultBaseUrl: 'https://api.mistral.ai/v1',
+    isSelfHosted: false,
+    sampleModels: ['mistral-large-latest', 'mistral-small-latest', 'codestral-latest', 'pixtral-large-latest'],
+    placeholderModel: 'Contoh: mistral-large-latest, codestral-latest',
+    description: 'Model frontier Mistral & Codestral'
+  },
+  {
+    id: 'Together',
+    name: 'Together AI',
+    defaultBaseUrl: 'https://api.together.xyz/v1',
+    isSelfHosted: false,
+    sampleModels: ['meta-llama/Llama-3.3-70B-Instruct-Turbo', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-Coder-32B-Instruct'],
+    placeholderModel: 'Contoh: meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    description: 'Platform open source cloud AI'
+  },
+  {
+    id: 'Perplexity',
+    name: 'Perplexity AI',
+    defaultBaseUrl: 'https://api.perplexity.ai',
+    isSelfHosted: false,
+    sampleModels: ['sonar-pro', 'sonar', 'sonar-reasoning'],
+    placeholderModel: 'Contoh: sonar-pro, sonar',
+    description: 'Pencarian web real-time'
+  },
+  {
+    id: 'Fireworks',
+    name: 'Fireworks AI',
+    defaultBaseUrl: 'https://api.fireworks.ai/inference/v1',
+    isSelfHosted: false,
+    sampleModels: ['accounts/fireworks/models/llama-v3p3-70b-instruct', 'accounts/fireworks/models/deepseek-r1'],
+    placeholderModel: 'Contoh: accounts/fireworks/models/llama-v3p3-70b-instruct',
+    description: 'Fast inference platform'
+  },
+  {
+    id: 'xAI',
+    name: 'xAI (Grok)',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    isSelfHosted: false,
+    sampleModels: ['grok-2-latest', 'grok-2-vision-latest', 'grok-beta'],
+    placeholderModel: 'Contoh: grok-2-latest',
+    description: 'Model Grok dari xAI'
+  },
+  {
+    id: 'Cohere',
+    name: 'Cohere',
+    defaultBaseUrl: 'https://api.cohere.com/v2',
+    isSelfHosted: false,
+    sampleModels: ['command-r-plus-08-2024', 'command-r-08-2024', 'command-light'],
+    placeholderModel: 'Contoh: command-r-plus-08-2024',
+    description: 'Enterprise NLP & Command models'
+  },
+  {
+    id: 'HuggingFace',
+    name: 'Hugging Face Inference',
+    defaultBaseUrl: 'https://api-inference.huggingface.co/v1',
+    isSelfHosted: false,
+    sampleModels: ['meta-llama/Llama-3.3-70B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3'],
+    placeholderModel: 'Contoh: meta-llama/Llama-3.3-70B-Instruct',
+    description: 'Hugging Face Serverless Inference'
+  },
+  {
+    id: 'Ollama',
+    name: 'Ollama (Self-Hosted)',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    isSelfHosted: true,
+    sampleModels: ['llama3.3', 'deepseek-r1:8b', 'qwen2.5-coder:7b', 'mistral', 'phi3'],
+    placeholderModel: 'Contoh: llama3.3, deepseek-r1:8b, qwen2.5-coder:7b',
+    description: 'Server Ollama lokal / VPS (Wajib URL Base)'
+  },
+  {
+    id: 'vLLM',
+    name: 'vLLM (Self-Hosted)',
+    defaultBaseUrl: 'http://localhost:8000/v1',
+    isSelfHosted: true,
+    sampleModels: ['meta-llama/Llama-3-8B-Instruct', 'Qwen/Qwen2.5-7B-Instruct'],
+    placeholderModel: 'Contoh: Nama model yang di-serve di vLLM',
+    description: 'vLLM high-throughput engine (Wajib URL Base)'
+  },
+  {
+    id: 'LocalAI',
+    name: 'LocalAI (Self-Hosted)',
+    defaultBaseUrl: 'http://localhost:8080/v1',
+    isSelfHosted: true,
+    sampleModels: ['gpt-4', 'hermes-2-pro', 'llama-3'],
+    placeholderModel: 'Contoh: Model ID di server LocalAI',
+    description: 'LocalAI self-hosted API (Wajib URL Base)'
+  },
+  {
+    id: 'SelfHosted',
+    name: 'Custom / Self-Hosted Endpoint',
+    defaultBaseUrl: '',
+    isSelfHosted: true,
+    sampleModels: [],
+    placeholderModel: 'Contoh: my-custom-model-v1',
+    description: 'Server OpenAI-compatible kustom / VPS (Wajib URL Base)'
+  }
+];
+
+export function isSelfHostedProvider(providerIdOrName: string): boolean {
+  const preset = PROVIDER_PRESETS.find(p => p.id === providerIdOrName || p.name === providerIdOrName);
+  if (preset) return preset.isSelfHosted;
+  const lower = providerIdOrName.toLowerCase();
+  return lower.includes('self-hosted') || lower.includes('selfhost') || lower.includes('custom') || lower.includes('ollama') || lower.includes('vllm') || lower.includes('localai');
+}
+
+export function getProviderPreset(providerIdOrName: string): ProviderPreset | undefined {
+  return PROVIDER_PRESETS.find(p => p.id === providerIdOrName || p.name === providerIdOrName);
 }
 
 export interface CustomApiUsageStats {
@@ -55,7 +232,7 @@ export function addCustomApi(data: {
   provider?: string;
   baseUrl?: string;
   apiKey: string;
-  model?: string;
+  model: string;
   isActive?: boolean;
 }): { success: boolean; error?: string; api?: CustomApiKey } {
   const currentApis = getCustomApis();
@@ -66,12 +243,42 @@ export function addCustomApi(data: {
     };
   }
 
-  if (!data.name.trim() || !data.apiKey.trim()) {
+  if (!data.name || !data.name.trim()) {
     return {
       success: false,
-      error: 'Nama API dan API Key wajib diisi.',
+      error: 'Nama API wajib diisi.',
     };
   }
+
+  if (!data.apiKey || !data.apiKey.trim()) {
+    return {
+      success: false,
+      error: 'API Key / Token wajib diisi.',
+    };
+  }
+
+  if (!data.model || !data.model.trim()) {
+    return {
+      success: false,
+      error: 'Model ID wajib diisi agar edge function dapat mengenali model yang digunakan.',
+    };
+  }
+
+  const providerName = data.provider?.trim() || 'OpenAI';
+  const isSelfHost = isSelfHostedProvider(providerName);
+  const preset = getProviderPreset(providerName);
+
+  if (isSelfHost && (!data.baseUrl || !data.baseUrl.trim())) {
+    return {
+      success: false,
+      error: 'Untuk provider Self-Hosted / Custom Endpoint, Base URL wajib diisi.',
+    };
+  }
+
+  // Jika bukan self-hosted dan baseUrl kosong, gunakan defaultBaseUrl dari preset
+  const finalBaseUrl = data.baseUrl && data.baseUrl.trim() 
+    ? data.baseUrl.trim() 
+    : (preset?.defaultBaseUrl || '');
 
   // Jika dibuat aktif, buat API lainnya nonaktif (atau boleh multi-active, tapi defaultnya jadikan active yang baru)
   const shouldBeActive = data.isActive !== undefined ? data.isActive : currentApis.length === 0;
@@ -79,10 +286,10 @@ export function addCustomApi(data: {
   const newApi: CustomApiKey = {
     id: 'api_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
     name: data.name.trim(),
-    provider: data.provider?.trim() || 'Custom / OpenAI Compatible',
-    baseUrl: data.baseUrl?.trim() || '',
+    provider: preset?.name || providerName,
+    baseUrl: finalBaseUrl,
     apiKey: data.apiKey.trim(),
-    model: data.model?.trim() || '',
+    model: data.model.trim(),
     isActive: shouldBeActive,
     createdAt: Date.now(),
   };
