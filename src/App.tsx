@@ -22,6 +22,7 @@ import {
   getUserLimits,
   getModelLimitCode
 } from './lib/supabase';
+import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -714,12 +715,50 @@ export default function App() {
     const userText = text.trim();
     if ((!userText && !imageUrl) || isLoading) return;
 
-    if (isUsageLimitReached) {
-      alert("Telah mencapai batas penggunaan (100%). Menunggu reset.");
-      return;
+    // 1. Ambil UUID user yang sedang login secara dinamis
+    let activeUserId = user?.id;
+    if (!activeUserId) {
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authData?.user) {
+        alert("Silakan login terlebih dahulu!");
+        return;
+      }
+      activeUserId = authData.user.id;
     }
 
-    // 1. Set State Loading & Tampilkan pesan User di UI lebih dulu (Optimistic UI)
+    // 2. Cek limit Custom API jika ada Custom API yang aktif (10 req/menit & 50 req/hari)
+    const activeCustomApi = getActiveCustomApi();
+    if (activeCustomApi) {
+      const customLimitCheck = recordCustomApiRequest();
+      if (!customLimitCheck.success) {
+        alert(customLimitCheck.error || "(custom API limit) Batas penggunaan tercapai!");
+        return;
+      }
+    }
+
+    // 3. Tentukan model code ('v2_vision' | 'v2_non_vision' | 'v1' | 'dilo')
+    const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
+    const modelCode = getModelLimitCode(selectedModel, isVisionActive);
+
+    // 4. Potong limit di Supabase via consume_ai_limit SEBELUM request AI diproses
+    const limitRes = await consumeAiLimit(activeUserId, modelCode);
+    if (!limitRes.success) {
+      alert(limitRes.message || "Gagal memproses limit!");
+      return; // Hentikan kirim pesan ke AI jika limit habis
+    }
+
+    if (limitRes.used_5h !== undefined) {
+      setDbLimits({
+        used5h: limitRes.used_5h,
+        usedWeekly: limitRes.used_weekly,
+      });
+    }
+
+    console.log("Sisa limit 5h:", limitRes.remaining_5h);
+    console.log("Sisa limit weekly:", limitRes.remaining_weekly);
+
+    // 4. Update usage local state & Tampilkan pesan User di UI (Optimistic UI)
+    updateUsage(currentEffectiveModel, isVisionActive);
     setIsLoading(true);
     setErrorState(null);
 
@@ -729,10 +768,6 @@ export default function App() {
       role: 'user',
       text: userText,
     };
-    
-    // Determinasi model: Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash' (tmpa_v2)
-    const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
-    updateUsage(currentEffectiveModel, isVisionActive);
 
     const updatedMessages = [...baseMessages, userMessage];
     setMessages(updatedMessages);
@@ -765,7 +800,7 @@ export default function App() {
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
-      // 2. Panggil Edge Function dan WAJIB ditunggu (await)
+      // 5. Panggil Edge Function dan WAJIB ditunggu (await)
       const edgeRes = await invokeBluefoxProcessor(
         userText,
         currentSessionId || null,
@@ -774,18 +809,18 @@ export default function App() {
         imageUrl || null
       );
 
-      // 3. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
+      // 6. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
       if (edgeRes.error && !edgeRes.data) {
         console.error("SDK Error:", edgeRes.error);
         throw new Error(typeof edgeRes.error === 'string' ? edgeRes.error : "Gagal terhubung ke server. Periksa koneksi internetmu.");
       }
 
-      // 4. Cek Error kustom dari Edge Function
+      // 7. Cek Error kustom dari Edge Function
       if (edgeRes.data && edgeRes.data.success === false) {
         throw new Error(edgeRes.data.error || "Gagal memproses pesan di AI server.");
       }
 
-      // 5. Jika SUKSES dan balasan AI ada
+      // 8. Jika SUKSES dan balasan AI ada
       if (edgeRes.data && edgeRes.data.reply) {
         if (edgeRes.data.model_used) {
           console.log("Model Terpakai:", edgeRes.data.model_used);
@@ -821,33 +856,6 @@ export default function App() {
 
         sendMessageToSupabase(userText, effectiveConvId, 'user').catch(() => {});
         sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
-      }
-      
-      // Update limit penggunaan ke tabel public.user_limits via RPC consume_ai_limit
-      try {
-        let activeUserId = user?.id;
-        if (!activeUserId) {
-          const { data: sessData } = await supabase.auth.getSession();
-          activeUserId = sessData?.session?.user?.id;
-        }
-
-        if (activeUserId) {
-          const modelCode = getModelLimitCode(selectedModel, isVisionActive);
-          const limitRes = await consumeAiLimit(activeUserId, modelCode);
-
-          if (limitRes && !limitRes.success) {
-            alert(limitRes.message || "Batas penggunaan AI telah tercapai.");
-          }
-
-          if (limitRes && limitRes.used_5h !== undefined) {
-            setDbLimits({
-              used5h: limitRes.used_5h,
-              usedWeekly: limitRes.used_weekly,
-            });
-          }
-        }
-      } catch (limitErr) {
-        console.warn("Gagal update user_limits saat menerima jawaban AI:", limitErr);
       }
 
       // Tampilkan balasan AI ke UI

@@ -20,3 +20,14 @@ export interface ChatSession {
   updatedAt: number;
   model: string;
 }
+
+export interface CustomApiKey {
+  id: string;
+  name: string;
+  provider: string;
+  baseUrl?: string;
+  apiKey: string;
+  model?: string;
+  isActive: boolean;
+  createdAt: number;
+}

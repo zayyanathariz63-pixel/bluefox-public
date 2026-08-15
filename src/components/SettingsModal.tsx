@@ -2,9 +2,23 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
-  Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check
+  Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check,
+  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { 
+  CustomApiKey, 
+  CustomApiUsageStats, 
+  getCustomApis, 
+  addCustomApi, 
+  toggleCustomApiActive, 
+  deleteCustomApi, 
+  getCustomApiUsageStats, 
+  resetCustomApiUsage, 
+  MAX_CUSTOM_APIS,
+  CUSTOM_API_MINUTE_LIMIT,
+  CUSTOM_API_DAILY_LIMIT
+} from '../lib/customApi';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -17,13 +31,27 @@ interface SettingsModalProps {
   resetUsage: () => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api';
 
 export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions, hourlyUsage, weeklyUsage, resetUsage }: SettingsModalProps) {
   const [currentView, setCurrentView] = useState<SubView>('menu');
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Custom API states
+  const [customApis, setCustomApis] = useState<CustomApiKey[]>(() => getCustomApis());
+  const [customUsage, setCustomUsage] = useState<CustomApiUsageStats>(() => getCustomApiUsageStats());
+  const [isAddFormOpen, setIsAddFormOpen] = useState(false);
+  const [visibleKeyIds, setVisibleKeyIds] = useState<Record<string, boolean>>({});
+
+  // Form input states
+  const [formName, setFormName] = useState('');
+  const [formProvider, setFormProvider] = useState('OpenAI');
+  const [formBaseUrl, setFormBaseUrl] = useState('');
+  const [formApiKey, setFormApiKey] = useState('');
+  const [formModel, setFormModel] = useState('');
+  const [formIsActive, setFormIsActive] = useState(true);
 
   // Decorative Toggle states to match screenshot
   const [liveStopResponse, setLiveStopResponse] = useState(true);
@@ -44,6 +72,25 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
   useEffect(() => {
     const savedPic = localStorage.getItem('tmpa_profile_pic');
     if (savedPic) setProfilePic(savedPic);
+
+    const refreshApis = () => {
+      setCustomApis(getCustomApis());
+    };
+    const refreshUsage = () => {
+      setCustomUsage(getCustomApiUsageStats());
+    };
+
+    window.addEventListener('tmpa_custom_apis_updated', refreshApis);
+    window.addEventListener('tmpa_custom_api_usage_updated', refreshUsage);
+
+    // Interval to refresh minute/daily rate limit timer
+    const interval = setInterval(refreshUsage, 5000);
+
+    return () => {
+      window.removeEventListener('tmpa_custom_apis_updated', refreshApis);
+      window.removeEventListener('tmpa_custom_api_usage_updated', refreshUsage);
+      clearInterval(interval);
+    };
   }, []);
 
   const showToast = (msg: string) => {
@@ -71,6 +118,69 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     if (!ts) return '-';
     const date = new Date(ts);
     return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}, ${date.getDate()} ${date.toLocaleString('id-ID', { month: 'long' })} ${date.getFullYear()}`;
+  };
+
+  const handleToggleActive = (id: string, name: string) => {
+    const res = toggleCustomApiActive(id);
+    setCustomApis(getCustomApis());
+    if (res.newState) {
+      showToast(`API "${name}" sekarang aktif digunakan.`);
+    } else {
+      showToast(`API "${name}" telah dinonaktifkan.`);
+    }
+  };
+
+  const handleDeleteApi = (id: string, name: string) => {
+    deleteCustomApi(id);
+    setCustomApis(getCustomApis());
+    showToast(`API "${name}" berhasil dihapus.`);
+  };
+
+  const handleSaveNewApi = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formName.trim()) {
+      showToast('Nama API wajib diisi!');
+      return;
+    }
+    if (!formApiKey.trim()) {
+      showToast('API Key wajib diisi!');
+      return;
+    }
+
+    const res = addCustomApi({
+      name: formName,
+      provider: formProvider,
+      baseUrl: formBaseUrl,
+      apiKey: formApiKey,
+      model: formModel,
+      isActive: formIsActive,
+    });
+
+    if (!res.success) {
+      showToast(res.error || 'Gagal menambahkan API');
+      return;
+    }
+
+    setCustomApis(getCustomApis());
+    setIsAddFormOpen(false);
+    setFormName('');
+    setFormBaseUrl('');
+    setFormApiKey('');
+    setFormModel('');
+    setFormIsActive(true);
+    showToast(`API "${formName}" berhasil ditambahkan!`);
+  };
+
+  const toggleKeyVisibility = (id: string) => {
+    setVisibleKeyIds(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    showToast(`${label} berhasil disalin!`);
   };
 
   return (
@@ -157,6 +267,31 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <p className="text-sm text-gray-400 mt-0.5">Atur instruksi kustom Anda dan lihat aplikasi terhubung</p>
                   </div>
                 </button>
+
+                {/* 5. Custom API (Interactive) */}
+                <button
+                  onClick={() => setCurrentView('custom_api')}
+                  className="w-full text-left flex items-start gap-5 py-4 px-3 rounded-2xl hover:bg-neutral-900/60 active:bg-neutral-800/55 transition-colors group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-gray-400 group-hover:text-emerald-400 transition-colors">
+                    <Key size={22} strokeWidth={1.8} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-medium text-white">Custom API</h3>
+                      <span className="text-[11px] font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">
+                        {customApis.length}/10 API
+                      </span>
+                      {customApis.some(a => a.isActive) && (
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Aktif
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-400 mt-0.5">Kelola hingga 10 API kustom (Limit: 10 req/menit & 50 req/hari)</p>
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -177,6 +312,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                   {currentView === 'activity' && 'Aktivitas Anda'}
                   {currentView === 'usage' && 'Batas Penggunaan'}
                   {currentView === 'personalization' && 'Personalisasi'}
+                  {currentView === 'custom_api' && 'Custom API'}
                 </span>
               </div>
 
@@ -384,6 +520,100 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         </div>
                       </div>
                     </div>
+
+                    {/* (custom API limit) Card */}
+                    <div className="bg-[#0e0e10] border border-neutral-900 rounded-2xl p-6 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-lg font-semibold text-white">(custom API limit)</h4>
+                            <span className="text-[11px] font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 px-2 py-0.5 rounded-full font-mono">
+                              10 req/menit · 50 req/hari
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">Batas kuota otomatis saat Anda menggunakan Custom API yang terhubung</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setCurrentView('custom_api')}
+                            className="text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline px-2 py-1"
+                          >
+                            Kelola API &rarr;
+                          </button>
+                          <button
+                            onClick={() => {
+                              resetCustomApiUsage();
+                              setCustomUsage(getCustomApiUsageStats());
+                              showToast('Limit Custom API berhasil direset!');
+                            }}
+                            className="text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-gray-300 border border-neutral-800 px-3 py-1.5 rounded-lg transition"
+                          >
+                            Reset Custom
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-5">
+                        {/* 10 request permenit */}
+                        <div>
+                          <div className="flex justify-between text-xs font-medium text-white mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                              Batas Per Menit (10 request/menit)
+                            </span>
+                            <span className={customUsage.minuteCount >= 10 ? "text-red-400 font-semibold font-mono" : "text-emerald-400 font-mono"}>
+                              {customUsage.minuteCount} / 10 request ({Math.round((customUsage.minuteCount / 10) * 100)}%)
+                            </span>
+                          </div>
+                          <div className="h-3.5 bg-neutral-900 rounded-full overflow-hidden p-0.5 border border-neutral-800/60">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                customUsage.minuteCount >= 10 ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" : customUsage.minuteCount > 7 ? "bg-amber-500" : "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"
+                              )} 
+                              style={{ width: `${Math.min(100, (customUsage.minuteCount / 10) * 100)}%` }} 
+                            />
+                          </div>
+                          <div className="flex justify-between text-[11px] text-gray-400 mt-1">
+                            <span>Sisa: {customUsage.minuteRemaining} request menit ini</span>
+                            <span>Reset: Otomatis setiap 60 detik</span>
+                          </div>
+                        </div>
+
+                        {/* 50 request per hari */}
+                        <div>
+                          <div className="flex justify-between text-xs font-medium text-white mb-1.5">
+                            <span className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                              Batas Per Hari (50 request/hari)
+                            </span>
+                            <span className={customUsage.dailyCount >= 50 ? "text-red-400 font-semibold font-mono" : "text-emerald-400 font-mono"}>
+                              {customUsage.dailyCount} / 50 request ({Math.round((customUsage.dailyCount / 50) * 100)}%)
+                            </span>
+                          </div>
+                          <div className="h-3.5 bg-neutral-900 rounded-full overflow-hidden p-0.5 border border-neutral-800/60">
+                            <div 
+                              className={cn(
+                                "h-full rounded-full transition-all duration-500",
+                                customUsage.dailyCount >= 50 ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.7)]" : customUsage.dailyCount > 40 ? "bg-amber-500" : "bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)]"
+                              )} 
+                              style={{ width: `${Math.min(100, (customUsage.dailyCount / 50) * 100)}%` }} 
+                            />
+                          </div>
+                          <div className="flex justify-between text-[11px] text-gray-400 mt-1">
+                            <span>Sisa: {customUsage.dailyRemaining} request hari ini</span>
+                            <span>Reset: 24 jam</span>
+                          </div>
+                        </div>
+
+                        {(customUsage.minuteCount >= 10 || customUsage.dailyCount >= 50) && (
+                          <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl text-xs text-red-300 flex items-start gap-2">
+                            <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+                            <span>Batas Custom API tercapai ({customUsage.minuteCount >= 10 ? '10 request/menit' : '50 request/hari'}). Harap tunggu periode reset.</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -422,6 +652,359 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         </div>
                         <ArrowLeft size={18} className="rotate-180 text-gray-400 group-hover:translate-x-1 transition-all group-hover:text-[#1a73e8]" />
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* View E. CUSTOM API */}
+                {currentView === 'custom_api' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-900 pb-5">
+                      <div>
+                        <div className="flex items-center gap-2.5">
+                          <h3 className="text-2xl font-normal text-white">Custom API</h3>
+                          <span className="bg-emerald-950 text-emerald-400 border border-emerald-800/60 text-xs px-2.5 py-0.5 rounded-full font-mono font-medium">
+                            {customApis.length} / {MAX_CUSTOM_APIS} API
+                          </span>
+                        </div>
+                        <p className="text-gray-400 text-sm mt-1">
+                          Kelola hingga maksimal {MAX_CUSTOM_APIS} API. Kartu dengan warna hijau di sebelah kiri menandakan API aktif & digunakan.
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (customApis.length >= MAX_CUSTOM_APIS) {
+                            showToast(`Maksimal ${MAX_CUSTOM_APIS} API telah tercapai!`);
+                            return;
+                          }
+                          setIsAddFormOpen(prev => !prev);
+                        }}
+                        className={cn(
+                          "flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition cursor-pointer whitespace-nowrap",
+                          customApis.length >= MAX_CUSTOM_APIS
+                            ? "bg-neutral-800 text-gray-500 cursor-not-allowed"
+                            : isAddFormOpen 
+                              ? "bg-neutral-800 text-gray-200 hover:bg-neutral-700" 
+                              : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/60"
+                        )}
+                      >
+                        <Plus size={18} className={isAddFormOpen ? "rotate-45 transition-transform" : "transition-transform"} />
+                        <span>{isAddFormOpen ? 'Tutup Formulir' : 'Tambah API Baru'}</span>
+                      </button>
+                    </div>
+
+                    {/* Rate Limit Summary Banner */}
+                    <div className="bg-[#0e0e10] border border-emerald-900/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2.5 rounded-xl bg-emerald-950/60 border border-emerald-800/40 text-emerald-400 mt-0.5">
+                          <Cpu size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-semibold text-white">(custom API limit)</span>
+                            <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded-full font-mono">
+                              10 req/min · 50 req/hari
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            Status Kuota: <span className="text-emerald-300 font-mono">{customUsage.minuteRemaining}/10 sisa menit ini</span> · <span className="text-teal-300 font-mono">{customUsage.dailyRemaining}/50 sisa hari ini</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => {
+                            resetCustomApiUsage();
+                            setCustomUsage(getCustomApiUsageStats());
+                            showToast('Log limit Custom API berhasil direset!');
+                          }}
+                          className="w-full sm:w-auto text-xs text-gray-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
+                          title="Reset Penghitung Limit"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Reset Limit</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Form Tambah API */}
+                    <AnimatePresence>
+                      {isAddFormOpen && (
+                        <motion.form
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          transition={{ duration: 0.25 }}
+                          onSubmit={handleSaveNewApi}
+                          className="bg-[#0e0e10] border border-emerald-800/40 rounded-2xl p-5 sm:p-6 space-y-4 shadow-xl overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between border-b border-neutral-900 pb-3">
+                            <h4 className="text-base font-semibold text-white flex items-center gap-2">
+                              <Key size={18} className="text-emerald-400" />
+                              Tambah Custom API ({customApis.length + 1} dari {MAX_CUSTOM_APIS})
+                            </h4>
+                            <span className="text-xs text-gray-400">Maks. 10 API</span>
+                          </div>
+
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
+                                Nama API / Label <span className="text-red-400">*</span>
+                              </label>
+                              <input 
+                                type="text"
+                                value={formName}
+                                onChange={(e) => setFormName(e.target.value)}
+                                placeholder="Contoh: OpenAI GPT-4o, Groq Llama, dll."
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm"
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
+                                Provider / Layanan
+                              </label>
+                              <select 
+                                value={formProvider}
+                                onChange={(e) => {
+                                  setFormProvider(e.target.value);
+                                  if (e.target.value === 'OpenAI' && !formBaseUrl) setFormBaseUrl('https://api.openai.com/v1');
+                                  else if (e.target.value === 'Groq' && !formBaseUrl) setFormBaseUrl('https://api.groq.com/openai/v1');
+                                  else if (e.target.value === 'OpenRouter' && !formBaseUrl) setFormBaseUrl('https://openrouter.ai/api/v1');
+                                }}
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 text-sm"
+                              >
+                                <option value="OpenAI">OpenAI (api.openai.com)</option>
+                                <option value="Groq">Groq (api.groq.com)</option>
+                                <option value="OpenRouter">OpenRouter (openrouter.ai)</option>
+                                <option value="Anthropic">Anthropic (Claude)</option>
+                                <option value="Gemini">Google Gemini</option>
+                                <option value="DeepSeek">DeepSeek</option>
+                                <option value="Custom">Custom Endpoint / Self-Hosted</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
+                                API Key / Bearer Token <span className="text-red-400">*</span>
+                              </label>
+                              <input 
+                                type="password"
+                                value={formApiKey}
+                                onChange={(e) => setFormApiKey(e.target.value)}
+                                placeholder="sk-..."
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm font-mono"
+                                required
+                              />
+                            </div>
+
+                            <div>
+                              <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
+                                Model ID (Opsional)
+                              </label>
+                              <input 
+                                type="text"
+                                value={formModel}
+                                onChange={(e) => setFormModel(e.target.value)}
+                                placeholder="Contoh: gpt-4o, llama-3.3-70b, dll."
+                                className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="text-xs font-semibold text-gray-300 uppercase tracking-wider block mb-1.5">
+                              Base URL / Endpoint (Opsional)
+                            </label>
+                            <input 
+                              type="text"
+                              value={formBaseUrl}
+                              onChange={(e) => setFormBaseUrl(e.target.value)}
+                              placeholder="https://api.openai.com/v1"
+                              className="w-full bg-[#161619] border border-neutral-800 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500 text-sm"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <input 
+                              type="checkbox"
+                              id="formIsActive"
+                              checked={formIsActive}
+                              onChange={(e) => setFormIsActive(e.target.checked)}
+                              className="w-4 h-4 rounded text-emerald-600 bg-neutral-900 border-neutral-700 focus:ring-emerald-500 focus:ring-offset-black cursor-pointer"
+                            />
+                            <label htmlFor="formIsActive" className="text-sm text-gray-300 cursor-pointer select-none">
+                              Jadikan API ini langsung aktif dan digunakan
+                            </label>
+                          </div>
+
+                          <div className="flex justify-end gap-3 pt-3 border-t border-neutral-900">
+                            <button
+                              type="button"
+                              onClick={() => setIsAddFormOpen(false)}
+                              className="px-4 py-2 rounded-xl text-sm text-gray-400 hover:text-white hover:bg-neutral-900 transition"
+                            >
+                              Batal
+                            </button>
+                            <button
+                              type="submit"
+                              className="px-5 py-2 rounded-xl text-sm font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md shadow-emerald-950"
+                            >
+                              Simpan API
+                            </button>
+                          </div>
+                        </motion.form>
+                      )}
+                    </AnimatePresence>
+
+                    {/* List API Cards */}
+                    <div className="space-y-3.5">
+                      {customApis.length === 0 ? (
+                        <div className="text-center py-16 px-4 border border-dashed border-neutral-900 rounded-3xl bg-[#0c0c0d] space-y-3">
+                          <div className="w-12 h-12 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-gray-500 mx-auto">
+                            <Key size={22} />
+                          </div>
+                          <div>
+                            <h4 className="text-base font-medium text-white">Belum Ada Custom API</h4>
+                            <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
+                              Tambahkan hingga 10 API kustom untuk menghubungkan endpoint AI Anda sendiri dengan limit 10 req/menit & 50 req/hari.
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setIsAddFormOpen(true)}
+                            className="inline-flex items-center gap-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl transition cursor-pointer shadow-md"
+                          >
+                            <Plus size={16} />
+                            <span>Tambah API Pertama</span>
+                          </button>
+                        </div>
+                      ) : (
+                        customApis.map((api) => {
+                          const isKeyVisible = visibleKeyIds[api.id] || false;
+                          const maskedKey = api.apiKey.length > 8 
+                            ? api.apiKey.substring(0, 4) + '••••••••••••' + api.apiKey.substring(api.apiKey.length - 4)
+                            : '••••••••••••';
+
+                          return (
+                            <div 
+                              key={api.id}
+                              className={cn(
+                                "group relative bg-[#0e0e10] rounded-2xl border transition-all duration-300 shadow-sm flex overflow-hidden",
+                                api.isActive 
+                                  ? "border-emerald-600/70 bg-gradient-to-r from-emerald-950/20 via-[#0e0e10] to-[#0e0e10] shadow-[0_0_20px_rgba(16,185,129,0.08)]" 
+                                  : "border-neutral-900 hover:border-neutral-800 hover:bg-[#121214]"
+                              )}
+                            >
+                              {/* Indikator Hijau di Kiri Card API (Bisa diklik untuk on/off) */}
+                              <div 
+                                onClick={() => handleToggleActive(api.id, api.name)}
+                                title={api.isActive ? "Klik untuk mematikan API ini" : "Klik untuk mengaktifkan & menggunakan API ini"}
+                                className={cn(
+                                  "w-3.5 sm:w-4 flex-shrink-0 cursor-pointer transition-all duration-300 flex items-center justify-center relative",
+                                  api.isActive 
+                                    ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.8)]" 
+                                    : "bg-neutral-800 hover:bg-neutral-700"
+                                )}
+                              >
+                                {api.isActive && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-white shadow-sm animate-ping opacity-75" />
+                                )}
+                              </div>
+
+                              {/* Isi Card */}
+                              <div className="flex-1 p-4 sm:p-5 flex flex-col justify-between gap-4">
+                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2.5 flex-wrap">
+                                      <h4 className="text-base font-semibold text-white">{api.name}</h4>
+                                      <span className="text-[11px] bg-neutral-900 text-gray-300 border border-neutral-800 px-2 py-0.5 rounded-md font-medium">
+                                        {api.provider}
+                                      </span>
+                                      {api.model && (
+                                        <span className="text-[11px] bg-blue-950/60 text-blue-300 border border-blue-800/40 px-2 py-0.5 rounded-md font-mono">
+                                          {api.model}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {api.baseUrl && (
+                                      <p className="text-xs text-gray-400 font-mono truncate max-w-md">
+                                        {api.baseUrl}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  {/* Tombol Toggle & Hapus */}
+                                  <div className="flex items-center gap-2 self-start">
+                                    <button
+                                      onClick={() => handleToggleActive(api.id, api.name)}
+                                      className={cn(
+                                        "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer",
+                                        api.isActive
+                                          ? "bg-emerald-950 text-emerald-400 border border-emerald-700/60 shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                                          : "bg-neutral-900 text-gray-400 border border-neutral-800 hover:text-white hover:bg-neutral-800"
+                                      )}
+                                    >
+                                      <span className={cn("w-2 h-2 rounded-full", api.isActive ? "bg-emerald-400 animate-pulse" : "bg-gray-600")} />
+                                      <span>{api.isActive ? 'Aktif Digunakan' : 'Klik Aktifkan'}</span>
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleDeleteApi(api.id, api.name)}
+                                      className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-950/40 border border-transparent hover:border-red-900/40 rounded-lg transition cursor-pointer"
+                                      title="Hapus API ini"
+                                    >
+                                      <Trash2 size={16} />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* API Key Masked Box */}
+                                <div className="flex items-center justify-between bg-[#070708] border border-neutral-900 rounded-xl px-3.5 py-2 text-xs">
+                                  <div className="flex items-center gap-2 truncate font-mono text-gray-300">
+                                    <span className="text-gray-500">Key:</span>
+                                    <span>{isKeyVisible ? api.apiKey : maskedKey}</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                                    <button
+                                      onClick={() => toggleKeyVisibility(api.id)}
+                                      className="p-1 text-gray-400 hover:text-white transition rounded"
+                                      title={isKeyVisible ? "Sembunyikan Key" : "Tampilkan Key"}
+                                    >
+                                      {isKeyVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    </button>
+                                    <button
+                                      onClick={() => copyToClipboard(api.apiKey, 'API Key')}
+                                      className="p-1 text-gray-400 hover:text-white transition rounded"
+                                      title="Salin Key"
+                                    >
+                                      <Copy size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-neutral-900/40 border border-neutral-900 rounded-xl text-xs text-gray-400 flex items-start gap-2.5">
+                      <Check size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-gray-300 font-medium">Petunjuk Penggunaan Custom API:</p>
+                        <ul className="list-disc list-inside mt-1 space-y-0.5 text-gray-400">
+                          <li>Maksimal hingga 10 API yang dapat disimpan.</li>
+                          <li>Warna hijau di sisi kiri kartu menandakan API sedang aktif digunakan.</li>
+                          <li>Klik kartu atau tombol toggle untuk mematikan / menyalakan API kapan saja.</li>
+                          <li>Limit penggunaan Custom API adalah <strong>10 request per menit</strong> dan <strong>50 request per hari</strong>.</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 )}
