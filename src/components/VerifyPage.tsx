@@ -4,10 +4,10 @@ import { supabase } from '../supabaseClient';
 export function VerifyPage() {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    async function checkSessionViaEdge() {
-      // Generasi / Ambil Device ID unik browser ini
+    async function checkSession() {
       let deviceId = localStorage.getItem('tmpa_device_id');
       if (!deviceId) {
         if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -19,74 +19,71 @@ export function VerifyPage() {
       }
 
       try {
-        // 1. Bluefox tanya ke Edge Function membawa device_id
         const res = await fetch(
           `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/swift-endpoint?device_id=${deviceId}`
         );
 
         const data = await res.json();
 
-        // 2. Jika Edge Function menemukan sesi dari account
-        if (data.accounts && data.accounts.length > 0) {
-          setAccounts(data.accounts); // Tampilkan Chooser UI di Bluefox
+        // JIKA STATUS BUKAN 200 (Menangkap Error 400, 401, 500)
+        if (!res.ok) {
+          setErrorMessage(data.error || "Gagal memverifikasi sesi");
           setLoading(false);
-        } else {
-          // 3. Jika tidak ada sesi -> Redirect ke account.tmpa.my.id/account
-          window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
+          return; // STOP! Tanpa Redirect
         }
-      } catch (err) {
-        console.error('Gagal verifikasi sesi:', err);
-        window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
+
+        // JIKA SUKSES
+        if (data.accounts && data.accounts.length > 0) {
+          setAccounts(data.accounts);
+        } else {
+          setErrorMessage("Tidak ada akun yang terhubung.");
+        }
+      } catch (err: any) {
+        setErrorMessage("Terjadi kesalahan jaringan: " + (err?.message || String(err)));
+      } finally {
+        setLoading(false);
       }
     }
 
-    checkSessionViaEdge();
+    checkSession();
   }, []);
-
-  // Fungsi fallback redirect ke account.tmpa.my.id membawa client_id & device_id
-  const redirectToSSOLogin = () => {
-    let deviceId = localStorage.getItem('tmpa_device_id');
-    if (!deviceId) {
-      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        deviceId = crypto.randomUUID();
-      } else {
-        deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      }
-      localStorage.setItem('tmpa_device_id', deviceId);
-    }
-    window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
-  };
 
   // Fungsi saat user mengeklik salah satu akun yang tampil
   const handleSelectAccount = async (acc: any) => {
-    // Set sesi langsung di Bluefox
-    const { error } = await supabase.auth.setSession({
-      access_token: acc.access_token,
-      refresh_token: acc.refresh_token || '',
-    });
+    try {
+      const { error } = await supabase.auth.setSession({
+        access_token: acc.access_token,
+        refresh_token: acc.refresh_token || '',
+      });
 
-    if (!error) {
-      // Simpan user info jika ada
-      if (acc.name || acc.email) {
-        try {
-          localStorage.setItem('tmpa_selected_account', JSON.stringify(acc));
-        } catch {}
+      if (!error) {
+        if (acc.name || acc.email) {
+          try {
+            localStorage.setItem('tmpa_selected_account', JSON.stringify(acc));
+          } catch {}
+        }
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://bluefox.tmpa.my.id';
+        window.location.href = `${currentOrigin}/`;
+      } else {
+        alert('Gagal mengaktifkan sesi: ' + error.message);
       }
-      // Login sukses, redirect ke root URL Bluefox
-      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://bluefox.tmpa.my.id';
-      window.location.href = `${currentOrigin}/`;
-    } else {
-      alert('Gagal mengaktifkan sesi: ' + error.message);
+    } catch (err: any) {
+      alert('Gagal mengaktifkan sesi: ' + (err?.message || String(err)));
     }
   };
 
-  // Tampilan TAHAP 1: Loading State
+  const handleManualLogin = () => {
+    let deviceId = localStorage.getItem('tmpa_device_id') || '';
+    window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
+  };
+
+  // TAMPILAN 1: Loading State
   if (loading) {
     return (
       <div style={styles.centerContainer}>
         <div className="spinner" style={styles.spinner}></div>
         <h3 style={{ marginTop: '20px', color: '#ffffff', fontSize: '18px', fontWeight: 600 }}>Memeriksa Sesi TMPA...</h3>
-        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '8px' }}>Mohon tunggu sebentar, sedang menghubungkan akun Anda.</p>
+        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '8px' }}>Mohon tunggu sebentar, sedang menghubungi Edge Function.</p>
         <style>{`
           @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -97,7 +94,55 @@ export function VerifyPage() {
     );
   }
 
-  // Tampilan TAHAP 2: Akun Ditemukan (User Chooser UI)
+  // TAMPILAN 2: ERROR DI LAYAR (TANPA REDIRECT)
+  if (errorMessage) {
+    return (
+      <div style={styles.pageWrapper}>
+        <div style={styles.errorCardContainer}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+              </svg>
+            </div>
+          </div>
+
+          <h3 style={{ color: '#ef4444', fontSize: '18px', fontWeight: 700, margin: '0 0 8px 0' }}>[Gagal Verifikasi]</h3>
+          <p style={{ color: '#f87171', fontSize: '14px', lineHeight: '1.5', margin: '0 0 20px 0', wordBreak: 'break-word', background: 'rgba(239, 68, 68, 0.1)', padding: '12px', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+            {errorMessage}
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button 
+              onClick={() => window.location.reload()} 
+              style={styles.retryButton}
+            >
+              🔄 Coba Lagi
+            </button>
+            <button 
+              onClick={handleManualLogin} 
+              style={styles.ssoButton}
+            >
+              🔑 Buka TMPA Account (Login Manual)
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // TAMPILAN 3: DAFTAR AKUN
   return (
     <div style={styles.pageWrapper}>
       <div style={styles.cardContainer}>
@@ -119,9 +164,9 @@ export function VerifyPage() {
           </div>
         </div>
 
-        <h2 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0' }}>Pilih Akun TMPA</h2>
+        <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0' }}>Pilih Akun TMPA</h3>
         <p style={{ color: '#9ca3af', marginBottom: '24px', fontSize: '14px', lineHeight: '1.5' }}>
-          Sesi terdeteksi! Pilih akun untuk melanjutkan ke Bluefox Chat:
+          Sesi terdeteksi! Klik akun di bawah untuk masuk ke Bluefox Chat:
         </p>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -156,7 +201,7 @@ export function VerifyPage() {
         </div>
 
         <button 
-          onClick={redirectToSSOLogin} 
+          onClick={handleManualLogin} 
           style={styles.useOtherButton}
           onMouseEnter={(e) => {
             e.currentTarget.style.color = '#60a5fa';
@@ -172,7 +217,7 @@ export function VerifyPage() {
   );
 }
 
-// Simple Inline Styles
+// Styling
 const styles: Record<string, React.CSSProperties> = {
   pageWrapper: {
     minHeight: '100vh',
@@ -205,6 +250,42 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+  },
+  errorCardContainer: {
+    maxWidth: '440px',
+    width: '100%',
+    margin: '0 auto',
+    padding: '28px',
+    borderRadius: '16px',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+    backgroundColor: '#130a0c',
+    textAlign: 'center',
+    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6)',
+  },
+  retryButton: {
+    width: '100%',
+    padding: '10px 16px',
+    backgroundColor: '#2563eb',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '8px',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s',
+  },
+  ssoButton: {
+    width: '100%',
+    padding: '10px 16px',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    color: '#d1d5db',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    borderRadius: '8px',
+    fontWeight: 600,
+    fontSize: '14px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   accountCard: {
     display: 'flex',
