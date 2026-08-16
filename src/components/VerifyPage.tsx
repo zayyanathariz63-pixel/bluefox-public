@@ -6,56 +6,55 @@ export function VerifyPage() {
   const [accounts, setAccounts] = useState<any[]>([]);
 
   useEffect(() => {
-    async function verifySession() {
+    async function checkSessionViaEdge() {
+      // Generasi / Ambil Device ID unik browser ini
+      let deviceId = localStorage.getItem('tmpa_device_id');
+      if (!deviceId) {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+          deviceId = crypto.randomUUID();
+        } else {
+          deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+        localStorage.setItem('tmpa_device_id', deviceId);
+      }
+
       try {
-        // 1. Panggil Edge Function swift-endpoint dengan membawa cookie .tmpa.my.id
+        // 1. Bluefox tanya ke Edge Function membawa device_id
         const res = await fetch(
-          'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/swift-endpoint',
-          {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', // 👈 PENTING: Mengirim cookie shared .tmpa.my.id
-          }
+          `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/swift-endpoint?device_id=${deviceId}`
         );
 
         const data = await res.json();
 
-        // 2. KONDISI A: Sesi ditemukan & ada akun aktif
-        if (res.ok && data.accounts && data.accounts.length > 0) {
-          setAccounts(data.accounts);
-          setLoading(false); // Matikan loading, tampilkan UI akun
+        // 2. Jika Edge Function menemukan sesi dari account
+        if (data.accounts && data.accounts.length > 0) {
+          setAccounts(data.accounts); // Tampilkan Chooser UI di Bluefox
+          setLoading(false);
         } else {
-          // 3. KONDISI B: Sesi kosong / invalid -> Redirect ke SSO Login Tiket
-          redirectToSSOLogin();
+          // 3. Jika tidak ada sesi -> Redirect ke account.tmpa.my.id/account
+          window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
         }
       } catch (err) {
         console.error('Gagal verifikasi sesi:', err);
-        redirectToSSOLogin();
+        window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
       }
     }
 
-    verifySession();
+    checkSessionViaEdge();
   }, []);
 
-  // Fungsi fallback redirect ke account.tmpa.my.id (metode tiket SSO)
+  // Fungsi fallback redirect ke account.tmpa.my.id membawa client_id & device_id
   const redirectToSSOLogin = () => {
-    let currentBaseUrl = 'https://bluefox.tmpa.my.id';
-    if (typeof window !== 'undefined') {
-      if (window.location.hostname === 'chat.tmpa.my.id') {
-        currentBaseUrl = 'https://chat.tmpa.my.id';
-      } else if (window.location.hostname.includes('tmpa.my.id')) {
-        currentBaseUrl = window.location.origin;
-      } else if (window.location.origin) {
-        currentBaseUrl = window.location.origin;
+    let deviceId = localStorage.getItem('tmpa_device_id');
+    if (!deviceId) {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        deviceId = crypto.randomUUID();
+      } else {
+        deviceId = 'dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
       }
+      localStorage.setItem('tmpa_device_id', deviceId);
     }
-
-    const ssoUrl = new URL('https://account.tmpa.my.id/sso/authorize');
-    ssoUrl.searchParams.set('client_id', 'bluefox-chat');
-    ssoUrl.searchParams.set('redirect_uri', currentBaseUrl);
-
-    console.log("🔄 [SSO Fallback] Mengarahkan ke SSO Authorize:", ssoUrl.toString());
-    window.location.href = ssoUrl.toString();
+    window.location.href = `https://account.tmpa.my.id/account?client_id=bluefox&device_id=${deviceId}`;
   };
 
   // Fungsi saat user mengeklik salah satu akun yang tampil
