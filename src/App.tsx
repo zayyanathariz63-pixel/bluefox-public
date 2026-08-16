@@ -4,6 +4,7 @@ import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
+import { VerifyPage } from './components/VerifyPage';
 import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
@@ -197,7 +198,7 @@ export default function App() {
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [appState, setAppState] = useState<'landing' | 'login' | 'chat'>('landing');
+  const [appState, setAppState] = useState<'landing' | 'login' | 'chat' | 'verify'>('landing');
   const [user, setUser] = useState<any>(null);
   const [userTier, setUserTier] = useState<string>('Loading...');
   const [authChecking, setAuthChecking] = useState(true);
@@ -259,6 +260,14 @@ export default function App() {
         setAuthChecking(true);
         const urlParams = new URLSearchParams(window.location.search);
         const currentPath = window.location.pathname;
+
+        // 0. CEK RUTE /verify (VerifyPage)
+        if (currentPath.startsWith('/verify') || urlParams.get('page') === 'verify' || urlParams.get('view') === 'verify') {
+          setAppState('verify');
+          setAuthChecking(false);
+          setShowSplash(false);
+          return;
+        }
 
         // 1. TANGKAP PARAMETER TIKET SSO (?ticket=... ATAU PATH /ticket)
         const ticketParam = urlParams.get('ticket');
@@ -1002,6 +1011,10 @@ export default function App() {
         </div>
       )}
       
+      {!showSplash && !authChecking && !authError && appState === 'verify' && (
+        <VerifyPage />
+      )}
+
       {!showSplash && !authChecking && !authError && appState === 'landing' && (
         <LandingPage onStart={handleLandingStart} />
       )}
