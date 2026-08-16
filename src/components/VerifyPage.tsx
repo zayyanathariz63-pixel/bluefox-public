@@ -37,10 +37,25 @@ export function VerifyPage() {
     verifySession();
   }, []);
 
-  // Fungsi fallback redirect ke account.tmpa.my.id (metode tiket)
+  // Fungsi fallback redirect ke account.tmpa.my.id (metode tiket SSO)
   const redirectToSSOLogin = () => {
-    const redirectUri = encodeURIComponent('https://bluefox.tmpa.my.id/auth/callback');
-    window.location.href = `https://account.tmpa.my.id/sso/authorize?redirect_uri=${redirectUri}`;
+    let currentBaseUrl = 'https://bluefox.tmpa.my.id';
+    if (typeof window !== 'undefined') {
+      if (window.location.hostname === 'chat.tmpa.my.id') {
+        currentBaseUrl = 'https://chat.tmpa.my.id';
+      } else if (window.location.hostname.includes('tmpa.my.id')) {
+        currentBaseUrl = window.location.origin;
+      } else if (window.location.origin) {
+        currentBaseUrl = window.location.origin;
+      }
+    }
+
+    const ssoUrl = new URL('https://account.tmpa.my.id/sso/authorize');
+    ssoUrl.searchParams.set('client_id', 'bluefox-chat');
+    ssoUrl.searchParams.set('redirect_uri', currentBaseUrl);
+
+    console.log("🔄 [SSO Fallback] Mengarahkan ke SSO Authorize:", ssoUrl.toString());
+    window.location.href = ssoUrl.toString();
   };
 
   // Fungsi saat user mengeklik salah satu akun yang tampil
@@ -58,8 +73,9 @@ export function VerifyPage() {
           localStorage.setItem('tmpa_selected_account', JSON.stringify(acc));
         } catch {}
       }
-      // Login sukses, redirect ke dashboard/home Bluefox
-      window.location.href = '/';
+      // Login sukses, redirect ke root URL Bluefox
+      const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://bluefox.tmpa.my.id';
+      window.location.href = `${currentOrigin}/`;
     } else {
       alert('Gagal mengaktifkan sesi: ' + error.message);
     }

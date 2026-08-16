@@ -43,20 +43,25 @@ function getTmpaSession() {
 }
 
 export function redirectToSSO() {
-  const ACCOUNT_SSO_URL = 'https://account.tmpa.my.id/account';
+  const ACCOUNT_SSO_URL = 'https://account.tmpa.my.id/sso/authorize';
   const CLIENT_ID = 'bluefox-chat';
   
   let REDIRECT_URI = 'https://bluefox.tmpa.my.id';
-  if (window.location.hostname === 'chat.tmpa.my.id') {
-    REDIRECT_URI = 'https://chat.tmpa.my.id';
-  } else if (window.location.hostname !== 'bluefox.tmpa.my.id') {
-    REDIRECT_URI = window.location.origin;
+  if (typeof window !== 'undefined') {
+    if (window.location.hostname === 'chat.tmpa.my.id') {
+      REDIRECT_URI = 'https://chat.tmpa.my.id';
+    } else if (window.location.hostname.includes('tmpa.my.id')) {
+      REDIRECT_URI = window.location.origin;
+    } else if (window.location.origin) {
+      REDIRECT_URI = window.location.origin;
+    }
   }
 
   const ssoUrl = new URL(ACCOUNT_SSO_URL);
   ssoUrl.searchParams.set('client_id', CLIENT_ID);
   ssoUrl.searchParams.set('redirect_uri', REDIRECT_URI);
 
+  console.log("🔄 [SSO Redirect] Mengarahkan ke:", ssoUrl.toString());
   window.location.href = ssoUrl.toString();
 }
 
@@ -228,7 +233,22 @@ export default function App() {
       console.warn("Gagal cek session saat klik Start:", err);
     }
 
-    redirectToSSO();
+    // Arahkan ke halaman verifikasi sesi Bluefox (/verify)
+    if (typeof window !== 'undefined') {
+      if (window.location.hostname === 'bluefox.tmpa.my.id') {
+        window.location.href = 'https://bluefox.tmpa.my.id/verify';
+        return;
+      } else if (window.location.hostname.includes('tmpa.my.id')) {
+        window.location.href = `${window.location.origin}/verify`;
+        return;
+      }
+    }
+
+    // Navigasi internal untuk preview / local env
+    try {
+      window.history.pushState(null, '', '/verify');
+    } catch {}
+    setAppState('verify');
   };
 
   const handleLogout = async () => {
