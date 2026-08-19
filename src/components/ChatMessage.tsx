@@ -127,6 +127,41 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
             )}
           </div>
           
+          {message.media && (
+            <div className="mb-3">
+              {message.media.type === 'image' ? (
+                <div className="relative inline-block max-w-sm rounded-xl overflow-hidden border border-gray-800 bg-gray-950">
+                  <img
+                    src={message.media.url}
+                    alt={message.media.name || 'Uploaded photo'}
+                    className="max-h-64 sm:max-h-72 w-auto object-contain rounded-xl"
+                  />
+                  {message.media.name && (
+                    <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/80 border-t border-gray-800 truncate max-w-full">
+                      {message.media.name}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="relative inline-block max-w-md rounded-xl overflow-hidden border border-gray-800 bg-black">
+                  <video
+                    src={message.media.url}
+                    controls
+                    className="max-h-72 w-full rounded-xl"
+                  />
+                  <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/80 border-t border-gray-800 flex items-center justify-between">
+                    <span className="truncate">{message.media.name || 'Uploaded video'}</span>
+                    {message.media.duration !== undefined && (
+                      <span className="text-cyan-400 font-mono text-[10px] ml-2 shrink-0">
+                        {Math.round(message.media.duration)}s
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {isEditing ? (
             <div className="flex flex-col gap-3 mt-2 w-full pr-2">
               <textarea

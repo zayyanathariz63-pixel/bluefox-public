@@ -1,7 +1,16 @@
+export interface MediaAttachment {
+  url: string;
+  type: 'image' | 'video';
+  name: string;
+  size?: number;
+  duration?: number;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model';
   text: string;
+  media?: MediaAttachment;
 }
 
 export interface Connector {

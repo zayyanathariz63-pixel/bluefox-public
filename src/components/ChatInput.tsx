@@ -1,26 +1,41 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle } from 'lucide-react';
+import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Paperclip, X, Image as ImageIcon, Video as VideoIcon, Eye } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Connector } from '../types';
+import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 
 interface ChatInputProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, media?: MediaAttachment) => void;
   isLoading: boolean;
   onStop?: () => void;
   connectors: Connector[];
   onToggleConnector: (id: string) => void;
   onShowAllConnectors: () => void;
+  onAutoEnableVision?: () => void;
+  isVisionActive?: boolean;
   disabled?: boolean;
 }
 
-export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConnector, onShowAllConnectors, disabled }: ChatInputProps) {
+export function ChatInput({ 
+  onSend, 
+  isLoading, 
+  onStop, 
+  connectors, 
+  onToggleConnector, 
+  onShowAllConnectors,
+  onAutoEnableVision,
+  isVisionActive,
+  disabled 
+}: ChatInputProps) {
   const [input, setInput] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingText, setRecordingText] = useState('');
-  const recognitionRef = useRef<any>(null);
+  const [attachedMedia, setAttachedMedia] = useState<MediaAttachment | null>(null);
+  const [isProcessingMedia, setIsProcessingMedia] = useState(false);
 
+  const recognitionRef = useRef<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
@@ -135,6 +150,106 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
     }, 100);
   };
 
+  // Handler Tombol Upload File (Foto/Video)
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    const isImage = file.type.startsWith('image/');
+    const isVideo = file.type.startsWith('video/');
+
+    if (!isImage && !isVideo) {
+      alert('Mohon pilih file foto/gambar atau video yang valid.');
+      return;
+    }
+
+    setIsProcessingMedia(true);
+
+    try {
+      if (isVideo) {
+        // Cek durasi video: Maksimal 1 menit (60 detik)
+        const duration = await new Promise<number>((resolve, reject) => {
+          const video = document.createElement('video');
+          video.preload = 'metadata';
+          const objectUrl = URL.createObjectURL(file);
+          
+          video.onloadedmetadata = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(video.duration);
+          };
+          
+          video.onerror = () => {
+            URL.revokeObjectURL(objectUrl);
+            reject(new Error("Gagal membaca metadata video. Pastikan format video didukung oleh browser Anda."));
+          };
+          
+          video.src = objectUrl;
+        });
+
+        if (duration > 60) {
+          alert(`Durasi video maksimal 1 menit (60 detik). Video yang Anda pilih berdurasi ${Math.round(duration)} detik dan melebihi batas yang diizinkan.`);
+          setIsProcessingMedia(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          return;
+        }
+
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        setAttachedMedia({
+          url: dataUrl,
+          type: 'video',
+          name: file.name,
+          size: file.size,
+          duration: duration,
+        });
+      } else {
+        // Foto / Gambar
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        setAttachedMedia({
+          url: dataUrl,
+          type: 'image',
+          name: file.name,
+          size: file.size,
+        });
+      }
+
+      // Otomatis aktifkan Vision saat user upload foto atau video
+      if (onAutoEnableVision) {
+        onAutoEnableVision();
+      }
+    } catch (err: any) {
+      console.error("Gagal memproses file:", err);
+      alert(err?.message || "Gagal memproses file yang diunggah.");
+    } finally {
+      setIsProcessingMedia(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveMedia = () => {
+    setAttachedMedia(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -154,9 +269,10 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (input.trim() && !isLoading) {
-      onSend(input.trim());
+    if ((input.trim() || attachedMedia) && !isLoading) {
+      onSend(input.trim(), attachedMedia || undefined);
       setInput('');
+      setAttachedMedia(null);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
@@ -174,6 +290,15 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6 pt-1 select-none relative">
+      {/* Hidden file input untuk foto dan video */}
+      <input 
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       <div className="relative" ref={popupRef}>
         <AnimatePresence>
           {isPopupOpen && (
@@ -233,11 +358,69 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
           )}
         </AnimatePresence>
 
+        {/* Preview media di atas input prompt dengan tombol silang (X) */}
+        <AnimatePresence>
+          {attachedMedia && (
+            <motion.div
+              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.96 }}
+              className="mb-2 p-2.5 bg-gray-900/90 border border-gray-800 rounded-2xl flex items-center justify-between gap-3 shadow-lg backdrop-blur-md"
+            >
+              <div className="flex items-center gap-3 overflow-hidden">
+                <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-xl overflow-hidden bg-black border border-gray-800 shrink-0 flex items-center justify-center">
+                  {attachedMedia.type === 'image' ? (
+                    <img 
+                      src={attachedMedia.url} 
+                      alt="Preview" 
+                      className="w-full h-full object-cover" 
+                    />
+                  ) : (
+                    <video 
+                      src={attachedMedia.url} 
+                      className="w-full h-full object-cover"
+                    />
+                  )}
+                  <div className="absolute top-1 left-1 bg-black/80 backdrop-blur-xs p-1 rounded-md text-cyan-400">
+                    {attachedMedia.type === 'image' ? <ImageIcon size={12} /> : <VideoIcon size={12} />}
+                  </div>
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-[280px]">
+                      {attachedMedia.name}
+                    </span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-medium flex items-center gap-1 shrink-0">
+                      <Eye size={10} /> Auto-Vision
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-400 mt-0.5">
+                    {attachedMedia.type === 'video' && attachedMedia.duration !== undefined
+                      ? `Video (${Math.round(attachedMedia.duration)}s) • ${(attachedMedia.size ? (attachedMedia.size / (1024 * 1024)).toFixed(1) : 0)} MB`
+                      : `Foto • ${(attachedMedia.size ? (attachedMedia.size / 1024).toFixed(0) : 0)} KB`
+                    }
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleRemoveMedia}
+                className="w-8 h-8 rounded-xl bg-gray-800 hover:bg-red-500/20 hover:text-red-400 text-gray-400 flex items-center justify-center transition-all cursor-pointer shrink-0 border border-gray-700 hover:border-red-500/40"
+                title="Hapus / Batal unggah"
+              >
+                <X size={16} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form 
           onSubmit={handleSubmit}
           className="relative flex items-end overflow-hidden rounded-2xl bg-gray-900 focus-within:bg-gray-900/90 border border-gray-800 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-sm"
         >
-          <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
+          {/* Dua tombol: Connect dan Upload */}
+          <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center gap-1">
+            {/* Tombol 1: Connect */}
             <button
               type="button"
               onClick={() => setIsPopupOpen(!isPopupOpen)}
@@ -245,11 +428,34 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
                 "p-2 rounded-xl transition-colors shrink-0 h-[38px] w-[38px] flex items-center justify-center",
                 isPopupOpen || activeConnectors.length > 0 ? "text-blue-400 bg-blue-500/10 hover:bg-blue-500/20" : "text-gray-400 hover:text-white hover:bg-gray-800"
               )}
-              title="Connectors"
+              title="Connect (Konektor Eksternal)"
             >
               <Link2 className="w-5 h-5" />
             </button>
+
+            {/* Tombol 2: Upload (Foto & Video) */}
+            <button
+              type="button"
+              onClick={handleUploadClick}
+              disabled={isLoading || disabled || isProcessingMedia}
+              className={cn(
+                "p-2 rounded-xl transition-colors shrink-0 h-[38px] w-[38px] flex items-center justify-center",
+                attachedMedia 
+                  ? "text-cyan-400 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40" 
+                  : (isLoading || disabled)
+                    ? "text-gray-600 cursor-not-allowed"
+                    : "text-gray-400 hover:text-white hover:bg-gray-800"
+              )}
+              title="Upload Foto & Video (Maks 1 Menit, Auto Vision)"
+            >
+              {isProcessingMedia ? (
+                <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />
+              ) : (
+                <Paperclip className="w-5 h-5" />
+              )}
+            </button>
           </div>
+
           <div className="flex-1 relative min-h-[52px] sm:min-h-[56px] flex items-center">
             <AnimatePresence mode="popLayout">
               {isRecording ? (
@@ -284,7 +490,13 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder={disabled ? "Kuota penuh, silakan reset kuota." : "Tanya tmpa chat sesuatu..."}
+                  placeholder={
+                    disabled 
+                      ? "Kuota penuh, silakan reset kuota." 
+                      : attachedMedia 
+                        ? `Ketik pertanyaan tentang ${attachedMedia.type === 'video' ? 'video' : 'foto'} ini...` 
+                        : "Tanya tmpa chat sesuatu..."
+                  }
                   className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-gray-100 placeholder:text-gray-500 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
                   rows={1}
                   disabled={isLoading || disabled}
@@ -292,6 +504,7 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
               )}
             </AnimatePresence>
           </div>
+
           <div className="absolute right-2 bottom-2 sm:right-3 sm:bottom-3 flex items-center justify-center gap-1.5">
             {isRecording ? (
               <button
@@ -329,10 +542,10 @@ export function ChatInput({ onSend, isLoading, onStop, connectors, onToggleConne
             ) : (
               <button
                 type="submit"
-                disabled={!input.trim() || disabled || isRecording}
+                disabled={(!input.trim() && !attachedMedia) || disabled || isRecording}
                 className={cn(
                   "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
-                  input.trim() && !disabled && !isRecording
+                  (input.trim() || attachedMedia) && !disabled && !isRecording
                     ? "bg-blue-600 text-white hover:bg-blue-500 cursor-pointer shadow-md shadow-blue-900/20"
                     : "bg-gray-800 text-gray-500 cursor-not-allowed"
                 )}

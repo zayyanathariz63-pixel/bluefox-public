@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Message, Connector } from './types';
+import { Message, Connector, MediaAttachment } from './types';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
@@ -740,9 +740,14 @@ export default function App() {
     setIsLoading(false);
   };
 
-  const handleSendMessage = async (text: string, overrideMessages?: Message[], imageUrl?: string | null) => {
+  const handleSendMessage = async (
+    text: string, 
+    overrideMessages?: Message[], 
+    imageUrl?: string | null, 
+    media?: MediaAttachment
+  ) => {
     const userText = text.trim();
-    if ((!userText && !imageUrl) || isLoading) return;
+    if ((!userText && !imageUrl && !media) || isLoading) return;
 
     // 1. Ambil UUID user yang sedang login secara dinamis
     let activeUserId = user?.id;
@@ -766,8 +771,9 @@ export default function App() {
     }
 
     // 3. Tentukan model code ('v2_vision' | 'v2_non_vision' | 'v1' | 'dilo')
-    const currentEffectiveModel = isVisionActive ? 'agnes-2.0-flash' : selectedModel;
-    const modelCode = getModelLimitCode(selectedModel, isVisionActive);
+    const isVisionNow = Boolean(isVisionActive || media);
+    const currentEffectiveModel = isVisionNow ? 'agnes-2.0-flash' : selectedModel;
+    const modelCode = getModelLimitCode(selectedModel, isVisionNow);
 
     // 4. Potong limit di Supabase via consume_ai_limit SEBELUM request AI diproses
     const limitRes = await consumeAiLimit(activeUserId, modelCode);
@@ -787,7 +793,7 @@ export default function App() {
     console.log("Sisa limit weekly:", limitRes.remaining_weekly);
 
     // 4. Update usage local state & Tampilkan pesan User di UI (Optimistic UI)
-    updateUsage(currentEffectiveModel, isVisionActive);
+    updateUsage(currentEffectiveModel, isVisionNow);
     setIsLoading(true);
     setErrorState(null);
 
@@ -796,6 +802,7 @@ export default function App() {
       id: Date.now().toString(),
       role: 'user',
       text: userText,
+      media: media,
     };
 
     const updatedMessages = [...baseMessages, userMessage];
@@ -834,8 +841,8 @@ export default function App() {
         userText,
         currentSessionId || null,
         currentEffectiveModel,
-        isVisionActive,
-        imageUrl || null
+        isVisionNow,
+        media?.url || imageUrl || null
       );
 
       // 6. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
@@ -1219,12 +1226,14 @@ export default function App() {
       {/* Input Form */}
       <footer className="bg-black border-t border-gray-900 pt-2 shrink-0 relative z-20">
         <ChatInput 
-          onSend={handleSendMessage} 
+          onSend={(text, media) => handleSendMessage(text, undefined, media?.url, media)} 
           isLoading={isLoading} 
           onStop={stopGeneration} 
           connectors={connectors}
           onToggleConnector={toggleConnector}
           onShowAllConnectors={() => setIsConnectorsModalOpen(true)}
+          onAutoEnableVision={handleEnableVision}
+          isVisionActive={isVisionActive}
           disabled={isUsageLimitReached}
         />
       </footer>
