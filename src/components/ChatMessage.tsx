@@ -128,20 +128,20 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
           </div>
           
           {message.media && (
-            <div className="mb-3 flex flex-wrap gap-2.5">
+            <div className="mb-3 flex items-center justify-start gap-2.5 overflow-x-auto py-1 max-w-full scrollbar-thin scrollbar-thumb-gray-800 flex-nowrap">
               {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => (
-                <div key={idx} className="relative inline-block max-w-sm rounded-xl overflow-hidden border border-gray-800 bg-gray-950">
+                <div key={idx} className="relative inline-block max-w-[260px] sm:max-w-xs shrink-0 rounded-xl overflow-hidden border border-gray-800 bg-gray-950 shadow-md">
                   {item.type === 'image' ? (
                     <img
                       src={item.url}
                       alt={item.name || 'Uploaded photo'}
-                      className="max-h-60 sm:max-h-72 w-auto object-contain rounded-t-xl"
+                      className="max-h-48 sm:max-h-56 w-auto object-contain rounded-t-xl mx-auto"
                     />
                   ) : (
                     <video
                       src={item.url}
                       controls
-                      className="max-h-60 sm:max-h-72 w-full rounded-t-xl bg-black"
+                      className="max-h-48 sm:max-h-56 w-full rounded-t-xl bg-black"
                     />
                   )}
                   <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/90 border-t border-gray-800 flex items-center justify-between gap-2">

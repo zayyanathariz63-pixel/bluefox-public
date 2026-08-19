@@ -1238,6 +1238,7 @@ export default function App() {
           onToggleConnector={toggleConnector}
           onShowAllConnectors={() => setIsConnectorsModalOpen(true)}
           onAutoEnableVision={handleEnableVision}
+          onDisableVision={handleDisableVision}
           isVisionActive={isVisionActive}
           disabled={isUsageLimitReached}
         />
@@ -1307,7 +1308,10 @@ export default function App() {
                   <Store size={18} />
                   Store
                 </button>
-                <button className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium">
+                <button 
+                  onClick={() => { window.location.href = "https://tmpa.my.id"; }}
+                  className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                >
                   <Globe size={18} />
                   Web utama (TMPA)
                 </button>

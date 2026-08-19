@@ -12,6 +12,7 @@ interface ChatInputProps {
   onToggleConnector: (id: string) => void;
   onShowAllConnectors: () => void;
   onAutoEnableVision?: () => void;
+  onDisableVision?: () => void;
   isVisionActive?: boolean;
   disabled?: boolean;
 }
@@ -33,6 +34,7 @@ export function ChatInput({
   onToggleConnector, 
   onShowAllConnectors,
   onAutoEnableVision,
+  onDisableVision,
   isVisionActive,
   disabled 
 }: ChatInputProps) {
@@ -310,13 +312,22 @@ export function ChatInput({
   };
 
   const handleRemoveSingleMedia = (indexToRemove: number) => {
-    setAttachedMediaList(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    const updated = attachedMediaList.filter((_, idx) => idx !== indexToRemove);
+    setAttachedMediaList(updated);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    // Jika semua foto/video telah ditutup, matikan mode Vision otomatis
+    if (updated.length === 0 && onDisableVision) {
+      onDisableVision();
+    }
   };
 
   const handleClearAllMedia = () => {
     setAttachedMediaList([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    // Matikan mode Vision otomatis saat semua foto ditutup
+    if (onDisableVision) {
+      onDisableVision();
+    }
   };
 
   useEffect(() => {
@@ -540,16 +551,16 @@ export function ChatInput({
           )}
         </AnimatePresence>
 
-        {/* PREVIEW MEDIA DI ATAS INPUT PROMPT (MAKS 5 FILE) */}
+        {/* PREVIEW MEDIA DI ATAS INPUT PROMPT (MAKS 5 FILE - HORIZONTAL SCROLL KE KIRI) */}
         <AnimatePresence>
           {attachedMediaList.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              className="mb-2 p-2.5 bg-gray-950/95 border border-gray-800 rounded-2xl shadow-xl backdrop-blur-md"
+              className="mb-2 p-2 bg-gray-950/95 border border-gray-800 rounded-2xl shadow-xl backdrop-blur-md overflow-hidden"
             >
-              <div className="flex items-center justify-between pb-1.5 px-1 border-b border-gray-900 mb-2">
+              <div className="flex items-center justify-between pb-1.5 px-1 border-b border-gray-900 mb-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-gray-200">
                     File Terlampir ({attachedMediaList.length}/5)
@@ -569,13 +580,14 @@ export function ChatInput({
                 )}
               </div>
 
-              <div className="flex flex-wrap gap-2 overflow-x-auto py-1">
+              {/* Container Horizontal Scroll ke Kiri (Tidak Memenuhi Layar) */}
+              <div className="flex items-center justify-start gap-2 overflow-x-auto py-1 px-0.5 flex-nowrap scroll-smooth scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
                 {attachedMediaList.map((item, index) => (
                   <div
                     key={index}
-                    className="relative group flex items-center gap-2.5 p-1.5 pr-2 rounded-xl bg-gray-900 border border-gray-800 max-w-[240px] shrink-0"
+                    className="relative group flex items-center gap-2 p-1.5 pr-2 rounded-xl bg-gray-900 border border-gray-800 w-[190px] sm:w-[210px] shrink-0 shadow-sm"
                   >
-                    <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-black shrink-0 border border-gray-800 flex items-center justify-center">
+                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-black shrink-0 border border-gray-800 flex items-center justify-center">
                       {item.type === 'image' ? (
                         <img src={item.url} alt="Thumbnail" className="w-full h-full object-cover" />
                       ) : (
@@ -583,18 +595,18 @@ export function ChatInput({
                       )}
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                         {item.type === 'image' ? (
-                          <ImageIcon size={14} className="text-white" />
+                          <ImageIcon size={12} className="text-white" />
                         ) : (
-                          <VideoIcon size={14} className="text-cyan-400" />
+                          <VideoIcon size={12} className="text-cyan-400" />
                         )}
                       </div>
                     </div>
                     
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs text-gray-200 font-medium truncate max-w-[120px] sm:max-w-[140px]">
+                      <span className="text-xs text-gray-200 font-medium truncate">
                         {item.name}
                       </span>
-                      <span className="text-[10px] text-gray-400">
+                      <span className="text-[10px] text-gray-400 truncate">
                         {item.type === 'video' && item.duration !== undefined
                           ? `Video • ${Math.round(item.duration)}s`
                           : `Foto • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
@@ -605,10 +617,10 @@ export function ChatInput({
                     <button
                       type="button"
                       onClick={() => handleRemoveSingleMedia(index)}
-                      className="w-6 h-6 rounded-lg bg-gray-800 hover:bg-red-500/20 hover:text-red-400 text-gray-400 flex items-center justify-center transition-all cursor-pointer border border-gray-700/60 hover:border-red-500/40 shrink-0"
+                      className="w-5 h-5 rounded-md bg-gray-800 hover:bg-red-500/20 hover:text-red-400 text-gray-400 flex items-center justify-center transition-all cursor-pointer border border-gray-700/60 hover:border-red-500/40 shrink-0"
                       title="Hapus file ini"
                     >
-                      <X size={12} />
+                      <X size={11} />
                     </button>
                   </div>
                 ))}
