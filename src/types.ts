@@ -10,7 +10,7 @@ export interface Message {
   id: string;
   role: 'user' | 'model';
   text: string;
-  media?: MediaAttachment;
+  media?: MediaAttachment | MediaAttachment[];
 }
 
 export interface Connector {

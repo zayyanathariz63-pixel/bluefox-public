@@ -128,37 +128,32 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
           </div>
           
           {message.media && (
-            <div className="mb-3">
-              {message.media.type === 'image' ? (
-                <div className="relative inline-block max-w-sm rounded-xl overflow-hidden border border-gray-800 bg-gray-950">
-                  <img
-                    src={message.media.url}
-                    alt={message.media.name || 'Uploaded photo'}
-                    className="max-h-64 sm:max-h-72 w-auto object-contain rounded-xl"
-                  />
-                  {message.media.name && (
-                    <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/80 border-t border-gray-800 truncate max-w-full">
-                      {message.media.name}
-                    </div>
+            <div className="mb-3 flex flex-wrap gap-2.5">
+              {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => (
+                <div key={idx} className="relative inline-block max-w-sm rounded-xl overflow-hidden border border-gray-800 bg-gray-950">
+                  {item.type === 'image' ? (
+                    <img
+                      src={item.url}
+                      alt={item.name || 'Uploaded photo'}
+                      className="max-h-60 sm:max-h-72 w-auto object-contain rounded-t-xl"
+                    />
+                  ) : (
+                    <video
+                      src={item.url}
+                      controls
+                      className="max-h-60 sm:max-h-72 w-full rounded-t-xl bg-black"
+                    />
                   )}
-                </div>
-              ) : (
-                <div className="relative inline-block max-w-md rounded-xl overflow-hidden border border-gray-800 bg-black">
-                  <video
-                    src={message.media.url}
-                    controls
-                    className="max-h-72 w-full rounded-xl"
-                  />
-                  <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/80 border-t border-gray-800 flex items-center justify-between">
-                    <span className="truncate">{message.media.name || 'Uploaded video'}</span>
-                    {message.media.duration !== undefined && (
-                      <span className="text-cyan-400 font-mono text-[10px] ml-2 shrink-0">
-                        {Math.round(message.media.duration)}s
+                  <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/90 border-t border-gray-800 flex items-center justify-between gap-2">
+                    <span className="truncate max-w-[180px]">{item.name || (item.type === 'video' ? 'Video' : 'Foto')}</span>
+                    {item.type === 'video' && item.duration !== undefined && (
+                      <span className="text-cyan-400 font-mono text-[10px] shrink-0">
+                        {Math.round(item.duration)}s
                       </span>
                     )}
                   </div>
                 </div>
-              )}
+              ))}
             </div>
           )}
 

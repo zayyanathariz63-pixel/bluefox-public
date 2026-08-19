@@ -744,10 +744,11 @@ export default function App() {
     text: string, 
     overrideMessages?: Message[], 
     imageUrl?: string | null, 
-    media?: MediaAttachment
+    media?: MediaAttachment | MediaAttachment[]
   ) => {
     const userText = text.trim();
-    if ((!userText && !imageUrl && !media) || isLoading) return;
+    const hasMedia = Boolean(media && (Array.isArray(media) ? media.length > 0 : true));
+    if ((!userText && !imageUrl && !hasMedia) || isLoading) return;
 
     // 1. Ambil UUID user yang sedang login secara dinamis
     let activeUserId = user?.id;
@@ -771,7 +772,7 @@ export default function App() {
     }
 
     // 3. Tentukan model code ('v2_vision' | 'v2_non_vision' | 'v1' | 'dilo')
-    const isVisionNow = Boolean(isVisionActive || media);
+    const isVisionNow = Boolean(isVisionActive || hasMedia);
     const currentEffectiveModel = isVisionNow ? 'agnes-2.0-flash' : selectedModel;
     const modelCode = getModelLimitCode(selectedModel, isVisionNow);
 
@@ -815,7 +816,7 @@ export default function App() {
     if (sessionIdx === -1) {
       const newSession = {
         id: sessionId,
-        title: userText.length > 30 ? userText.substring(0, 30) + '...' : userText,
+        title: userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Lampiran Media'),
         messages: updatedMessages,
         updatedAt: Date.now(),
         model: selectedModel
@@ -836,13 +837,17 @@ export default function App() {
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
+      const mediaUrls = Array.isArray(media)
+        ? media.map(m => m.url)
+        : (media ? [media.url] : (imageUrl ? [imageUrl] : []));
+
       // 5. Panggil Edge Function dan WAJIB ditunggu (await)
       const edgeRes = await invokeBluefoxProcessor(
         userText,
         currentSessionId || null,
         currentEffectiveModel,
         isVisionNow,
-        media?.url || imageUrl || null
+        mediaUrls.length > 0 ? mediaUrls : null
       );
 
       // 6. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
@@ -1226,7 +1231,7 @@ export default function App() {
       {/* Input Form */}
       <footer className="bg-black border-t border-gray-900 pt-2 shrink-0 relative z-20">
         <ChatInput 
-          onSend={(text, media) => handleSendMessage(text, undefined, media?.url, media)} 
+          onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
           isLoading={isLoading} 
           onStop={stopGeneration} 
           connectors={connectors}

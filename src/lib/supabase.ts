@@ -347,7 +347,7 @@ export async function invokeBluefoxProcessor(
   conversationId?: string | null,
   model?: string,
   isVisionActive?: boolean,
-  imageUrl?: string | null
+  imageUrl?: string | string[] | null
 ) {
   try {
     // Pastikan conversation_id bernilai null jika string kosong atau tidak ada
@@ -367,13 +367,18 @@ export async function invokeBluefoxProcessor(
         ? MODEL_MAPPING.tmpa_v2 
         : (MODEL_MAPPING[selectedKey] || selectedKey || MODEL_MAPPING.tmpa_v2);
 
+    const primaryImageUrl = Array.isArray(imageUrl) ? (imageUrl[0] || null) : (imageUrl || null);
+    const mediaUrls = Array.isArray(imageUrl) ? imageUrl : (imageUrl ? [imageUrl] : []);
+
     const requestBody: Record<string, any> = {
       message: message.trim(),
       conversation_id: cleanConvId,
       model: finalModel,
       is_vision: Boolean(isVisionActive),
       vision: Boolean(isVisionActive),
-      image_url: imageUrl || null,
+      image_url: primaryImageUrl,
+      images: mediaUrls,
+      media_urls: mediaUrls,
     };
 
     if (activeCustomApi) {
