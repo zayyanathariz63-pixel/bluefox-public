@@ -18,7 +18,7 @@ export function handleRedirectToAccount() {
   const targetUrl = new URL('https://account.tmpa.my.id/account');
   targetUrl.searchParams.set('client_id', 'bluefox');
   targetUrl.searchParams.set('device_id', deviceId || '');
-  targetUrl.searchParams.set('redirect_uri', 'https://bluefox.tmpa.my.id/verify');
+  targetUrl.searchParams.set('redirect_uri', 'https://bluefox.tmpa.my.id/ticket');
 
   console.log("🔄 [Redirect to Account]", targetUrl.toString());
   // Arahkan browser ke URL pusat account

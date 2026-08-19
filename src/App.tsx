@@ -46,14 +46,14 @@ export function redirectToSSO() {
   const ACCOUNT_SSO_URL = 'https://account.tmpa.my.id/sso/authorize';
   const CLIENT_ID = 'bluefox-chat';
   
-  let REDIRECT_URI = 'https://bluefox.tmpa.my.id';
+  let REDIRECT_URI = 'https://bluefox.tmpa.my.id/ticket';
   if (typeof window !== 'undefined') {
     if (window.location.hostname === 'chat.tmpa.my.id') {
-      REDIRECT_URI = 'https://chat.tmpa.my.id';
+      REDIRECT_URI = 'https://chat.tmpa.my.id/ticket';
     } else if (window.location.hostname.includes('tmpa.my.id')) {
-      REDIRECT_URI = window.location.origin;
+      REDIRECT_URI = `${window.location.origin}/ticket`;
     } else if (window.location.origin) {
-      REDIRECT_URI = window.location.origin;
+      REDIRECT_URI = `${window.location.origin}/ticket`;
     }
   }
 
