@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect } from 'react';
-import { Message, Connector, MediaAttachment } from './types';
+import { Message, Connector, MediaAttachment, ChatSession } from './types';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { IntegrationsPage } from './components/IntegrationsPage';
+import { useLanguage } from './lib/i18n';
 import { 
   supabase, 
   exchangeSsoTicket, 
@@ -25,6 +26,8 @@ import {
   getModelLimitCode
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
+import { initTheme, parseThemeCommand } from './lib/theme';
+import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -69,8 +72,9 @@ export function redirectToSSO() {
 export type SupportedModel = 'agnes-2.0-flash' | 'laguna-s-2.1' | 'tencent-hy3-free';
 
 export default function App() {
+  const { lang, changeLanguage, t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [chatSessions, setChatSessions] = useState<any[]>([]);
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState<SupportedModel>('agnes-2.0-flash');
   const [isVisionActive, setIsVisionActive] = useState<boolean>(() => {
@@ -85,6 +89,12 @@ export default function App() {
   const [visionLockedNotice, setVisionLockedNotice] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConnectorsModalOpen, setIsConnectorsModalOpen] = useState(false);
+  
+  // State for Long-Press (1s) Chat Session Action Modal & Toast
+  const [contextMenuSession, setContextMenuSession] = useState<ChatSession | null>(null);
+  const [showActionToast, setShowActionToast] = useState<string | null>(null);
+  const longPressTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isLongPressRef = useRef<boolean>(false);
 
   const [connectors, setConnectors] = useState<Connector[]>([
     { id: '1', name: 'Google Drive', description: 'Akses dan kelola file dokumen', isActive: false, isConfigured: false },
@@ -198,7 +208,15 @@ export default function App() {
 
 
   const [errorState, setErrorState] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [reasoningMode, setReasoningMode] = useState<'standar' | 'penalaran'>('standar');
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3500);
+  };
   const [isReasoningSelectorOpen, setIsReasoningSelectorOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
@@ -263,6 +281,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    initTheme();
     const saved = localStorage.getItem('tmpa_chat_sessions');
     if (saved) {
       try {
@@ -717,9 +736,57 @@ export default function App() {
     };
   }, [appState, currentSessionId]);
 
-  const saveSessionsToLocal = (sessions: any[]) => {
+  const saveSessionsToLocal = (sessions: ChatSession[]) => {
     setChatSessions(sessions);
     localStorage.setItem('tmpa_chat_sessions', JSON.stringify(sessions));
+  };
+
+  const handleTogglePinChat = (session: ChatSession) => {
+    const isCurrentlyPinned = Boolean(session.isPinned);
+    const updatedSessions = chatSessions.map(s => 
+      s.id === session.id ? { ...s, isPinned: !isCurrentlyPinned } : s
+    );
+    // Urutkan: chat yang di-pin SELALU berada di paling atas
+    const sorted = [...updatedSessions].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+    saveSessionsToLocal(sorted);
+    setShowActionToast(!isCurrentlyPinned ? t.chatPinned : t.chatUnpinned);
+    setTimeout(() => setShowActionToast(null), 2500);
+    setContextMenuSession(null);
+  };
+
+  const handleDeleteChatSession = (session: ChatSession) => {
+    const updatedSessions = chatSessions.filter(s => s.id !== session.id);
+    saveSessionsToLocal(updatedSessions);
+    if (currentSessionId === session.id) {
+      setMessages([]);
+      setCurrentSessionId(null);
+    }
+    setShowActionToast(t.chatDeleted);
+    setTimeout(() => setShowActionToast(null), 2500);
+    setContextMenuSession(null);
+  };
+
+  const startLongPress = (session: ChatSession) => {
+    if (longPressTimeoutRef.current) clearTimeout(longPressTimeoutRef.current);
+    isLongPressRef.current = false;
+    longPressTimeoutRef.current = setTimeout(() => {
+      isLongPressRef.current = true;
+      setContextMenuSession(session);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        try { navigator.vibrate(60); } catch {}
+      }
+    }, 1000); // Tahan tepat 1 detik (1000ms)
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimeoutRef.current) {
+      clearTimeout(longPressTimeoutRef.current);
+      longPressTimeoutRef.current = null;
+    }
   };
 
   const startNewChat = () => {
@@ -763,6 +830,239 @@ export default function App() {
     const userText = text.trim();
     const hasMedia = Boolean(media && (Array.isArray(media) ? media.length > 0 : true));
     if ((!userText && !imageUrl && !hasMedia) || isLoading) return;
+
+    // =========================================================================
+    // 0. CEK INTERCEPT SYSTEM CONTROLLER (@bluefox, @theme, @memory standalone)
+    // =========================================================================
+    const lowerText = userText.toLowerCase();
+    const isBluefoxCmd = lowerText.startsWith('@bluefox');
+    const isThemeCmd = lowerText.startsWith('@theme');
+    const isMemoryStandalone = lowerText === '@memory' || lowerText.startsWith('@memory list') || lowerText.startsWith('@memory save') || (lowerText.startsWith('@memory ') && !lowerText.includes('?'));
+
+    if (isBluefoxCmd || isThemeCmd || isMemoryStandalone) {
+      let systemReply = '';
+      let shouldDeleteSession = false;
+
+      const baseMessages = overrideMessages ?? messages;
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        text: userText,
+        media: media,
+      };
+      const updatedMessages = [...baseMessages, userMessage];
+
+      // A. COMMAND @bluefox
+      if (isBluefoxCmd) {
+        const subCmd = lowerText.replace(/^@bluefox\s*/, '').trim();
+
+        if (subCmd.startsWith('profile')) {
+          systemReply = `### 👤 Profil Pengguna (Bluefox System Controller)
+
+| Data Akun | Detail Informasi |
+| :--- | :--- |
+| **User ID** | \`${user?.id || 'guest-user'}\` |
+| **Email Aktif** | \`${user?.email || 'zayyanathariz63@gmail.com'}\` |
+| **Paket / Tier** | \`${userTier || 'Tier 1 Pro'}\` |
+| **Sesi ID Aktif** | \`${currentSessionId || 'Sesi Baru'}\` |
+| **Status Autentikasi** | \`🟢 Terverifikasi & Aktif\` |
+| **Waktu Sistem** | \`${new Date().toLocaleString('id-ID')}\` |`;
+        } else if (subCmd.startsWith('activity')) {
+          systemReply = `### 📊 Log Aktivitas Percakapan (Activity Log)
+
+- **Total Sesi Tersimpan:** ${chatSessions.length} sesi
+- **Sesi Aktif:** ${currentSessionId || 'Baru'} (${updatedMessages.length} pesan)
+- **Model Aktif:** \`${selectedModel}\`
+
+**Daftar Sesi Terbaru:**
+${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '📌' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Pesan: ${s.messages?.length || 0}\n   - Terakhir diubah: ${new Date(s.updatedAt).toLocaleString('id-ID')}`).join('\n\n') || '_Belum ada riwayat sesi lain._'}`;
+        } else if (subCmd.startsWith('kuota')) {
+          const activeCustomApi = getActiveCustomApi();
+          systemReply = `### ⚡ Indikator Batas Penggunaan (Quota Monitor)
+
+| Parameter Kuota | Status Penggunaan | Keterangan |
+| :--- | :--- | :--- |
+| **Rolling Limit (5 Jam)** | \`${dbLimits?.used5h ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
+| **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
+| **Custom API Limit** | \`${activeCustomApi ? '🟢 ' + activeCustomApi.name : '⚪ Tidak ada Custom API aktif'}\` | 10 req/menit • 50 req/hari |
+| **Status Sistem** | \`🟢 Operasional Normal\` | Reset kuota otomatis tiap 5 jam |`;
+        } else if (subCmd.startsWith('personalization')) {
+          const instructionText = userText.replace(/^@bluefox\s+personalization\s*/i, '').trim();
+          if (instructionText) {
+            localStorage.setItem('tmpa_custom_instruction', instructionText);
+            setCustomInstruction(instructionText);
+            setShowActionToast(lang === 'id' ? 'Personalisasi AI berhasil diperbarui!' : 'AI Personalization updated!');
+            setTimeout(() => setShowActionToast(null), 2500);
+            systemReply = `### ⚙️ Personalisasi AI Berhasil Disimpan
+
+Instruksi sistem kustom Anda telah diperbarui:
+> *"**${instructionText}**"*
+
+AI akan menerapkan preferensi ini ke setiap respons percakapan berikutnya.`;
+          } else {
+            const currentInst = localStorage.getItem('tmpa_custom_instruction') || customInstruction;
+            systemReply = `### ⚙️ Personalisasi AI Saat Ini
+
+${currentInst ? `Instruksi aktif:\n> *"**${currentInst}**"*` : '_Belum ada instruksi personalisasi yang tersimpan._'}
+
+_Tip: Ketik \`@bluefox personalization [instruksi kamu]\` untuk mengubah instruksi._`;
+          }
+        } else if (subCmd.startsWith('download')) {
+          const sessionToDl = chatSessions.find(s => s.id === currentSessionId) || {
+            title: 'Percakapan TMPA Chat',
+            messages: updatedMessages
+          };
+          const mdContent = [
+            `# TMPA Chat Export: ${sessionToDl.title}`,
+            `> Tanggal: ${new Date().toLocaleString('id-ID')} | Model: ${selectedModel}`,
+            '',
+            '---',
+            '',
+            ...updatedMessages.map(m => `### ${m.role === 'user' ? '👤 Pengguna' : '🤖 TMPA Chat'}\n\n${m.text}\n`)
+          ].join('\n\n');
+
+          const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${(sessionToDl.title || 'chat').replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.md`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+
+          setShowActionToast(lang === 'id' ? 'Berkas markdown (.md) berhasil diunduh!' : 'Markdown (.md) file downloaded!');
+          setTimeout(() => setShowActionToast(null), 2500);
+          systemReply = `### 📥 Unduhan Percakapan Berhasil
+
+Percakapan sesi ini telah dikonversi dan diunduh secara otomatis sebagai berkas **.md** (Markdown).`;
+        } else if (subCmd.startsWith('delete')) {
+          shouldDeleteSession = true;
+          setShowActionToast(lang === 'id' ? 'Sesi percakapan berhasil dihapus!' : 'Chat session deleted!');
+          setTimeout(() => setShowActionToast(null), 2500);
+          systemReply = `### 🗑️ Sesi Percakapan Dihapus
+
+Sesi percakapan ini telah dihapus dari riwayat sistem.`;
+        } else if (subCmd.startsWith('pin')) {
+          if (currentSessionId) {
+            const updatedSessions = chatSessions.map(s => 
+              s.id === currentSessionId ? { ...s, isPinned: !s.isPinned } : s
+            ).sort((a, b) => {
+              if (a.isPinned && !b.isPinned) return -1;
+              if (!a.isPinned && b.isPinned) return 1;
+              return (b.updatedAt || 0) - (a.updatedAt || 0);
+            });
+            saveSessionsToLocal(updatedSessions);
+            const isNowPinned = updatedSessions.find(s => s.id === currentSessionId)?.isPinned;
+            setShowActionToast(isNowPinned ? (lang === 'id' ? 'Chat berhasil disematkan di atas 📌' : 'Chat pinned to top 📌') : (lang === 'id' ? 'Sematkan chat dilepas' : 'Chat unpinned'));
+            setTimeout(() => setShowActionToast(null), 2500);
+            systemReply = `### 📌 Status Pin Diperbarui
+
+Sesi percakapan ini sekarang **${isNowPinned ? 'DISEMATKAN di posisi paling atas 📌' : 'DILEPAS dari sematan'}**.`;
+          } else {
+            systemReply = `### 📌 Sematkan Chat
+
+_Ketik dan kirim setidaknya satu pesan terlebih dahulu untuk menyematkan sesi ini ke daftar riwayat teratas._`;
+          }
+        } else {
+          systemReply = `### 🤖 Bluefox System Controller
+
+Daftar perintah yang tersedia:
+- \`@bluefox profile\` : Tampilkan detail akun & status sesi
+- \`@bluefox activity\` : Ringkasan aktivitas percakapan
+- \`@bluefox kuota\` : Indikator limit 5 jam, mingguan & custom API
+- \`@bluefox personalization [instruksi]\` : Atur prompt sistem kustom
+- \`@bluefox download\` : Ekspor riwayat sesi ke berkas .md
+- \`@bluefox delete\` : Hapus sesi aktif
+- \`@bluefox pin\` : Sematkan sesi ke daftar teratas`;
+        }
+      } 
+      // B. COMMAND @theme
+      else if (isThemeCmd) {
+        const themeResult = parseThemeCommand(userText);
+        setShowActionToast(themeResult.message.split('\n')[0]);
+        setTimeout(() => setShowActionToast(null), 2500);
+        
+        const changesTable = themeResult.changes && themeResult.changes.length > 0 
+          ? `\n\n| Target Properti | Nilai Warna / Styling |\n| :--- | :--- |\n${themeResult.changes.map(c => `| **${c.target}** | \`${c.value}\` |`).join('\n')}`
+          : '';
+
+        systemReply = `### 🎨 Visual Customization Controller (@theme)
+
+**Status:** \`${themeResult.success ? '✅ Berhasil Diterapkan' : '⚠️ Format Tidak Sesuai'}\`
+
+${themeResult.message}${changesTable}
+
+_Tip: Anda dapat mereset ke tema default kapan saja dengan mengetik \`@theme reset\`._`;
+      }
+      // C. COMMAND @memory standalone
+      else if (isMemoryStandalone) {
+        const memoryContent = userText.replace(/^@memory\s*/i, '').trim();
+        if (memoryContent && memoryContent !== 'list') {
+          saveActiveMemory(memoryContent);
+          setShowActionToast(lang === 'id' ? 'Memori baru tersimpan!' : 'New memory saved!');
+          setTimeout(() => setShowActionToast(null), 2500);
+          const allMem = getActiveMemories();
+          systemReply = `### 🧠 Memori Konteks Percakapan Tersimpan
+
+Konteks berikut telah disimpan ke dalam memori aktif:
+> *"**${memoryContent}**"*
+
+**Daftar Memori Aktif Saat Ini (${allMem.length}):**
+${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}
+
+_AI akan secara otomatis mengingat informasi ini pada setiap percakapan mendatang._`;
+        } else {
+          const allMem = getActiveMemories();
+          systemReply = `### 🧠 Manajer Memori Konteks (@memory)
+
+${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}` : '_Belum ada memori kontekstual yang tersimpan._'}
+
+**Cara Penggunaan:**
+- Simpan memori baru: \`@memory Saya seorang frontend engineer\`
+- Bersihkan memori: \`@memory clear\``;
+        }
+      }
+
+      const systemMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: systemReply,
+      };
+
+      if (shouldDeleteSession && currentSessionId) {
+        const targetSession = chatSessions.find(s => s.id === currentSessionId);
+        if (targetSession) {
+          handleDeleteChatSession(targetSession);
+        }
+        return;
+      }
+
+      const finalMessages = [...updatedMessages, systemMessage];
+      setMessages(finalMessages);
+
+      let sessionId = getValidUUID(currentSessionId);
+      let currentSessions = [...chatSessions];
+      const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
+      if (sessionIdx === -1) {
+        const newSession = {
+          id: sessionId,
+          title: userText.length > 30 ? userText.substring(0, 30) + '...' : userText,
+          messages: finalMessages,
+          updatedAt: Date.now(),
+          model: selectedModel
+        };
+        currentSessions = [newSession, ...currentSessions];
+      } else {
+        currentSessions[sessionIdx] = {
+          ...currentSessions[sessionIdx],
+          messages: finalMessages,
+          updatedAt: Date.now()
+        };
+      }
+      saveSessionsToLocal(currentSessions);
+      return;
+    }
 
     // 1. Ambil UUID user yang sedang login secara dinamis
     let activeUserId = user?.id;
@@ -812,7 +1112,29 @@ export default function App() {
     setIsLoading(true);
     setErrorState(null);
 
+    // =========================================================================
+    // ENRICH AI PROMPT UNTUK PERINTAH MODUL AI (@verifyai, @deep verify, @creative)
+    // =========================================================================
     const baseMessages = overrideMessages ?? messages;
+    let effectiveAiPrompt = userText;
+
+    if (lowerText.startsWith('@verifyai')) {
+      const lastAiMsg = [...baseMessages].reverse().find(m => m.role === 'model');
+      const focusText = userText.replace(/^@verifyai\s*/i, '').trim();
+      effectiveAiPrompt = `[VERIFY-AI PROTOKOL KOREKSI & VALIDASI MANDIRI]\nMohon evaluasi ulang dan koreksi jawaban AI sebelumnya secara kritis dan komprehensif. Periksa kebenaran fakta, data numerik, rumus, logika inferensi, dan jika terdapat kesalahan atau hal yang kurang tepat, perbaiki secara transparan dan detail.\n\n${lastAiMsg ? `Konteks Jawaban AI Sebelumnya:\n"""\n${lastAiMsg.text}\n"""\n` : ''}${focusText ? `Fokus Evaluasi Khusus: ${focusText}` : 'Lakukan evaluasi menyeluruh dan berikan jawaban yang sudah dikoreksi.'}`;
+    } else if (lowerText.startsWith('@deep verify')) {
+      const query = userText.replace(/^@deep\s+verify\s*/i, '').trim();
+      effectiveAiPrompt = `[DEEP REASONING & VERIFICATION PROTOCOL]\nLakukan analisis mendalam dan pemikiran bertahap (step-by-step reasoning) yang terstruktur secara analitis, kritis, dan terverifikasi secara logis sebelum memberikan kesimpulan akhir.\n\nTopik/Pertanyaan:\n${query}`;
+    } else if (lowerText.startsWith('@creative')) {
+      const query = userText.replace(/^@creative\s*/i, '').trim();
+      effectiveAiPrompt = `[CREATIVE DYNAMIC STYLE PROTOCOL]\nAktifkan parameter kreasi ide eksploratif, variasi diksi yang kaya dan ekspresif, eksploratif, serta hasilkan ide-ide inovatif dan out-of-the-box.\n\nTopik/Instruksi:\n${query}`;
+    }
+
+    const activeMemories = getActiveMemories();
+    if (activeMemories.length > 0 && !lowerText.startsWith('@verifyai')) {
+      effectiveAiPrompt = `[KONTEKS MEMORI PENGGUNA YANG TERSIMPAN:\n${activeMemories.map(m => `- ${m}`).join('\n')}]\n\n${effectiveAiPrompt}`;
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
@@ -857,7 +1179,7 @@ export default function App() {
 
       // 5. Panggil Edge Function dan WAJIB ditunggu (await)
       const edgeRes = await invokeBluefoxProcessor(
-        userText,
+        effectiveAiPrompt,
         currentSessionId || null,
         currentEffectiveModel,
         isVisionNow,
@@ -897,7 +1219,7 @@ export default function App() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history, message: userText, model: selectedModel, customInstruction, reasoningMode }),
+          body: JSON.stringify({ history, message: effectiveAiPrompt, model: selectedModel, customInstruction, reasoningMode }),
           signal: abortControllerRef.current.signal
         });
 
@@ -1281,82 +1603,165 @@ export default function App() {
               className="fixed top-0 left-0 bottom-0 w-[280px] bg-gray-950 border-r border-gray-900 z-50 flex flex-col"
             >
               <div className="p-4 pt-6 flex-1 flex flex-col gap-1 overflow-y-auto">
-                <button onClick={startNewChat} className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium mb-3">
+                {/* 1. BAGIAN ATAS: Chat Baru & Menu Utama (Store, MCP, Web Utama, Setting) */}
+                <button 
+                  onClick={startNewChat} 
+                  className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors text-sm font-medium mb-2 shadow-lg shadow-blue-900/30 cursor-pointer"
+                >
                   <Sparkles size={18} />
-                  Chat Baru
+                  <span>{t.newChat}</span>
                 </button>
 
-                {chatSessions.length > 0 && (
-                  <div className="mb-2 mt-1 px-4">
-                    <div className="relative">
-                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-                      <input 
-                        type="text" 
-                        placeholder="Cari riwayat chat..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-9 pr-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {chatSessions.length > 0 && (
-                  <div className="mb-2 mt-3">
-                    <span className="px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Riwayat Chat</span>
-                  </div>
-                )}
-                
-                {chatSessions
-                  .filter((session) => session.title.toLowerCase().includes(searchQuery.toLowerCase()))
-                  .map((session) => (
+                <div className="space-y-1 mb-3">
                   <button 
-                    key={session.id}
-                    onClick={() => loadSession(session.id)}
-                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-colors text-sm font-medium text-left
-                      ${currentSessionId === session.id ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900/50'}`}
+                    onClick={() => { window.location.href = "https://tmpa.my.id"; }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
-                    <span className="truncate flex-1 text-sm">{session.title}</span>
+                    <Globe size={18} className="text-blue-400" />
+                    <span>{t.mainWebsite}</span>
                   </button>
-                ))}
 
-                {chatSessions.length > 0 && <div className="my-3 border-t border-gray-900" />}
+                  <button 
+                    onClick={() => {
+                      setShowActionToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...');
+                      setTimeout(() => setShowActionToast(null), 2000);
+                    }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <Store size={18} className="text-amber-400" />
+                    <span>{t.store}</span>
+                  </button>
 
-                <button 
-                  onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
-                  className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                >
-                  <Layers size={18} />
-                  Integrasi Platform (MCP)
-                </button>
-                <button className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium">
-                  <Store size={18} />
-                  Store
-                </button>
-                <button 
-                  onClick={() => { window.location.href = "https://tmpa.my.id"; }}
-                  className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                >
-                  <Globe size={18} />
-                  Web utama (TMPA)
-                </button>
-                <button onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer">
-                  <Settings size={18} />
-                  Setting
-                </button>
+                  <button 
+                    onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <Layers size={18} className="text-emerald-400" />
+                    <span>{t.mcpIntegrations}</span>
+                  </button>
+
+                  <button 
+                    onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} 
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <Settings size={18} className="text-purple-400" />
+                    <span>{t.settings}</span>
+                  </button>
+                </div>
+
+                <div className="my-1 border-t border-gray-900" />
+
+                {/* 2. BAGIAN TENGAH: Riwayat Chat User (Dengan Search, Pin Priority, dan Tahan 1 Detik untuk Pin/Hapus) */}
+                <div className="flex-1 flex flex-col pt-2 min-h-0">
+                  <div className="flex items-center justify-between px-3 mb-2">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                      {t.chatHistory}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-mono">
+                      {lang === 'id' ? 'Tahan 1dtk: Opsi' : 'Hold 1s: Options'}
+                    </span>
+                  </div>
+
+                  {chatSessions.length > 0 && (
+                    <div className="mb-2.5 px-2">
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <input 
+                          type="text" 
+                          placeholder={t.searchHistory} 
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full bg-gray-900/90 border border-gray-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500/50"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Chat Session List: Sorted so pinned always stays at top */}
+                  <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+                    {chatSessions.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-gray-500">
+                        {lang === 'id' ? 'Belum ada riwayat percakapan' : 'No chat history yet'}
+                      </div>
+                    ) : (
+                      chatSessions
+                        .filter((session) => session.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                        .sort((a, b) => {
+                          if (a.isPinned && !b.isPinned) return -1;
+                          if (!a.isPinned && b.isPinned) return 1;
+                          return (b.updatedAt || 0) - (a.updatedAt || 0);
+                        })
+                        .map((session) => {
+                          const isActive = currentSessionId === session.id;
+                          const isPinned = Boolean(session.isPinned);
+
+                          return (
+                            <div
+                              key={session.id}
+                              onMouseDown={() => startLongPress(session)}
+                              onMouseUp={cancelLongPress}
+                              onMouseLeave={cancelLongPress}
+                              onTouchStart={() => startLongPress(session)}
+                              onTouchEnd={cancelLongPress}
+                              onTouchMove={cancelLongPress}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                cancelLongPress();
+                                setContextMenuSession(session);
+                              }}
+                              onClick={() => {
+                                if (isLongPressRef.current) {
+                                  isLongPressRef.current = false;
+                                  return;
+                                }
+                                loadSession(session.id);
+                              }}
+                              className={`group relative flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl transition-all text-sm font-medium cursor-pointer select-none
+                                ${isActive ? 'bg-blue-950/40 border border-blue-800/50 text-blue-200' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900/70 border border-transparent'}
+                                ${isPinned ? 'bg-amber-950/20 border-amber-900/30' : ''}`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0 flex-1">
+                                {isPinned && (
+                                  <Pin size={13} className="text-amber-400 flex-shrink-0 rotate-45" />
+                                )}
+                                <span className={`truncate text-xs ${isPinned ? 'text-amber-200 font-semibold' : ''}`}>
+                                  {session.title}
+                                </span>
+                              </div>
+
+                              {/* Tombol Opsi Cepat / Context Menu Trigger */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  cancelLongPress();
+                                  setContextMenuSession(session);
+                                }}
+                                className="p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-gray-800 cursor-pointer flex-shrink-0"
+                                title={lang === 'id' ? 'Opsi Percakapan' : 'Chat Options'}
+                              >
+                                <MoreVertical size={14} />
+                              </button>
+                            </div>
+                          );
+                        })
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="p-4 border-t border-gray-900 flex flex-col gap-4">
+              {/* 3. BAGIAN BAWAH: Profil User & Logout */}
+              <div className="p-4 border-t border-gray-900 flex flex-col gap-3">
                 <div className="flex items-center gap-3 px-2">
-                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-black" />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-white truncate w-[160px]">
+                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-black flex-shrink-0" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-white truncate">
                       {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                     </span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 mt-0.5 truncate w-[160px]">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 truncate">
                       Plan: {userTier}
                     </span>
-                    <span className="text-xs text-gray-400 truncate w-[160px] opacity-75 mt-0.5">
+                    <span className="text-xs text-gray-400 truncate opacity-75">
                       {user?.email || 'user@tmpa.example'}
                     </span>
                   </div>
@@ -1367,7 +1772,7 @@ export default function App() {
                   className="flex items-center w-full gap-2 px-4 py-2.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                 >
                   <LogOut size={16} />
-                  Logout
+                  <span>{t.logout}</span>
                 </button>
               </div>
             </motion.div>
@@ -1738,6 +2143,132 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Long-Press (1s) Chat Session Action Modal */}
+      <AnimatePresence>
+        {contextMenuSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setContextMenuSession(null)}
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              className="relative w-full max-w-sm bg-neutral-950 border border-neutral-800/90 rounded-3xl p-5 shadow-2xl z-10 overflow-hidden text-white space-y-4"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-neutral-800/80">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    {contextMenuSession.isPinned && (
+                      <span className="p-1 rounded-md bg-amber-950/60 text-amber-400 border border-amber-800/40">
+                        <Pin size={12} className="rotate-45" />
+                      </span>
+                    )}
+                    <h3 className="font-semibold text-white text-base truncate">
+                      {contextMenuSession.title}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {lang === 'id' ? 'Kelola Sesi Percakapan' : 'Manage Chat Session'}
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setContextMenuSession(null)}
+                  className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2">
+                {/* 1. Pin / Unpin Button */}
+                <button
+                  onClick={() => handleTogglePinChat(contextMenuSession)}
+                  className={`w-full flex items-center gap-3.5 p-3.5 rounded-2xl border transition-all text-left cursor-pointer group ${
+                    contextMenuSession.isPinned
+                      ? 'bg-neutral-900/60 border-neutral-800 hover:bg-neutral-800 hover:border-neutral-700'
+                      : 'bg-amber-950/20 border-amber-900/40 hover:bg-amber-950/40 hover:border-amber-700/60'
+                  }`}
+                >
+                  <div className={`p-2.5 rounded-xl flex-shrink-0 ${
+                    contextMenuSession.isPinned 
+                      ? 'bg-neutral-800 text-gray-300 group-hover:text-white' 
+                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  }`}>
+                    {contextMenuSession.isPinned ? <PinOff size={18} /> : <Pin size={18} className="rotate-45" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-white flex items-center justify-between">
+                      <span>{contextMenuSession.isPinned ? t.unpinChat : t.pinChat}</span>
+                      <span className="text-[10px] uppercase font-bold text-amber-400/90 font-mono tracking-wider">
+                        {contextMenuSession.isPinned ? 'Unpin' : 'Pin Top'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {contextMenuSession.isPinned 
+                        ? (lang === 'id' ? 'Kembalikan ke urutan normal' : 'Return to standard order')
+                        : (lang === 'id' ? 'Pindahkan ke paling atas & kunci posisi' : 'Move to very top & keep position')}
+                    </p>
+                  </div>
+                </button>
+
+                {/* 2. Delete Chat Button */}
+                <button
+                  onClick={() => handleDeleteChatSession(contextMenuSession)}
+                  className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-800/60 transition-all text-left cursor-pointer group"
+                >
+                  <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 flex-shrink-0 group-hover:scale-105 transition-transform">
+                    <Trash2 size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-red-400 flex items-center justify-between">
+                      <span>{t.deleteChat}</span>
+                      <span className="text-[10px] uppercase font-bold text-red-400/80 font-mono">Delete</span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {lang === 'id' ? 'Hapus riwayat obrolan ini secara permanen' : 'Permanently remove this conversation'}
+                    </p>
+                  </div>
+                </button>
+              </div>
+
+              {/* Cancel Button */}
+              <div className="pt-1">
+                <button
+                  onClick={() => setContextMenuSession(null)}
+                  className="w-full py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-gray-300 hover:text-white text-xs font-medium transition-colors cursor-pointer border border-neutral-800"
+                >
+                  {t.cancel}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Floating Action Toast Feedback */}
+      <AnimatePresence>
+        {showActionToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/95 border border-neutral-700 text-white px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 backdrop-blur-md text-sm font-medium"
+          >
+            <Check size={16} className="text-emerald-400 flex-shrink-0" />
+            <span>{showActionToast}</span>
+          </motion.div>
         )}
       </AnimatePresence>
 

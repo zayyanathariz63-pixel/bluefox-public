@@ -3,6 +3,9 @@ import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle
 import { cn } from '../lib/utils';
 import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
+import { useLanguage } from '../lib/i18n';
+import { TriggerCommandModal } from './TriggerCommandModal';
+import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
@@ -38,6 +41,7 @@ export function ChatInput({
   isVisionActive,
   disabled 
 }: ChatInputProps) {
+  const { lang, t } = useLanguage();
   const [input, setInput] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -45,6 +49,12 @@ export function ChatInput({
   const [attachedMediaList, setAttachedMediaList] = useState<MediaAttachment[]>([]);
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
   const [errorModal, setErrorModal] = useState<CustomErrorModal | null>(null);
+
+  // Trigger Command (@) state
+  const [isCommandModalOpen, setIsCommandModalOpen] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [filteredCommands, setFilteredCommands] = useState<TriggerCommand[]>(TRIGGER_COMMANDS);
+  const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -347,11 +357,47 @@ export function ChatInput({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    const atIndex = val.lastIndexOf('@');
+    if (atIndex !== -1) {
+      const textAfterAt = val.slice(atIndex);
+      // Only show menu if query starts with @ and hasn't exceeded a reasonable length
+      if (textAfterAt.length <= 35) {
+        const matched = filterTriggerCommands(textAfterAt);
+        if (matched.length > 0) {
+          setCommandQuery(textAfterAt);
+          setFilteredCommands(matched);
+          setIsCommandModalOpen(true);
+          setCommandSelectedIndex(0);
+          return;
+        }
+      }
+    }
+    setIsCommandModalOpen(false);
+  };
+
+  const handleSelectCommand = (cmd: TriggerCommand) => {
+    const atIndex = input.lastIndexOf('@');
+    let newInput = '';
+    if (atIndex !== -1) {
+      newInput = input.slice(0, atIndex) + cmd.name + (cmd.hasParameter ? ' ' : '');
+    } else {
+      newInput = cmd.name + (cmd.hasParameter ? ' ' : '');
+    }
+    setInput(newInput);
+    setIsCommandModalOpen(false);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if ((input.trim() || attachedMediaList.length > 0) && !isLoading) {
       onSend(input.trim(), attachedMediaList.length > 0 ? attachedMediaList : undefined);
       setInput('');
+      setIsCommandModalOpen(false);
       setAttachedMediaList([]);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -360,6 +406,42 @@ export function ChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isCommandModalOpen && filteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCommandSelectedIndex(prev => (prev + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCommandSelectedIndex(prev => (prev - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const selectedCmd = filteredCommands[commandSelectedIndex];
+        if (selectedCmd) {
+          handleSelectCommand(selectedCmd);
+        }
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const selectedCmd = filteredCommands[commandSelectedIndex];
+        // If user is just selecting command from list (input starts with @ and hasn't provided arguments)
+        const parts = input.trim().split(/\s+/);
+        if (selectedCmd && (parts.length <= 2 && input.startsWith('@'))) {
+          e.preventDefault();
+          handleSelectCommand(selectedCmd);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsCommandModalOpen(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
@@ -451,6 +533,16 @@ export function ChatInput({
       </AnimatePresence>
 
       <div className="relative" ref={popupRef}>
+        {/* TRIGGER COMMAND (@) FLOATING AUTOCOMPLETE MODAL */}
+        <TriggerCommandModal
+          isOpen={isCommandModalOpen}
+          commands={filteredCommands}
+          selectedIndex={commandSelectedIndex}
+          onSelectCommand={handleSelectCommand}
+          onClose={() => setIsCommandModalOpen(false)}
+          query={commandQuery}
+        />
+
         {/* POPUP GABUNGAN: CONNECT & UPLOAD (SAAT TOMBOL CONNECT DI-KLIK) */}
         <AnimatePresence>
           {isPopupOpen && (
@@ -686,14 +778,14 @@ export function ChatInput({
                   exit={{ opacity: 0, y: -10 }}
                   ref={textareaRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={
                     disabled 
-                      ? "Kuota penuh, silakan reset kuota." 
+                      ? (lang === 'id' ? "Kuota penuh, silakan reset kuota." : "Usage limit reached, please reset.") 
                       : attachedMediaList.length > 0 
-                        ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` 
-                        : "Tanya tmpa chat sesuatu..."
+                        ? (lang === 'id' ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` : `Ask about these ${attachedMediaList.length} attached files...`)
+                        : t.inputPlaceholder
                   }
                   className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-gray-100 placeholder:text-gray-500 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
                   rows={1}

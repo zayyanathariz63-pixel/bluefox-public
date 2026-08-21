@@ -6,9 +6,19 @@
 }
 
 body {
-  background-color: theme('colors.black');
-  color: theme('colors.gray.100');
+  background-color: var(--theme-bg, #000000);
+  color: var(--theme-font, #f3f4f6);
   font-family: var(--font-sans);
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Global dynamic theme classes */
+:root {
+  --theme-bg: #000000;
+  --theme-font: #f3f4f6;
+  --theme-cta: #2563eb;
+  --theme-border: rgba(255, 255, 255, 0.1);
+  --theme-hover: #1d4ed8;
 }
 
 /* Custom Scrollbar for dark theme */

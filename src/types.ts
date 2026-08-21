@@ -28,7 +28,10 @@ export interface ChatSession {
   messages: Message[];
   updatedAt: number;
   model: string;
+  isPinned?: boolean;
 }
+
+export type Language = 'id' | 'en';
 
 export interface CustomApiKey {
   id: string;

@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
   Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check,
-  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu
+  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
+import { useLanguage, Language } from '../lib/i18n';
 import { 
   CustomApiKey, 
   CustomApiUsageStats, 
@@ -35,9 +36,10 @@ interface SettingsModalProps {
   resetUsage: () => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language';
 
 export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions, hourlyUsage, weeklyUsage, resetUsage }: SettingsModalProps) {
+  const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -62,22 +64,6 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
   }, [formProvider]);
 
   const isCurrentSelfHost = selectedPreset.isSelfHosted;
-
-  // Decorative Toggle states to match screenshot
-  const [liveStopResponse, setLiveStopResponse] = useState(true);
-  const [handsfreeVoice, setHandsfreeVoice] = useState(true);
-
-  const cosmicStars = useMemo(() => {
-    return [...Array(60)].map((_, i) => ({
-      id: i,
-      top: `${Math.random() * 100}%`,
-      left: `${Math.random() * 100}%`,
-      delay: Math.random() * 5,
-      duration: 3 + Math.random() * 7,
-      xOffset: (Math.random() - 0.5) * 50,
-      scaleMax: Math.random() * 2
-    }));
-  }, []);
 
   useEffect(() => {
     const savedPic = localStorage.getItem('tmpa_profile_pic');
@@ -118,7 +104,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
         const result = event.target?.result as string;
         setProfilePic(result);
         localStorage.setItem('tmpa_profile_pic', result);
-        showToast('Foto profil berhasil diperbarui!');
+        showToast(t.photoUpdated);
       };
       reader.readAsDataURL(file);
     }
@@ -127,41 +113,41 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
   const formatDate = (ts: number | undefined) => {
     if (!ts) return '-';
     const date = new Date(ts);
-    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}, ${date.getDate()} ${date.toLocaleString('id-ID', { month: 'long' })} ${date.getFullYear()}`;
+    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}, ${date.getDate()} ${date.toLocaleString(lang === 'id' ? 'id-ID' : 'en-US', { month: 'long' })} ${date.getFullYear()}`;
   };
 
   const handleToggleActive = (id: string, name: string) => {
     const res = toggleCustomApiActive(id);
     setCustomApis(getCustomApis());
     if (res.newState) {
-      showToast(`API "${name}" sekarang aktif digunakan.`);
+      showToast(lang === 'id' ? `API "${name}" sekarang aktif digunakan.` : `API "${name}" is now active.`);
     } else {
-      showToast(`API "${name}" telah dinonaktifkan.`);
+      showToast(lang === 'id' ? `API "${name}" telah dinonaktifkan.` : `API "${name}" has been disabled.`);
     }
   };
 
   const handleDeleteApi = (id: string, name: string) => {
     deleteCustomApi(id);
     setCustomApis(getCustomApis());
-    showToast(`API "${name}" berhasil dihapus.`);
+    showToast(lang === 'id' ? `API "${name}" berhasil dihapus.` : `API "${name}" deleted.`);
   };
 
   const handleSaveNewApi = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
-      showToast('Nama API wajib diisi!');
+      showToast(lang === 'id' ? 'Nama API wajib diisi!' : 'API Name is required!');
       return;
     }
     if (!formApiKey.trim()) {
-      showToast('API Key / Token wajib diisi!');
+      showToast(lang === 'id' ? 'API Key / Token wajib diisi!' : 'API Key / Token is required!');
       return;
     }
     if (!formModel.trim()) {
-      showToast('Model ID wajib diisi agar edge function dapat meneruskan request!');
+      showToast(lang === 'id' ? 'Model ID wajib diisi agar edge function dapat meneruskan request!' : 'Model ID is required!');
       return;
     }
     if (isCurrentSelfHost && !formBaseUrl.trim()) {
-      showToast('Base URL wajib diisi untuk provider Self-Hosted!');
+      showToast(lang === 'id' ? 'Base URL wajib diisi untuk provider Self-Hosted!' : 'Base URL is required for Self-Hosted provider!');
       return;
     }
 
@@ -175,7 +161,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     });
 
     if (!res.success) {
-      showToast(res.error || 'Gagal menambahkan API');
+      showToast(res.error || (lang === 'id' ? 'Gagal menambahkan API' : 'Failed to add API'));
       return;
     }
 
@@ -186,7 +172,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     setFormApiKey('');
     setFormModel('');
     setFormIsActive(true);
-    showToast(`API "${formName}" berhasil ditambahkan!`);
+    showToast(lang === 'id' ? `API "${formName}" berhasil ditambahkan!` : `API "${formName}" added successfully!`);
   };
 
   const toggleKeyVisibility = (id: string) => {
@@ -198,9 +184,13 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
-    showToast(`${label} berhasil disalin!`);
+    showToast(lang === 'id' ? `${label} berhasil disalin!` : `${label} copied to clipboard!`);
   };
 
+  const selectLanguageOption = (selectedLang: Language) => {
+    changeLanguage(selectedLang);
+    showToast(selectedLang === 'id' ? 'Bahasa berhasil diubah ke Bahasa Indonesia!' : 'Language successfully switched to English!');
+  };
   return (
     <AnimatePresence>
       {isOpen && (
@@ -219,12 +209,12 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                 <button 
                   onClick={onClose} 
                   className="w-12 h-12 -ml-2 rounded-full flex items-center justify-center text-gray-400 hover:bg-neutral-900 transition-colors cursor-pointer"
-                  title="Kembali ke Chat"
+                  title={t.backToChat}
                 >
                   <ArrowLeft size={24} />
                 </button>
                 <h1 className="text-3xl sm:text-4xl font-normal text-white mt-4 tracking-tight">
-                  Setelan TMPA
+                  {t.settingsTitle}
                 </h1>
               </div>
 
@@ -239,8 +229,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <User size={22} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-[17px] font-medium text-white">Info akun</h3>
-                    <p className="text-sm text-gray-400 mt-0.5">Kelola email, ID profil, dan foto profil Anda</p>
+                    <h3 className="text-[17px] font-medium text-white">{t.accountInfo}</h3>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.accountInfoDesc}</p>
                   </div>
                 </button>
 
@@ -253,8 +243,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <Activity size={22} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-[17px] font-medium text-white">Aktivitas</h3>
-                    <p className="text-sm text-gray-400 mt-0.5">Riwayat chat detail berserta penanda waktu pertama dibuat</p>
+                    <h3 className="text-[17px] font-medium text-white">{t.activity}</h3>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.activityDesc}</p>
                   </div>
                 </button>
 
@@ -267,8 +257,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <Shield size={22} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-[17px] font-medium text-white">Batas penggunaan</h3>
-                    <p className="text-sm text-gray-400 mt-0.5">Kuota batas model dan persentase penggunaan sisa</p>
+                    <h3 className="text-[17px] font-medium text-white">{t.usageLimits}</h3>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.usageLimitsDesc}</p>
                   </div>
                 </button>
 
@@ -281,8 +271,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <Settings2 size={22} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-[17px] font-medium text-white">Personalisasi</h3>
-                    <p className="text-sm text-gray-400 mt-0.5">Atur instruksi kustom Anda dan lihat aplikasi terhubung</p>
+                    <h3 className="text-[17px] font-medium text-white">{t.personalization}</h3>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.personalizationDesc}</p>
                   </div>
                 </button>
 
@@ -296,37 +286,37 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-[17px] font-medium text-white">Custom API</h3>
+                      <h3 className="text-[17px] font-medium text-white">{t.customApi}</h3>
                       <span className="text-[11px] font-medium bg-emerald-950/80 text-emerald-400 border border-emerald-800/50 px-2 py-0.5 rounded-full">
                         {customApis.length}/10 API
                       </span>
                       {customApis.some(a => a.isActive) && (
                         <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded font-mono">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                          Aktif
+                          {t.active}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-400 mt-0.5">Kelola hingga 10 API kustom (Limit: 10 req/menit & 50 req/hari)</p>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.customApiDesc}</p>
                   </div>
                 </button>
 
-                {/* 6. Integrasi Platform MCP (Interactive) */}
+                {/* 6. Bahasa / Language (Interactive) */}
                 <button
-                  onClick={() => setCurrentView('integrations')}
+                  onClick={() => setCurrentView('language')}
                   className="w-full text-left flex items-start gap-5 py-4 px-3 rounded-2xl hover:bg-neutral-900/60 active:bg-neutral-800/55 transition-colors group cursor-pointer"
                 >
-                  <div className="mt-1 flex-shrink-0 text-gray-400 group-hover:text-blue-400 transition-colors">
-                    <Link2 size={22} strokeWidth={1.8} />
+                  <div className="mt-1 flex-shrink-0 text-gray-400 group-hover:text-cyan-400 transition-colors">
+                    <Globe size={22} strokeWidth={1.8} />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-[17px] font-medium text-white">Integrasi Platform (MCP)</h3>
-                      <span className="text-[11px] font-medium bg-blue-950/80 text-blue-400 border border-blue-800/50 px-2 py-0.5 rounded-full font-mono">
-                        11 Platform
+                      <h3 className="text-[17px] font-medium text-white">{t.language}</h3>
+                      <span className="text-[11px] font-semibold uppercase bg-cyan-950/80 text-cyan-400 border border-cyan-800/50 px-2 py-0.5 rounded-full font-mono">
+                        {lang === 'id' ? 'ID (Indonesia)' : 'EN (English)'}
                       </span>
                     </div>
-                    <p className="text-sm text-gray-400 mt-0.5">Hubungkan Supabase, Google, GitHub, Vercel, Figma, Airtable, dll</p>
+                    <p className="text-sm text-gray-400 mt-0.5">{t.languageDesc}</p>
                   </div>
                 </button>
               </div>
@@ -336,7 +326,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
           {/* Subview Integrations */}
           {currentView === 'integrations' && (
             <div className="flex-1 overflow-y-auto bg-black flex flex-col w-full h-full text-white">
-              <IntegrationsPage onBack={() => setCurrentView('menu')} isStandalone={false} />
+              <IntegrationsPage onBack={() => setCurrentView('connected_apps')} isStandalone={false} />
             </div>
           )}
 
@@ -352,16 +342,97 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                   <ArrowLeft size={22} />
                 </button>
                 <span className="ml-3 font-medium text-lg text-white capitalize">
-                  {currentView === 'account' && 'Info Akun'}
-                  {currentView === 'activity' && 'Aktivitas Anda'}
-                  {currentView === 'usage' && 'Batas Penggunaan'}
-                  {currentView === 'personalization' && 'Personalisasi'}
-                  {currentView === 'custom_api' && 'Custom API'}
+                  {currentView === 'account' && t.accountInfo}
+                  {currentView === 'activity' && t.activity}
+                  {currentView === 'usage' && t.usageLimits}
+                  {currentView === 'personalization' && t.personalization}
+                  {currentView === 'custom_api' && t.customApi}
+                  {currentView === 'language' && t.language}
                 </span>
               </div>
 
               {/* Sub-screen body container */}
               <div className="flex-1 py-8 px-4 sm:px-6 max-w-2xl mx-auto w-full">
+                
+                {/* View: LANGUAGE / BAHASA */}
+                {currentView === 'language' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div>
+                      <h3 className="text-2xl font-normal text-white mb-1">{t.selectLanguage}</h3>
+                      <p className="text-gray-400 text-sm">{t.languageDesc}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {/* Indonesian Option */}
+                      <div 
+                        onClick={() => selectLanguageOption('id')}
+                        className={cn(
+                          "p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group",
+                          lang === 'id' 
+                            ? "bg-cyan-950/20 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)]" 
+                            : "bg-[#0e0e10] border-neutral-800/80 hover:border-neutral-700 hover:bg-neutral-900/40"
+                        )}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xl font-bold border border-neutral-800">
+                            🇮🇩
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-[16px] font-semibold text-white">Bahasa Indonesia</h4>
+                              {lang === 'id' && (
+                                <span className="text-[10px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.2 rounded font-medium">
+                                  {t.active}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-0.5">Bahasa Indonesia baku dan natural untuk seluruh antarmuka & respons</p>
+                          </div>
+                        </div>
+                        <div className={cn(
+                          "w-6 h-6 rounded-full flex items-center justify-center border transition-colors",
+                          lang === 'id' ? "bg-cyan-500 border-cyan-400 text-black font-bold" : "border-neutral-700 group-hover:border-neutral-500"
+                        )}>
+                          {lang === 'id' && <Check size={14} strokeWidth={3} />}
+                        </div>
+                      </div>
+
+                      {/* English Option */}
+                      <div 
+                        onClick={() => selectLanguageOption('en')}
+                        className={cn(
+                          "p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between group",
+                          lang === 'en' 
+                            ? "bg-blue-950/20 border-blue-500/50 shadow-[0_0_15px_rgba(59,130,246,0.15)]" 
+                            : "bg-[#0e0e10] border-neutral-800/80 hover:border-neutral-700 hover:bg-neutral-900/40"
+                        )}
+                      >
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xl font-bold border border-neutral-800">
+                            🇺🇸
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-[16px] font-semibold text-white">English (US)</h4>
+                              {lang === 'en' && (
+                                <span className="text-[10px] bg-blue-500/20 text-blue-400 border border-blue-500/30 px-1.5 py-0.2 rounded font-medium">
+                                  {t.active}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-0.5">Standard English for all UI menus, system prompts, and options</p>
+                          </div>
+                        </div>
+                        <div className={cn(
+                          "w-6 h-6 rounded-full flex items-center justify-center border transition-colors",
+                          lang === 'en' ? "bg-blue-500 border-blue-400 text-white font-bold" : "border-neutral-700 group-hover:border-neutral-500"
+                        )}>
+                          {lang === 'en' && <Check size={14} strokeWidth={3} />}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* View A. INFO AKUN */}
                 {currentView === 'account' && (
@@ -1117,60 +1188,153 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
             </div>
           )}
 
-          {/* Connected Apps Cosmic Sun / Star Screen */}
+          {/* Connected Apps & MCP Hub Screen */}
           {currentView === 'connected_apps' && (
-            <div className="flex-1 w-full h-full relative flex items-center justify-center p-6 text-center bg-black overflow-hidden select-none">
-               {/* Star backdrop background */}
-               <div className="absolute inset-0 z-0 pointer-events-none">
-                 {/* Glowing Sun Flare */}
-                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
-                   <div className="w-32 h-32 rounded-full bg-orange-100 shadow-[0_0_80px_30px_rgba(255,200,100,0.6)] animate-pulse" />
-                   <motion.div 
-                     className="absolute w-56 h-56 rounded-full bg-yellow-400 mix-blend-screen mix-blend-soft-light"
-                     animate={{ scale: [1, 2.5], opacity: [0, 0.6, 0] }}
-                     transition={{ duration: 4, repeat: Infinity, ease: "easeOut" }}
-                   />
-                 </div>
-                 {/* Fast Twinkling Cosmic Stars */}
-                 {cosmicStars.map((star) => (
-                   <motion.div
-                     key={star.id}
-                     className="absolute w-1 h-1 bg-white rounded-full bg-opacity-80 shadow-[0_0_5px_1px_rgba(255,255,255,0.8)]"
-                     initial={{ top: star.top, left: star.left }}
-                     animate={{ 
-                       y: [0, -150],
-                       x: [0, star.xOffset],
-                       opacity: [0, 1, 0], 
-                       scale: [0.5, star.scaleMax, 0.5] 
-                     }}
-                     transition={{ duration: star.duration, repeat: Infinity, ease: "linear", delay: star.delay }}
-                   />
-                 ))}
-               </div>
+            <div className="flex-1 overflow-y-auto bg-[#070708] flex flex-col w-full h-full text-white">
+              {/* Header inside sub-screen */}
+              <div className="border-b border-neutral-900 bg-[#0c0c0d] py-4 px-4 sm:px-6 sticky top-0 z-10 flex items-center justify-between">
+                <div className="flex items-center">
+                  <button 
+                    onClick={() => setCurrentView('personalization')}
+                    className="w-10 h-10 -ml-1 rounded-full flex items-center justify-center text-gray-400 hover:bg-neutral-900 transition-colors cursor-pointer"
+                  >
+                    <ArrowLeft size={22} />
+                  </button>
+                  <span className="ml-3 font-medium text-lg text-white">
+                    {t.connectedApps}
+                  </span>
+                </div>
+              </div>
 
-               {/* Center Mascot Artwork Image */}
-               <motion.div 
-                 initial={{ opacity: 0, scale: 0.9, y: 15 }}
-                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                 transition={{ duration: 0.7, ease: "easeOut" }}
-                 className="relative z-10 max-w-sm sm:max-w-md w-full flex items-center justify-center p-4 drop-shadow-[0_20px_60px_rgba(251,146,60,0.3)]"
-               >
-                 <img 
-                   src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260602_194527_0000.png" 
-                   alt="Mascot Artwork" 
-                   className="w-full max-h-[60vh] object-contain select-none"
-                   referrerPolicy="no-referrer"
-                 />
-               </motion.div>
+              {/* Sub-screen body container */}
+              <div className="flex-1 py-8 px-4 sm:px-6 max-w-2xl mx-auto w-full space-y-6">
+                
+                {/* 1. MCP Hub Featured Card */}
+                <div className="bg-gradient-to-br from-blue-950/40 via-indigo-950/20 to-[#0e0e12] border border-blue-900/40 rounded-3xl p-6 sm:p-7 shadow-xl space-y-5 relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full filter blur-3xl pointer-events-none group-hover:bg-blue-500/15 transition-all" />
+                  
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-3 bg-blue-600/20 border border-blue-500/30 text-blue-400 rounded-2xl">
+                        <Layers size={26} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xl font-semibold text-white">{t.mcpHubTitle}</h4>
+                        </div>
+                        <span className="text-[11px] font-medium text-blue-400 font-mono">
+                          {t.connectedStatusBadge}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
 
-               {/* Floating Back Control Button over Cosmic View */}
-               <button 
-                  onClick={() => setCurrentView('personalization')}
-                  className="absolute top-6 left-6 z-20 flex items-center gap-2 py-2.5 px-4 bg-gray-900/90 hover:bg-[#1f1f1d] active:bg-black rounded-full text-white transition-all cursor-pointer backdrop-blur-md border border-gray-800 shadow-xl font-medium text-sm"
-                >
-                  <ArrowLeft size={18} />
-                  <span>Kembali</span>
-                </button>
+                  <p className="text-sm text-gray-300 leading-relaxed">
+                    {t.mcpIntroText}
+                  </p>
+
+                  {/* Platforms mini preview badges */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {[
+                      { name: 'Supabase', color: 'text-emerald-400 border-emerald-800/40 bg-emerald-950/40' },
+                      { name: 'Google', color: 'text-red-400 border-red-800/40 bg-red-950/40' },
+                      { name: 'GitHub', color: 'text-gray-300 border-gray-700/40 bg-gray-900/60' },
+                      { name: 'Vercel', color: 'text-white border-neutral-700 bg-neutral-900' },
+                      { name: 'Figma', color: 'text-purple-400 border-purple-800/40 bg-purple-950/40' },
+                      { name: 'Canva', color: 'text-cyan-400 border-cyan-800/40 bg-cyan-950/40' },
+                      { name: 'Airtable', color: 'text-amber-400 border-amber-800/40 bg-amber-950/40' },
+                      { name: 'Netlify', color: 'text-teal-400 border-teal-800/40 bg-teal-950/40' }
+                    ].map((p, idx) => (
+                      <span key={idx} className={cn("text-xs px-2.5 py-1 rounded-lg border font-medium", p.color)}>
+                        {p.name}
+                      </span>
+                    ))}
+                    <span className="text-xs px-2.5 py-1 rounded-lg border border-neutral-800 bg-neutral-900/40 text-gray-400 font-mono">
+                      +3 lagi
+                    </span>
+                  </div>
+
+                  {/* Open MCP Settings Button */}
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setCurrentView('integrations')}
+                      className="w-full flex items-center justify-center gap-2.5 py-3.5 px-5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-2xl font-medium transition-all shadow-lg shadow-blue-900/30 cursor-pointer text-sm"
+                    >
+                      <Layers size={18} />
+                      <span>{t.openMcpIntegrations}</span>
+                      <ArrowLeft size={16} className="rotate-180 ml-1" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Connected Web Ecosystem Links */}
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">
+                    {lang === 'id' ? 'Ekosistem Layanan Web TMPA' : 'TMPA Web Ecosystem'}
+                  </h4>
+
+                  {/* Main Website TMPA Link */}
+                  <a
+                    href="https://tmpa.my.id"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full flex items-center justify-between p-4 bg-[#0e0e10] hover:bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700 rounded-2xl transition-all group"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-2.5 bg-neutral-900 text-gray-300 group-hover:text-blue-400 rounded-xl border border-neutral-800 transition-colors">
+                        <Globe size={20} />
+                      </div>
+                      <div>
+                        <h5 className="text-[15px] font-semibold text-white group-hover:text-blue-400 transition-colors">
+                          {t.mainWebsite}
+                        </h5>
+                        <p className="text-xs text-gray-400 mt-0.5">https://tmpa.my.id</p>
+                      </div>
+                    </div>
+                    <ExternalLink size={16} className="text-gray-500 group-hover:text-white transition-colors" />
+                  </a>
+
+                  {/* Store Link */}
+                  <div
+                    onClick={() => showToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...')}
+                    className="w-full flex items-center justify-between p-4 bg-[#0e0e10] hover:bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700 rounded-2xl transition-all group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <div className="p-2.5 bg-neutral-900 text-gray-300 group-hover:text-amber-400 rounded-xl border border-neutral-800 transition-colors">
+                        <Sparkles size={20} />
+                      </div>
+                      <div>
+                        <h5 className="text-[15px] font-semibold text-white group-hover:text-amber-400 transition-colors">
+                          {t.store}
+                        </h5>
+                        <p className="text-xs text-gray-400 mt-0.5">TMPA Store & Marketplace AI Models</p>
+                      </div>
+                    </div>
+                    <span className="text-xs text-gray-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-lg">
+                      {t.active}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Mascot Brand Artwork Card */}
+                <div className="bg-[#0b0b0e] border border-neutral-900 rounded-3xl p-6 flex flex-col items-center justify-center text-center space-y-3 mt-4">
+                  <img 
+                    src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260602_194527_0000.png" 
+                    alt="TMPA Mascot" 
+                    className="w-24 h-24 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <h5 className="text-sm font-semibold text-white">TMPA Connected Intelligence</h5>
+                    <p className="text-xs text-gray-400 mt-1 max-w-sm">
+                      {lang === 'id' 
+                        ? 'Semua data dan integrasi MCP terenkripsi dan terlindungi di bawah standar privasi TMPA.'
+                        : 'All data and MCP integrations are securely encrypted under TMPA privacy standards.'}
+                    </p>
+                  </div>
+                </div>
+
+              </div>
             </div>
           )}
 

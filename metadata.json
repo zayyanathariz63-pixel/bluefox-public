@@ -1,6 +1,6 @@
 {
   "name": "tmpa chat",
-  "description": "A sleek, professional dark and blue AI chat helper supporting GPT, LLM, and Qwen via OpenRouter.",
+  "description": "A sleek, professional AI chat platform featuring trigger commands (@), theme customization, multi-model support, and SSO integration.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
