@@ -6,6 +6,7 @@ import {
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { IntegrationsPage } from './IntegrationsPage';
 import { 
   CustomApiKey, 
   CustomApiUsageStats, 
@@ -34,7 +35,7 @@ interface SettingsModalProps {
   resetUsage: () => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations';
 
 export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions, hourlyUsage, weeklyUsage, resetUsage }: SettingsModalProps) {
   const [currentView, setCurrentView] = useState<SubView>('menu');
@@ -309,12 +310,38 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <p className="text-sm text-gray-400 mt-0.5">Kelola hingga 10 API kustom (Limit: 10 req/menit & 50 req/hari)</p>
                   </div>
                 </button>
+
+                {/* 6. Integrasi Platform MCP (Interactive) */}
+                <button
+                  onClick={() => setCurrentView('integrations')}
+                  className="w-full text-left flex items-start gap-5 py-4 px-3 rounded-2xl hover:bg-neutral-900/60 active:bg-neutral-800/55 transition-colors group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-gray-400 group-hover:text-blue-400 transition-colors">
+                    <Link2 size={22} strokeWidth={1.8} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-medium text-white">Integrasi Platform (MCP)</h3>
+                      <span className="text-[11px] font-medium bg-blue-950/80 text-blue-400 border border-blue-800/50 px-2 py-0.5 rounded-full font-mono">
+                        11 Platform
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-400 mt-0.5">Hubungkan Supabase, Google, GitHub, Vercel, Figma, Airtable, dll</p>
+                  </div>
+                </button>
               </div>
             </div>
           )}
 
+          {/* Subview Integrations */}
+          {currentView === 'integrations' && (
+            <div className="flex-1 overflow-y-auto bg-black flex flex-col w-full h-full text-white">
+              <IntegrationsPage onBack={() => setCurrentView('menu')} isStandalone={false} />
+            </div>
+          )}
+
           {/* Subview Content */}
-          {currentView !== 'menu' && currentView !== 'connected_apps' && (
+          {currentView !== 'menu' && currentView !== 'connected_apps' && currentView !== 'integrations' && (
             <div className="flex-1 overflow-y-auto bg-[#070708] flex flex-col w-full h-full text-white">
               {/* Header inside sub-screen */}
               <div className="border-b border-neutral-900 bg-[#0c0c0d] py-4 px-4 sm:px-6 sticky top-0 z-10 flex items-center">

@@ -1,4 +1,4 @@
-import { X, Search, Plus, Power, Key } from 'lucide-react';
+import { X, Search, Plus, Power, Key, Layers, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Connector } from '../types';
@@ -10,9 +10,10 @@ interface ConnectorsModalProps {
   connectors: Connector[];
   onToggleConnector: (id: string) => void;
   onAddConnector: (id: string, apiKey: string) => void;
+  onOpenIntegrations?: () => void;
 }
 
-export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector, onAddConnector }: ConnectorsModalProps) {
+export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector, onAddConnector, onOpenIntegrations }: ConnectorsModalProps) {
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -29,7 +30,7 @@ export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector
       >
         <div className="flex items-center justify-between p-6 border-b border-gray-800">
           <div>
-            <h2 className="text-xl font-semibold text-white">App Connectors</h2>
+            <h2 className="text-xl font-semibold text-white">App Connectors & Integrasi</h2>
             <p className="text-sm text-gray-400 mt-1">Hubungkan aplikasi dan website untuk memberikan akses data kepada AI.</p>
           </div>
           <button
@@ -39,6 +40,33 @@ export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector
             <X size={20} />
           </button>
         </div>
+
+        {onOpenIntegrations && (
+          <div className="px-6 pt-4 pb-1">
+            <button
+              onClick={() => {
+                onClose();
+                onOpenIntegrations();
+              }}
+              className="w-full p-4 rounded-2xl bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-gray-900 border border-blue-500/30 hover:border-blue-500/60 transition-all flex items-center justify-between group cursor-pointer shadow-lg shadow-blue-950/20"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+                  <Layers size={20} />
+                </div>
+                <div className="text-left">
+                  <h4 className="text-sm font-semibold text-white group-hover:text-blue-300 transition-colors">
+                    Integrasi Platform MCP TMPA (11 Layanan)
+                  </h4>
+                  <p className="text-xs text-gray-400">
+                    Supabase, Google Workspace, GitHub, Vercel, Figma, Airtable, Make, dll.
+                  </p>
+                </div>
+              </div>
+              <ArrowRight size={18} className="text-blue-400 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto p-6 space-y-3">
           {connectors.map(connector => (
@@ -83,3 +111,4 @@ export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector
     </div>
   );
 }
+

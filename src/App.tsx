@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
+import { IntegrationsPage } from './components/IntegrationsPage';
 import { 
   supabase, 
   exchangeSsoTicket, 
@@ -203,7 +204,7 @@ export default function App() {
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showSplash, setShowSplash] = useState(true);
-  const [appState, setAppState] = useState<'landing' | 'login' | 'chat' | 'verify'>('landing');
+  const [appState, setAppState] = useState<'landing' | 'login' | 'chat' | 'verify' | 'integrations'>('landing');
   const [user, setUser] = useState<any>(null);
   const [userTier, setUserTier] = useState<string>('Loading...');
   const [authChecking, setAuthChecking] = useState(true);
@@ -284,6 +285,19 @@ export default function App() {
         // 0. CEK RUTE /verify (VerifyPage)
         if (currentPath.startsWith('/verify') || urlParams.get('page') === 'verify' || urlParams.get('view') === 'verify') {
           setAppState('verify');
+          setAuthChecking(false);
+          setShowSplash(false);
+          return;
+        }
+
+        // 0.1 CEK RUTE /settings/integrations atau /integrations (IntegrationsPage)
+        if (
+          currentPath.startsWith('/settings/integrations') || 
+          currentPath.startsWith('/integrations') ||
+          urlParams.get('page') === 'integrations' || 
+          urlParams.get('view') === 'integrations'
+        ) {
+          setAppState('integrations');
           setAuthChecking(false);
           setShowSplash(false);
           return;
@@ -1047,6 +1061,10 @@ export default function App() {
         <VerifyPage />
       )}
 
+      {!showSplash && !authChecking && !authError && appState === 'integrations' && (
+        <IntegrationsPage onBack={() => setAppState(user ? 'chat' : 'landing')} />
+      )}
+
       {!showSplash && !authChecking && !authError && appState === 'landing' && (
         <LandingPage onStart={handleLandingStart} />
       )}
@@ -1304,6 +1322,13 @@ export default function App() {
 
                 {chatSessions.length > 0 && <div className="my-3 border-t border-gray-900" />}
 
+                <button 
+                  onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
+                  className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                >
+                  <Layers size={18} />
+                  Integrasi Platform (MCP)
+                </button>
                 <button className="flex items-center gap-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium">
                   <Store size={18} />
                   Store
@@ -1734,6 +1759,10 @@ export default function App() {
         onToggleConnector={toggleConnector}
         onAddConnector={(id, apiKey) => {
           setConnectors(prev => prev.map(c => c.id === id ? { ...c, isConfigured: true, isActive: true, apiKey } : c));
+        }}
+        onOpenIntegrations={() => {
+          setAppState('integrations');
+          setIsConnectorsModalOpen(false);
         }}
       />
     </div>
