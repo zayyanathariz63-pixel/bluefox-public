@@ -62,8 +62,8 @@ export const SUPABASE_CONFIG = {
   get url(): string {
     return getEnvAny(
       [
-        "NEXT_PUBLIC_SUPABASE_URL",
         "VITE_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_URL",
         "SUPABASE_URL",
         "PUBLIC_SUPABASE_URL",
       ],
@@ -72,8 +72,8 @@ export const SUPABASE_CONFIG = {
   },
   get anonKey(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "VITE_SUPABASE_ANON_KEY",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "SUPABASE_ANON_KEY",
       "SUPABASE_KEY",
       "VITE_SUPABASE_KEY",
@@ -87,62 +87,62 @@ export const SUPABASE_CONFIG = {
 
 // ----------------------------------------------------
 // MCP PLATFORM CLIENT IDS (OAuth & Integrations)
-// Mendeteksi format NEXT_PUBLIC_* dan VITE_* otomatis
+// Mendeteksi format VITE_* (Vite React) dan NEXT_PUBLIC_* (Next.js)
 // ----------------------------------------------------
 export const MCP_CLIENT_IDS = {
   get supabase(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_SUPABASE_CLIENT_ID",
       "VITE_SUPABASE_CLIENT_ID",
+      "NEXT_PUBLIC_SUPABASE_CLIENT_ID",
       "SUPABASE_CLIENT_ID",
     ], "supabase-client");
   },
   get google(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
       "VITE_GOOGLE_CLIENT_ID",
+      "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_ID",
     ], "google-client");
   },
   get github(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_GITHUB_CLIENT_ID",
       "VITE_GITHUB_CLIENT_ID",
+      "NEXT_PUBLIC_GITHUB_CLIENT_ID",
       "GITHUB_CLIENT_ID",
     ], "github-client");
   },
   get vercel(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_VERCEL_CLIENT_ID",
       "VITE_VERCEL_CLIENT_ID",
+      "NEXT_PUBLIC_VERCEL_CLIENT_ID",
       "VERCEL_CLIENT_ID",
     ], "vercel-client");
   },
   get netlify(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_NETLIFY_CLIENT_ID",
       "VITE_NETLIFY_CLIENT_ID",
+      "NEXT_PUBLIC_NETLIFY_CLIENT_ID",
       "NETLIFY_CLIENT_ID",
     ], "netlify-client");
   },
   get figma(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_FIGMA_CLIENT_ID",
       "VITE_FIGMA_CLIENT_ID",
+      "NEXT_PUBLIC_FIGMA_CLIENT_ID",
       "FIGMA_CLIENT_ID",
     ], "figma-client");
   },
   get airtable(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_AIRTABLE_CLIENT_ID",
       "VITE_AIRTABLE_CLIENT_ID",
+      "NEXT_PUBLIC_AIRTABLE_CLIENT_ID",
       "AIRTABLE_CLIENT_ID",
     ], "airtable-client");
   },
   get canva(): string {
     return getEnvAny([
-      "NEXT_PUBLIC_CANVA_CLIENT_ID",
       "VITE_CANVA_CLIENT_ID",
+      "NEXT_PUBLIC_CANVA_CLIENT_ID",
       "CANVA_CLIENT_ID",
     ], "canva-client");
   },
@@ -172,8 +172,8 @@ export function getProviderClientId(providerId: string): string {
       return MCP_CLIENT_IDS.canva;
     default:
       return getEnvAny([
-        `NEXT_PUBLIC_${providerId.toUpperCase()}_CLIENT_ID`,
         `VITE_${providerId.toUpperCase()}_CLIENT_ID`,
+        `NEXT_PUBLIC_${providerId.toUpperCase()}_CLIENT_ID`,
         `${providerId.toUpperCase()}_CLIENT_ID`,
       ]);
   }
