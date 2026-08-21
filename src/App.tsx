@@ -736,23 +736,26 @@ export default function App() {
     };
   }, [appState, currentSessionId]);
 
+  const sortSessions = (sessions: ChatSession[]) => {
+    return [...sessions].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+  };
+
   const saveSessionsToLocal = (sessions: ChatSession[]) => {
-    setChatSessions(sessions);
-    localStorage.setItem('tmpa_chat_sessions', JSON.stringify(sessions));
+    const sorted = sortSessions(sessions);
+    setChatSessions(sorted);
+    localStorage.setItem('tmpa_chat_sessions', JSON.stringify(sorted));
   };
 
   const handleTogglePinChat = (session: ChatSession) => {
     const isCurrentlyPinned = Boolean(session.isPinned);
     const updatedSessions = chatSessions.map(s => 
-      s.id === session.id ? { ...s, isPinned: !isCurrentlyPinned } : s
+      s.id === session.id ? { ...s, isPinned: !isCurrentlyPinned, updatedAt: Date.now() } : s
     );
-    // Urutkan: chat yang di-pin SELALU berada di paling atas
-    const sorted = [...updatedSessions].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return (b.updatedAt || 0) - (a.updatedAt || 0);
-    });
-    saveSessionsToLocal(sorted);
+    saveSessionsToLocal(updatedSessions);
     setShowActionToast(!isCurrentlyPinned ? t.chatPinned : t.chatUnpinned);
     setTimeout(() => setShowActionToast(null), 2500);
     setContextMenuSession(null);
@@ -1173,77 +1176,107 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
-      const mediaUrls = Array.isArray(media)
-        ? media.map(m => m.url)
-        : (media ? [media.url] : (imageUrl ? [imageUrl] : []));
-
-      // 5. Panggil Edge Function dan WAJIB ditunggu (await)
-      const edgeRes = await invokeBluefoxProcessor(
-        effectiveAiPrompt,
-        currentSessionId || null,
-        currentEffectiveModel,
-        isVisionNow,
-        mediaUrls.length > 0 ? mediaUrls : null
-      );
-
-      // 6. Cek Error dari SDK Supabase (Masalah Jaringan / Timeout)
-      if (edgeRes.error && !edgeRes.data) {
-        console.error("SDK Error:", edgeRes.error);
-        throw new Error(typeof edgeRes.error === 'string' ? edgeRes.error : "Gagal terhubung ke server. Periksa koneksi internetmu.");
-      }
-
-      // 7. Cek Error kustom dari Edge Function
-      if (edgeRes.data && edgeRes.data.success === false) {
-        throw new Error(edgeRes.data.error || "Gagal memproses pesan di AI server.");
-      }
-
-      // 8. Jika SUKSES dan balasan AI ada
-      if (edgeRes.data && edgeRes.data.reply) {
-        if (edgeRes.data.model_used) {
-          console.log("Model Terpakai:", edgeRes.data.model_used);
-        }
-        console.log("Balasan AI:", edgeRes.data.reply);
-        aiReplyText = edgeRes.data.reply;
-        if (edgeRes.data.conversation_id) {
-          effectiveConvId = edgeRes.data.conversation_id;
-          setCurrentSessionId(effectiveConvId);
-        }
-      } else {
-        // Fallback jika respons kosong / menggunakan fallback internal API
-        console.warn("⚠️ Menggunakan fallback API internal /api/chat");
-        const history = baseMessages.map(m => ({
-          role: m.role,
-          text: m.text
-        }));
-
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ history, message: effectiveAiPrompt, model: selectedModel, customInstruction, reasoningMode }),
-          signal: abortControllerRef.current.signal
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData?.error || "Format respons dari server tidak sesuai.");
-        }
-
-        const data = await res.json();
-        aiReplyText = data.text || "Tidak ada respons yang diterima.";
-
-        sendMessageToSupabase(userText, effectiveConvId, 'user').catch(() => {});
-        sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
-      }
-
-      // Tampilkan balasan AI ke UI
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      // Setup placeholder message for real-time streaming typewriter display
+      const aiMessageId = (Date.now() + 1).toString();
+      const initialAiMessage: Message = {
+        id: aiMessageId,
         role: 'model',
-        text: aiReplyText,
+        text: '',
       };
+      setMessages([...updatedMessages, initialAiMessage]);
 
-      const finalMessages = [...updatedMessages, aiMessage];
-      setMessages(finalMessages);
+      const history = baseMessages.map(m => ({
+        role: m.role,
+        text: m.text
+      }));
+
+      // Stream directly from /api/chat with SSE
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          history, 
+          message: effectiveAiPrompt, 
+          model: currentEffectiveModel, 
+          customInstruction, 
+          reasoningMode 
+        }),
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error || "Gagal menghubungi layanan AI.");
+      }
+
+      if (res.body) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data:')) continue;
+            const jsonStr = trimmed.replace(/^data:\s*/, '');
+            if (jsonStr === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(jsonStr);
+              if (parsed.delta) {
+                aiReplyText += parsed.delta;
+                setMessages(prev => {
+                  const next = [...prev];
+                  const targetIdx = next.findIndex(m => m.id === aiMessageId);
+                  if (targetIdx !== -1) {
+                    next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                  }
+                  return next;
+                });
+              } else if (parsed.done && parsed.fullText) {
+                aiReplyText = parsed.fullText;
+                setMessages(prev => {
+                  const next = [...prev];
+                  const targetIdx = next.findIndex(m => m.id === aiMessageId);
+                  if (targetIdx !== -1) {
+                    next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                  }
+                  return next;
+                });
+              } else if (parsed.error) {
+                throw new Error(parsed.error);
+              }
+            } catch {}
+          }
+        }
+      }
+
+      if (!aiReplyText.trim()) {
+        aiReplyText = "⚠️ Respons tidak menghasilkan teks.";
+        setMessages(prev => {
+          const next = [...prev];
+          const targetIdx = next.findIndex(m => m.id === aiMessageId);
+          if (targetIdx !== -1) {
+            next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+          }
+          return next;
+        });
+      }
+
+      sendMessageToSupabase(userText, effectiveConvId, 'user').catch(() => {});
+      sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
+
+      const finalMessages = [...updatedMessages, {
+        id: aiMessageId,
+        role: 'model' as const,
+        text: aiReplyText
+      }];
 
       const updateIdx = currentSessions.findIndex(s => s.id === sessionId || s.id === effectiveConvId);
       if (updateIdx !== -1) {
@@ -1257,10 +1290,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('Request aborted by user');
+        console.log('Request stopped by user');
         return;
       }
-      // Tangkap error dan tampilkan di UI secara halus
       console.error("Catch Block Frontend Error:", err);
       const errMsg = err?.message || "Terjadi kesalahan saat memuat balasan.";
       setErrorState(errMsg);
@@ -1270,9 +1302,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         role: 'model',
         text: `⚠️ ${errMsg}`,
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => {
+        const filtered = prev.filter(m => m.text.trim() !== '');
+        return [...filtered, errorMessage];
+      });
     } finally {
-      // 6. Matikan indikator Loading setelah SEMUA proses selesai
       setIsLoading(false);
       abortControllerRef.current = null;
     }
