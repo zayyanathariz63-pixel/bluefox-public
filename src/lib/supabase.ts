@@ -317,7 +317,8 @@ export async function invokeBluefoxProcessor(
   conversationId?: string | null,
   model?: string,
   isVisionActive?: boolean,
-  imageUrl?: string | string[] | null
+  imageUrl?: string | string[] | null,
+  abortSignal?: AbortSignal
 ) {
   try {
     // Pastikan conversation_id bernilai null jika string kosong atau tidak ada
@@ -342,6 +343,7 @@ export async function invokeBluefoxProcessor(
 
     const requestBody: Record<string, any> = {
       message: message.trim(),
+      prompt: message.trim(),
       conversation_id: cleanConvId,
       model: finalModel,
       is_vision: Boolean(isVisionActive),
@@ -367,33 +369,103 @@ export async function invokeBluefoxProcessor(
 
     console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
 
-    // 1. Coba melalui supabase.functions.invoke dengan nama endpoint 'bluefox-processor-'
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || supabaseKey;
+    const baseEndpoint = (supabaseUrl || 'https://jjlanjshpyklqayjzxyy.supabase.co').replace(/\/+$/, '');
+    
+    // Coba endpoint URL spesifik yang diberikan user
+    const urlsToTry = [
+      `${baseEndpoint}/functions/v1/bluefox-processor-`,
+      `${baseEndpoint}/functions/v1/bluefox-processor`
+    ];
+
+    let lastError: any = null;
+
+    for (const fnUrl of urlsToTry) {
+      if (abortSignal?.aborted) {
+        throw new DOMException('Request aborted', 'AbortError');
+      }
+
+      try {
+        console.log(`📡 Memanggil Edge Function di: ${fnUrl}`);
+        const res = await fetch(fnUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(requestBody),
+          signal: abortSignal,
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.warn(`⚠️ [Edge Function] HTTP ${res.status} dari ${fnUrl}:`, errText);
+          lastError = `Edge Function HTTP ${res.status}: ${errText}`;
+          continue;
+        }
+
+        const resData = await res.json();
+        console.log("📥 [Supabase Edge Function] Respons diterima:", resData);
+
+        if (resData.success === false || resData.error) {
+          console.error("❌ Detail Error dari Server:", resData.error || resData.message);
+          return {
+            data: {
+              success: false,
+              error: resData.error || resData.message || 'Error dari server',
+              reply: '',
+              conversation_id: cleanConvId,
+              ...resData,
+            },
+            error: resData.error || resData.message,
+          };
+        }
+
+        const replyText = resData?.reply || resData?.text || resData?.message || resData?.response || resData?.content || (typeof resData === 'string' ? resData : '');
+        const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
+
+        return {
+          data: {
+            success: true,
+            reply: replyText,
+            conversation_id: nextConvId,
+            ...resData,
+          },
+          error: null,
+        };
+      } catch (fErr: any) {
+        if (fErr.name === 'AbortError') throw fErr;
+        console.warn(`⚠️ Gagal direct fetch ke ${fnUrl}:`, fErr?.message);
+        lastError = fErr?.message;
+      }
+    }
+
+    // 2. Jika direct fetch gagal, coba melalui supabase.functions.invoke
     try {
+      if (abortSignal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+
       const { data, error } = await supabase.functions.invoke('bluefox-processor-', {
         body: requestBody,
       });
 
-      if (error) {
-        console.error("❌ [Supabase SDK Error]:", error);
-      } else if (data) {
+      if (!error && data) {
         console.log("📥 [Supabase Edge Function] Respons diterima (SDK):", data);
-
-        // Jika Edge Function mengirim balasan error (misal: success === false atau ada error field)
         if (data.success === false || data.error) {
-          console.error("❌ Detail Error Asli dari Server:", data.error || data.message);
           return {
             data: {
               success: false,
-              error: data.error || data.message || 'Error tidak diketahui dari server',
+              error: data.error || data.message || 'Error tidak diketahui',
               reply: '',
               conversation_id: cleanConvId,
               ...data,
             },
-            error: data.error || data.message || 'Server error',
+            error: data.error || data.message,
           };
         }
 
-        const replyText = data?.reply || data?.text || data?.message || data?.response || (typeof data === 'string' ? data : '');
+        const replyText = data?.reply || data?.text || data?.message || data?.response || data?.content || (typeof data === 'string' ? data : '');
         const nextConvId = data?.conversation_id || data?.conversationId || cleanConvId;
 
         return {
@@ -406,69 +478,19 @@ export async function invokeBluefoxProcessor(
           error: null,
         };
       }
-    } catch (invokeErr) {
-      console.warn("⚠️ [Supabase Edge Function] SDK invoke exception, mencoba fallback HTTP:", invokeErr);
+    } catch (invokeErr: any) {
+      if (invokeErr.name === 'AbortError') throw invokeErr;
+      console.warn("⚠️ SDK invoke error:", invokeErr);
     }
-
-    // 2. Fallback: direct HTTP POST ke full URL https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
-    const functionUrl = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/bluefox-processor-`;
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || supabaseKey;
-
-    const res = await fetch(functionUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`❌ [Edge Function] Direct fetch status ${res.status}:`, errText);
-      return {
-        data: {
-          success: false,
-          error: `Edge Function HTTP ${res.status}: ${errText}`,
-          reply: '',
-          conversation_id: cleanConvId,
-        },
-        error: `Edge Function error (${res.status}): ${errText}`,
-      };
-    }
-
-    const resData = await res.json();
-    console.log("📥 [Supabase Edge Function] Respons diterima (Direct Fetch):", resData);
-
-    if (resData.success === false || resData.error) {
-      console.error("❌ Detail Error Asli dari Server (Fetch):", resData.error || resData.message);
-      return {
-        data: {
-          success: false,
-          error: resData.error || resData.message || 'Error dari server',
-          reply: '',
-          conversation_id: cleanConvId,
-          ...resData,
-        },
-        error: resData.error || resData.message,
-      };
-    }
-
-    const replyText = resData?.reply || resData?.text || resData?.message || resData?.response || (typeof resData === 'string' ? resData : '');
-    const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
 
     return {
-      data: {
-        success: true,
-        reply: replyText,
-        conversation_id: nextConvId,
-        ...resData,
-      },
-      error: null,
+      data: null,
+      error: lastError || 'Tidak dapat terhubung ke Edge Function Supabase',
     };
   } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
     console.error('❌ Exception invokeBluefoxProcessor:', err);
     return { data: null, error: err?.message || 'Error Edge Function' };
   }

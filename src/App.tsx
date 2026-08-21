@@ -233,6 +233,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const typewriterIntervalRef = useRef<any>(null);
   const isExchangingRef = useRef(false);
 
   const handleLandingStart = async () => {
@@ -817,6 +818,10 @@ export default function App() {
   };
 
   const stopGeneration = () => {
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
+    }
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -1185,80 +1190,149 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
-      const history = baseMessages.map(m => ({
-        role: m.role,
-        text: m.text
-      }));
+      const mediaUrls = Array.isArray(media)
+        ? media.map(m => m.url)
+        : (media ? [media.url] : (imageUrl ? [imageUrl] : []));
 
-      // Stream directly from /api/chat with SSE
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          history, 
-          message: effectiveAiPrompt, 
-          model: currentEffectiveModel, 
-          customInstruction, 
-          reasoningMode 
-        }),
-        signal: abortControllerRef.current.signal
-      });
+      // 1. Panggil Edge Function Bluefox Processor utama (https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-)
+      const edgeRes = await invokeBluefoxProcessor(
+        effectiveAiPrompt,
+        currentSessionId || null,
+        currentEffectiveModel,
+        isVisionNow,
+        mediaUrls.length > 0 ? mediaUrls : null,
+        abortControllerRef.current.signal
+      );
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData?.error || "Gagal menghubungi layanan AI.");
+      if (abortControllerRef.current?.signal.aborted) {
+        throw new DOMException('Request aborted', 'AbortError');
       }
 
-      if (res.body) {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
+      if (edgeRes.data && edgeRes.data.success !== false && (edgeRes.data.reply || edgeRes.data.text || edgeRes.data.response)) {
+        const fullReply = edgeRes.data.reply || edgeRes.data.text || edgeRes.data.response || '';
+        if (edgeRes.data.conversation_id) {
+          effectiveConvId = edgeRes.data.conversation_id;
+          setCurrentSessionId(effectiveConvId);
+        }
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        // Tampilkan teks dengan efek ketikan (Typewriter Streaming) per kata seperti GPT / Gemini
+        const tokens = fullReply.match(/\S+\s*/g) || [fullReply];
+        let currentTyped = '';
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+        await new Promise<void>((resolve) => {
+          let tokenIndex = 0;
+          const chunkSize = Math.max(1, Math.floor(tokens.length / 80));
+          const intervalMs = 16;
 
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || !trimmed.startsWith('data:')) continue;
-            const jsonStr = trimmed.replace(/^data:\s*/, '');
-            if (jsonStr === '[DONE]') continue;
-            try {
-              const parsed = JSON.parse(jsonStr);
-              if (parsed.delta) {
-                aiReplyText += parsed.delta;
-                setMessages(prev => {
-                  const next = [...prev];
-                  const targetIdx = next.findIndex(m => m.id === aiMessageId);
-                  if (targetIdx !== -1) {
-                    next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
-                  }
-                  return next;
-                });
-              } else if (parsed.done && parsed.fullText) {
-                aiReplyText = parsed.fullText;
-                setMessages(prev => {
-                  const next = [...prev];
-                  const targetIdx = next.findIndex(m => m.id === aiMessageId);
-                  if (targetIdx !== -1) {
-                    next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
-                  }
-                  return next;
-                });
-              } else if (parsed.error) {
-                throw new Error(parsed.error);
+          typewriterIntervalRef.current = setInterval(() => {
+            if (abortControllerRef.current?.signal.aborted) {
+              if (typewriterIntervalRef.current) clearInterval(typewriterIntervalRef.current);
+              typewriterIntervalRef.current = null;
+              resolve();
+              return;
+            }
+
+            for (let i = 0; i < chunkSize && tokenIndex < tokens.length; i++) {
+              currentTyped += tokens[tokenIndex];
+              tokenIndex++;
+            }
+
+            aiReplyText = currentTyped;
+            setMessages(prev => {
+              const next = [...prev];
+              const targetIdx = next.findIndex(m => m.id === aiMessageId);
+              if (targetIdx !== -1) {
+                next[targetIdx] = { ...next[targetIdx], text: currentTyped };
               }
-            } catch {}
+              return next;
+            });
+
+            if (tokenIndex >= tokens.length) {
+              if (typewriterIntervalRef.current) clearInterval(typewriterIntervalRef.current);
+              typewriterIntervalRef.current = null;
+              resolve();
+            }
+          }, intervalMs);
+        });
+
+      } else {
+        // Fallback jika Edge Function mengalami kendala: coba server fallback /api/chat
+        console.warn("⚠️ Edge Function tidak memberikan balasan sukses, mencoba fallback internal /api/chat...", edgeRes.error);
+        const history = baseMessages.map(m => ({
+          role: m.role,
+          text: m.text
+        }));
+
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            history, 
+            message: effectiveAiPrompt, 
+            model: currentEffectiveModel, 
+            customInstruction, 
+            reasoningMode 
+          }),
+          signal: abortControllerRef.current.signal
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          const errMsg = edgeRes.error || errData?.error || "Gagal menghubungi layanan AI server.";
+          throw new Error(errMsg);
+        }
+
+        if (res.body) {
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || !trimmed.startsWith('data:')) continue;
+              const jsonStr = trimmed.replace(/^data:\s*/, '');
+              if (jsonStr === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.delta) {
+                  aiReplyText += parsed.delta;
+                  setMessages(prev => {
+                    const next = [...prev];
+                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
+                    if (targetIdx !== -1) {
+                      next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                    }
+                    return next;
+                  });
+                } else if (parsed.done && parsed.fullText) {
+                  aiReplyText = parsed.fullText;
+                  setMessages(prev => {
+                    const next = [...prev];
+                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
+                    if (targetIdx !== -1) {
+                      next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                    }
+                    return next;
+                  });
+                } else if (parsed.error) {
+                  throw new Error(parsed.error);
+                }
+              } catch {}
+            }
           }
         }
       }
 
       if (!aiReplyText.trim()) {
-        aiReplyText = "⚠️ Respons tidak menghasilkan teks.";
+        aiReplyText = "⚠️ Respons AI tidak menghasilkan teks.";
         setMessages(prev => {
           const next = [...prev];
           const targetIdx = next.findIndex(m => m.id === aiMessageId);
@@ -1307,6 +1381,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         return [...filtered, errorMessage];
       });
     } finally {
+      if (typewriterIntervalRef.current) {
+        clearInterval(typewriterIntervalRef.current);
+        typewriterIntervalRef.current = null;
+      }
       setIsLoading(false);
       abortControllerRef.current = null;
     }
