@@ -1,39 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { getActiveCustomApi } from './customApi';
+import { SUPABASE_CONFIG, getEnvAny } from './env';
 
-const env = (import.meta as any).env || {};
-
-// Mendukung semua format environment variable dari Integrasi Vercel + Supabase
-const getEnvVar = (keys: string[]): string => {
-  for (const k of keys) {
-    if (env[k] && typeof env[k] === 'string' && env[k].trim() !== '') {
-      return env[k].trim();
-    }
-  }
-  if (typeof window !== 'undefined') {
-    for (const k of keys) {
-      const stored = window.localStorage.getItem(k) || (window as any)[k];
-      if (stored && typeof stored === 'string' && stored.trim() !== '') {
-        return stored.trim();
-      }
-    }
-  }
-  return '';
-};
-
-export const supabaseUrl: string = 
-  getEnvVar(['VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_URL', 'PUBLIC_SUPABASE_URL']) ||
-  'https://jjlanjshpyklqayjzxyy.supabase.co';
-
-export const supabaseKey: string = 
-  getEnvVar([
-    'VITE_SUPABASE_ANON_KEY', 
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY', 
-    'SUPABASE_ANON_KEY', 
-    'SUPABASE_KEY', 
-    'VITE_SUPABASE_KEY', 
-    'PUBLIC_SUPABASE_ANON_KEY'
-  ]) || '';
+export const supabaseUrl: string = SUPABASE_CONFIG.url;
+export const supabaseKey: string = SUPABASE_CONFIG.anonKey;
 
 export const hasValidConfig: boolean = Boolean(
   supabaseUrl && 
