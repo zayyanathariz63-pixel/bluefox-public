@@ -200,7 +200,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
     }
   }
 
-  // Handle proses Hubungkan (OAuth)
+  // Handle proses Hubungkan (OAuth) ke TMPA-MCP
   async function handleOAuthConnect(providerId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -208,51 +208,57 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
       return;
     }
 
-    const redirectUri = encodeURIComponent(`${SUPABASE_PROJECT_URL}/functions/v1/${providerId === 'user_supabase' ? 'supabase' : providerId}-callback`);
-    const state = user.id;
+    // Base URL tunggal untuk semua callback OAuth diarahkan ke TMPA-MCP
+    const REDIRECT_URI = encodeURIComponent(
+      `${SUPABASE_PROJECT_URL}/functions/v1/TMPA-MCP`
+    );
+
+    // Memasukkan userId dan providerId ke dalam state
+    const state = encodeURIComponent(
+      JSON.stringify({ userId: user.id, provider: providerId })
+    );
 
     let oauthUrl = "";
 
+    const metaEnv = (import.meta as any).env || {};
+
     switch (providerId) {
       case "user_supabase": {
-        const supabaseClientId = getProviderClientId("user_supabase");
-        oauthUrl = `https://api.supabase.com/v1/oauth/authorize?client_id=${supabaseClientId}&response_type=code&redirect_uri=${redirectUri}&state=${state}`;
+        const clientId = metaEnv.VITE_SUPABASE_CLIENT_ID || getProviderClientId("user_supabase");
+        oauthUrl = `https://api.supabase.com/v1/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${REDIRECT_URI}&state=${state}`;
         break;
       }
       case "google": {
-        const googleClientId = getProviderClientId("google");
-        const googleScopes = encodeURIComponent("https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/documents");
-        oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${redirectUri}&response_type=code&scope=${googleScopes}&state=${state}&access_type=offline&prompt=consent`;
+        const clientId = metaEnv.VITE_GOOGLE_CLIENT_ID || getProviderClientId("google");
+        const scopes = encodeURIComponent(
+          "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/documents"
+        );
+        oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${REDIRECT_URI}&response_type=code&scope=${scopes}&state=${state}&access_type=offline&prompt=consent`;
         break;
       }
       case "github": {
-        const githubClientId = getProviderClientId("github");
-        oauthUrl = `https://github.com/login/oauth/authorize?client_id=${githubClientId}&redirect_uri=${redirectUri}&scope=repo%20read:user&state=${state}`;
+        const clientId = metaEnv.VITE_GITHUB_CLIENT_ID || getProviderClientId("github");
+        oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${REDIRECT_URI}&scope=repo%20read:user&state=${state}`;
         break;
       }
       case "vercel": {
-        const vercelClientId = getProviderClientId("vercel");
-        oauthUrl = `https://vercel.com/oauth/authorize?client_id=${vercelClientId}&redirect_uri=${redirectUri}&state=${state}`;
+        const clientId = metaEnv.VITE_VERCEL_CLIENT_ID || getProviderClientId("vercel");
+        oauthUrl = `https://vercel.com/oauth/authorize?client_id=${clientId}&redirect_uri=${REDIRECT_URI}&state=${state}`;
         break;
       }
       case "netlify": {
-        const netlifyClientId = getProviderClientId("netlify");
-        oauthUrl = `https://app.netlify.com/authorize?client_id=${netlifyClientId}&response_type=code&redirect_uri=${redirectUri}&state=${state}`;
-        break;
-      }
-      case "figma": {
-        const figmaClientId = getProviderClientId("figma");
-        oauthUrl = `https://www.figma.com/oauth?client_id=${figmaClientId}&redirect_uri=${redirectUri}&scope=files:read&state=${state}&response_type=code`;
+        const clientId = metaEnv.VITE_NETLIFY_CLIENT_ID || getProviderClientId("netlify");
+        oauthUrl = `https://app.netlify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${REDIRECT_URI}&state=${state}`;
         break;
       }
       case "airtable": {
-        const airtableClientId = getProviderClientId("airtable");
-        oauthUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${airtableClientId}&redirect_uri=${redirectUri}&response_type=code&state=${state}&scope=data.records:read%20data.records:write`;
+        const clientId = metaEnv.VITE_AIRTABLE_CLIENT_ID || getProviderClientId("airtable");
+        oauthUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${clientId}&redirect_uri=${REDIRECT_URI}&state=${state}&scope=data.records:read%20data.records:write`;
         break;
       }
       case "canva": {
-        const canvaClientId = getProviderClientId("canva");
-        oauthUrl = `https://www.canva.com/api/oauth/authorize?response_type=code&client_id=${canvaClientId}&redirect_uri=${redirectUri}&state=${state}`;
+        const clientId = metaEnv.VITE_CANVA_CLIENT_ID || getProviderClientId("canva");
+        oauthUrl = `https://www.canva.com/api/oauth/authorize?response_type=code&client_id=${clientId}&redirect_uri=${REDIRECT_URI}&state=${state}`;
         break;
       }
     }
