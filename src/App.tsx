@@ -692,11 +692,28 @@ export default function App() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  // Realtime & Load Chat History integration with Supabase
+  // Realtime & Load Chat History integration with Supabase (Anti-duplicate logic)
   useEffect(() => {
     if (appState !== 'chat' || !currentSessionId) return;
 
     const convId = currentSessionId;
+
+    // Helper deduplikasi pesan
+    const mergeWithoutDuplicates = (existing: Message[], incoming: Message[]): Message[] => {
+      const result = [...existing];
+      for (const inc of incoming) {
+        const incText = (inc.text || '').trim();
+        const idx = result.findIndex(
+          (m) => m.id === inc.id || (m.role === inc.role && m.text.trim() === incText && incText.length > 0)
+        );
+        if (idx === -1) {
+          result.push(inc);
+        } else {
+          result[idx] = { ...result[idx], id: inc.id };
+        }
+      }
+      return result;
+    };
 
     // Ambil Riwayat Chat saat pertama kali membuka room
     loadChatHistory(convId).then((data) => {
@@ -706,28 +723,45 @@ export default function App() {
           role: (item.role === 'assistant' || item.role === 'model') ? 'model' : 'user',
           text: item.content || item.text || '',
         }));
-        setMessages(historyMsgs);
+        
+        setMessages((prev) => {
+          if (prev.length === 0) return historyMsgs;
+          return mergeWithoutDuplicates(prev, historyMsgs);
+        });
       }
     }).catch((e) => {
       console.warn("Gagal memuat histori dari Supabase:", e);
     });
 
-    // Mendengarkan Pesan Masuk secara REALTIME
+    // Mendengarkan Pesan Masuk secara REALTIME tanpa duplikasi
     const unsubscribe = listenToRealtimeMessages(convId, (newMessage) => {
       console.log("[Realtime] Pesan baru diterima dari Supabase:", newMessage);
-      const uiMsg: Message = {
-        id: newMessage.id?.toString() || Date.now().toString(),
-        role: (newMessage.role === 'assistant' || newMessage.role === 'model') ? 'model' : 'user',
-        text: newMessage.content || newMessage.text || '',
-      };
+      const incText = (newMessage.content || newMessage.text || '').trim();
+      const uiRole = (newMessage.role === 'assistant' || newMessage.role === 'model') ? 'model' : 'user';
+      const uiId = newMessage.id?.toString() || Date.now().toString();
 
       setMessages((prev) => {
-        const exists = prev.some((m) => m.id === uiMsg.id || (m.text === uiMsg.text && m.role === uiMsg.role));
-        if (exists) return prev;
+        // Cek apakah pesan sudah ada di state (berdasarkan id atau isi teks & role)
+        const existsIndex = prev.findIndex(
+          (m) => m.id === uiId || (m.role === uiRole && m.text.trim() === incText && incText.length > 0)
+        );
+
+        if (existsIndex !== -1) {
+          // Update id agar tersinkron dengan DB tanpa membuat duplikat bubble
+          const updated = [...prev];
+          updated[existsIndex] = { ...updated[existsIndex], id: uiId };
+          return updated;
+        }
+
+        const uiMsg: Message = {
+          id: uiId,
+          role: uiRole,
+          text: newMessage.content || newMessage.text || '',
+        };
         return [...prev, uiMsg];
       });
 
-      if (newMessage.role === 'assistant' || newMessage.role === 'model') {
+      if (uiRole === 'model') {
         setIsLoading(false);
       }
     });

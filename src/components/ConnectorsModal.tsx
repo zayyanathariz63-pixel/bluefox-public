@@ -55,15 +55,23 @@ export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector
                   <Layers size={20} />
                 </div>
                 <div className="text-left">
-                  <h4 className="text-sm font-semibold text-white group-hover:text-blue-300 transition-colors">
-                    Integrasi Platform MCP TMPA (11 Layanan)
-                  </h4>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-white group-hover:text-blue-300 transition-colors">
+                      Integrasi Platform MCP TMPA (11 Layanan)
+                    </h4>
+                    <span className="text-[10px] font-semibold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono">
+                      Coming Soon
+                    </span>
+                  </div>
                   <p className="text-xs text-gray-400">
                     Supabase, Google Workspace, GitHub, Vercel, Figma, Airtable, Make, dll.
                   </p>
                 </div>
               </div>
-              <ArrowRight size={18} className="text-blue-400 group-hover:translate-x-1 transition-transform" />
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-amber-400 font-medium hidden sm:inline">Coming Soon</span>
+                <ArrowRight size={18} className="text-blue-400 group-hover:translate-x-1 transition-transform" />
+              </div>
             </button>
           </div>
         )}

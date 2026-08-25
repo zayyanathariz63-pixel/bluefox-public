@@ -154,19 +154,19 @@ export const TRIGGER_COMMANDS: TriggerCommand[] = [
     hasParameter: false
   },
 
-  // 3. Visual Customization (@theme) Commands
+  // 3. Visual Customization (@theme / @them) Commands
   {
     id: 'theme-custom',
     name: '@theme',
     category: 'theme',
     categoryLabel: 'Visual Styling',
-    badge: 'Live CSS Root',
-    description: 'Memanipulasi variabel CSS global (bg, font, cta, border, hover) secara instan tanpa reload.',
-    syntax: '@theme [target]:[nilai_warna] atau @theme preset [nama]',
-    example: '@theme bg:#1e1e2e font:#f5e0dc cta:#89b4fa',
+    badge: 'Live Auto-Harmonizer',
+    description: 'Kustomisasi tema bebas dengan ketikan suasana warna apa saja (@them cyberpunk, @them nuansa laut biru, @them hijau hutan, dll).',
+    syntax: '@theme [konsep suasana warna] atau @theme reset',
+    example: '@them gaya kopi hangat vintage cokelat',
     iconName: 'Palette',
     hasParameter: true,
-    parameterPlaceholder: 'bg:#1e1e2e cta:#89b4fa atau reset / preset catppuccin'
+    parameterPlaceholder: 'nuansa laut biru / tema cyberpunk neon / hijau hutan / reset'
   }
 ];
 
@@ -190,12 +190,18 @@ export function filterTriggerCommands(rawQuery: string): TriggerCommand[] {
       return true;
     }
 
+    // Support @them matching @theme
+    if ((cleanQuery === 'them' || cleanQuery.startsWith('them')) && cmd.category === 'theme') {
+      return true;
+    }
+
     // Match each word in multi-word command query (e.g. "bluefox pers" or "deep ver")
     const searchTerms = cleanQuery.split(/\s+/).filter(Boolean);
     const matchesAllTerms = searchTerms.every(term => 
       cmdClean.includes(term) || 
       descClean.includes(term) || 
-      badgeClean.includes(term)
+      badgeClean.includes(term) ||
+      (term === 'them' && cmd.category === 'theme')
     );
 
     return matchesAllTerms;

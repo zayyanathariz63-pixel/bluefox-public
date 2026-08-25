@@ -761,7 +761,12 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                             <Link2 size={24} />
                           </div>
                           <div>
-                            <h4 className="text-[17px] font-semibold text-white">Aplikasi / Web Terhubung</h4>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-[17px] font-semibold text-white">Aplikasi / Web Terhubung</h4>
+                              <span className="text-[10px] font-semibold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono">
+                                Coming Soon
+                              </span>
+                            </div>
                             <p className="text-xs text-gray-400 mt-1">Gunakan produk kami secara lancar dan terintegrasi</p>
                           </div>
                         </div>
@@ -1221,9 +1226,12 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="text-xl font-semibold text-white">{t.mcpHubTitle}</h4>
+                          <span className="text-[10px] font-semibold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono">
+                            Coming Soon
+                          </span>
                         </div>
-                        <span className="text-[11px] font-medium text-blue-400 font-mono">
-                          {t.connectedStatusBadge}
+                        <span className="text-[11px] font-medium text-amber-400/90 font-mono">
+                          Integrasi MCP Segera Hadir
                         </span>
                       </div>
                     </div>
@@ -1262,6 +1270,9 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     >
                       <Layers size={18} />
                       <span>{t.openMcpIntegrations}</span>
+                      <span className="text-[10px] font-semibold uppercase bg-amber-400/20 text-amber-200 border border-amber-300/40 px-2 py-0.5 rounded-full font-mono ml-1">
+                        Coming Soon
+                      </span>
                       <ArrowLeft size={16} className="rotate-180 ml-1" />
                     </button>
                   </div>
@@ -1285,9 +1296,14 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         <Globe size={20} />
                       </div>
                       <div>
-                        <h5 className="text-[15px] font-semibold text-white group-hover:text-blue-400 transition-colors">
-                          {t.mainWebsite}
-                        </h5>
+                        <div className="flex items-center gap-2">
+                          <h5 className="text-[15px] font-semibold text-white group-hover:text-blue-400 transition-colors">
+                            {t.mainWebsite}
+                          </h5>
+                          <span className="text-[10px] font-semibold uppercase bg-blue-500/20 text-blue-300 border border-blue-500/40 px-1.5 py-0.2 rounded font-mono">
+                            Online
+                          </span>
+                        </div>
                         <p className="text-xs text-gray-400 mt-0.5">https://tmpa.my.id</p>
                       </div>
                     </div>
@@ -1296,7 +1312,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
 
                   {/* Store Link */}
                   <div
-                    onClick={() => showToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...')}
+                    onClick={() => showToast(lang === 'id' ? 'TMPA Store segera hadir (Coming Soon)...' : 'TMPA Store is coming soon...')}
                     className="w-full flex items-center justify-between p-4 bg-[#0e0e10] hover:bg-neutral-900 border border-neutral-800/80 hover:border-neutral-700 rounded-2xl transition-all group cursor-pointer"
                   >
                     <div className="flex items-center gap-3.5">
@@ -1304,14 +1320,19 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         <Sparkles size={20} />
                       </div>
                       <div>
-                        <h5 className="text-[15px] font-semibold text-white group-hover:text-amber-400 transition-colors">
-                          {t.store}
-                        </h5>
+                        <div className="flex items-center gap-2">
+                          <h5 className="text-[15px] font-semibold text-white group-hover:text-amber-400 transition-colors">
+                            {t.store}
+                          </h5>
+                          <span className="text-[10px] font-semibold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/40 px-1.5 py-0.2 rounded font-mono">
+                            Coming Soon
+                          </span>
+                        </div>
                         <p className="text-xs text-gray-400 mt-0.5">TMPA Store & Marketplace AI Models</p>
                       </div>
                     </div>
-                    <span className="text-xs text-gray-400 bg-neutral-900 border border-neutral-800 px-2.5 py-1 rounded-lg">
-                      {t.active}
+                    <span className="text-xs text-amber-400/90 bg-amber-950/30 border border-amber-800/40 px-2.5 py-1 rounded-lg font-mono">
+                      Coming Soon
                     </span>
                   </div>
                 </div>

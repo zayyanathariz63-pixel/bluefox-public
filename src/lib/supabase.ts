@@ -406,11 +406,29 @@ export async function invokeBluefoxProcessor(
           continue;
         }
 
-        const resData = await res.json();
+        let resData: any = null;
+        const contentType = res.headers.get('content-type') || '';
+        
+        if (contentType.includes('application/json')) {
+          resData = await res.json().catch(() => null);
+        } else {
+          const rawText = await res.text().catch(() => '');
+          try {
+            resData = JSON.parse(rawText);
+          } catch {
+            resData = { reply: rawText };
+          }
+        }
+        
         console.log("📥 [Supabase Edge Function] Respons diterima:", resData);
 
+        if (!resData) {
+          lastError = "Respon kosong dari server";
+          continue;
+        }
+
         if (resData.success === false || resData.error) {
-          console.error("❌ Detail Error dari Server:", resData.error || resData.message);
+          console.warn("⚠️ Error dari Edge Function:", resData.error || resData.message);
           return {
             data: {
               success: false,
@@ -423,18 +441,35 @@ export async function invokeBluefoxProcessor(
           };
         }
 
-        const replyText = resData?.reply || resData?.text || resData?.message || resData?.response || resData?.content || (typeof resData === 'string' ? resData : '');
+        const replyText = resData?.reply ?? 
+          resData?.text ?? 
+          resData?.message ?? 
+          resData?.response ?? 
+          resData?.content ?? 
+          resData?.output ?? 
+          resData?.result ?? 
+          resData?.data?.reply ?? 
+          resData?.data?.text ?? 
+          resData?.data?.content ?? 
+          resData?.data?.output ?? 
+          resData?.candidates?.[0]?.content?.parts?.[0]?.text ?? 
+          resData?.choices?.[0]?.message?.content ?? 
+          (typeof resData === 'string' ? resData : '');
+
         const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
 
-        return {
-          data: {
-            success: true,
-            reply: replyText,
-            conversation_id: nextConvId,
-            ...resData,
-          },
-          error: null,
-        };
+        if (replyText && typeof replyText === 'string' && replyText.trim().length > 0) {
+          return {
+            data: {
+              success: true,
+              reply: replyText.trim(),
+              conversation_id: nextConvId,
+              ...resData,
+            },
+            error: null,
+          };
+        }
+        lastError = "Teks balasan tidak ditemukan pada respon";
       } catch (fErr: any) {
         if (fErr.name === 'AbortError') throw fErr;
         console.warn(`⚠️ Gagal direct fetch ke ${fnUrl}:`, fErr?.message);

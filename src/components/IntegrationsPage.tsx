@@ -382,12 +382,12 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
               <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
                 Integrasi Provider MCP
               </h1>
-              <span className="text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 px-2 py-0.5 rounded-full font-mono">
-                AI BLUEFOX
+              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono">
+                COMING SOON
               </span>
             </div>
             <p className="text-xs text-gray-400 hidden sm:block mt-0.5">
-              Hubungkan akun & API Key untuk memberikan kemampuan otomatisasi penuh kepada AI Bluefox.
+              Hubungkan akun & API Key untuk memberikan kemampuan otomatisasi penuh kepada AI Bluefox (Fitur Segera Hadir).
             </p>
           </div>
         </div>
@@ -551,6 +551,9 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
                     </h3>
                     <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-gray-950 border border-gray-800 text-gray-400">
                       {item.type}
+                    </span>
+                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                      Coming Soon
                     </span>
                   </div>
 

@@ -1,3 +1,5 @@
+import { useState, useEffect } from 'react';
+
 export interface ThemeConfig {
   bg?: string;
   font?: string;
@@ -6,6 +8,18 @@ export interface ThemeConfig {
   hover?: string;
   surface?: string;
   name?: string;
+}
+
+export function useCurrentTheme(): ThemeConfig {
+  const [theme, setTheme] = useState<ThemeConfig>(() => getSavedTheme());
+  useEffect(() => {
+    const handler = (e: any) => {
+      setTheme(e.detail || getSavedTheme());
+    };
+    window.addEventListener('tmpa_theme_updated', handler);
+    return () => window.removeEventListener('tmpa_theme_updated', handler);
+  }, []);
+  return theme;
 }
 
 const STORAGE_KEY = 'tmpa_custom_theme';
@@ -274,6 +288,9 @@ export function saveTheme(theme: ThemeConfig) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
   applyTheme(theme);
+  try {
+    window.dispatchEvent(new CustomEvent('tmpa_theme_updated', { detail: theme }));
+  } catch {}
 }
 
 export function resetTheme(): ThemeConfig {
@@ -292,6 +309,9 @@ export function resetTheme(): ThemeConfig {
   root.style.removeProperty('--theme-surface');
   document.body.style.backgroundColor = '';
   document.body.style.color = '';
+  try {
+    window.dispatchEvent(new CustomEvent('tmpa_theme_updated', { detail: {} }));
+  } catch {}
   return {};
 }
 
@@ -304,11 +324,11 @@ export function initTheme() {
  * Intelligent Natural Language Theme & Prompt Parser
  * Supports free-form prompts like:
  * - "@theme cyberpunk neon ungu"
- * - "@theme gaya kopi santai cokelat kayu"
+ * - "@them gaya kopi santai cokelat kayu"
  * - "@theme nuansa laut biru toska"
- * - "@theme merah darah elegan"
+ * - "@them merah darah elegan"
  * - "@theme terang bersih"
- * - "@theme bg:#1e1e2e cta:#89b4fa"
+ * - "@them bg:#1e1e2e cta:#89b4fa"
  * - "@theme reset"
  */
 export function parseThemeCommand(commandText: string): { 
@@ -318,13 +338,13 @@ export function parseThemeCommand(commandText: string): {
   changes: Array<{ target: string; value: string }>;
   isReset?: boolean;
 } {
-  const clean = commandText.replace(/^@theme\s*/i, '').trim();
+  const clean = commandText.replace(/^@(theme|them|tema)\s*/i, '').trim();
   const lower = clean.toLowerCase();
 
   if (!clean || lower === 'help' || lower === 'info') {
     return {
       success: false,
-      message: `🎨 **Sistem Kustomisasi Tema Bebas (@theme)**\n\nCukup ketik konsep warna atau suasana yang Anda inginkan, sistem akan langsung meracik palet warna yang serasi!\n\n**Contoh Penggunaan Bebas (Prompt Alami):**\n- \`@theme tema cyberpunk neon ungu\`\n- \`@theme gaya kopi hangat vintage cokelat\`\n- \`@theme nuansa laut biru samudra tenang\`\n- \`@theme emerald hijau hutan elegan\`\n- \`@theme sakura pastel pink imut\`\n- \`@theme merah ruby gelap mewah\`\n- \`@theme minimalis monokrom abu abu\`\n- \`@theme luxury black gold emas\`\n- \`@theme mode terang putih bersih\`\n- \`@theme reset\` (Kembali ke tema default)`,
+      message: `🎨 **Sistem Kustomisasi Tema Bebas (@theme / @them)**\n\nCukup ketik konsep warna atau suasana yang Anda inginkan, sistem akan langsung meracik palet warna yang serasi!\n\n**Contoh Penggunaan Bebas (Prompt Alami):**\n- \`@them tema cyberpunk neon ungu\`\n- \`@them gaya kopi hangat vintage cokelat\`\n- \`@them nuansa laut biru samudra tenang\`\n- \`@them emerald hijau hutan elegan\`\n- \`@them sakura pastel pink imut\`\n- \`@them merah ruby gelap mewah\`\n- \`@them minimalis monokrom abu abu\`\n- \`@them luxury black gold emas\`\n- \`@them mode terang putih bersih\`\n- \`@them reset\` (Kembali ke tema default)`,
       changes: []
     };
   }
