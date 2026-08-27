@@ -928,40 +928,75 @@ export default function App() {
         const subCmd = lowerText.replace(/^@bluefox\s*/, '').trim();
 
         if (subCmd.startsWith('profile')) {
-          systemReply = `### 👤 Profil Pengguna (Bluefox System Controller)
+          systemReply = lang === 'en' ? `### User Profile (Bluefox System Controller)
+
+| Account Data | Information Detail |
+| :--- | :--- |
+| **User ID** | \`${user?.id || 'guest-user'}\` |
+| **Active Email** | \`${user?.email || 'user@example.com'}\` |
+| **Tier / Plan** | \`${userTier || 'Tier 1 Pro'}\` |
+| **Active Session ID** | \`${currentSessionId || 'New Session'}\` |
+| **Authentication Status** | \`[VERIFIED & ACTIVE]\` |
+| **System Time** | \`${new Date().toLocaleString('en-US')}\` |`
+          : `### Profil Pengguna (Bluefox System Controller)
 
 | Data Akun | Detail Informasi |
 | :--- | :--- |
 | **User ID** | \`${user?.id || 'guest-user'}\` |
-| **Email Aktif** | \`${user?.email || 'zayyanathariz63@gmail.com'}\` |
+| **Email Aktif** | \`${user?.email || 'user@example.com'}\` |
 | **Paket / Tier** | \`${userTier || 'Tier 1 Pro'}\` |
 | **Sesi ID Aktif** | \`${currentSessionId || 'Sesi Baru'}\` |
-| **Status Autentikasi** | \`🟢 Terverifikasi & Aktif\` |
+| **Status Autentikasi** | \`[TERVERIFIKASI & AKTIF]\` |
 | **Waktu Sistem** | \`${new Date().toLocaleString('id-ID')}\` |`;
         } else if (subCmd.startsWith('activity')) {
-          systemReply = `### 📊 Log Aktivitas Percakapan (Activity Log)
+          systemReply = lang === 'en' ? `### Activity Log (Bluefox System Controller)
+
+- **Total Saved Sessions:** ${chatSessions.length} sessions
+- **Active Session:** ${currentSessionId || 'New'} (${updatedMessages.length} messages)
+- **Active Model:** \`${selectedModel}\`
+
+**Recent Sessions:**
+${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '[PINNED]' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Messages: ${s.messages?.length || 0}\n   - Last modified: ${new Date(s.updatedAt).toLocaleString('en-US')}`).join('\n\n') || '_No session history recorded yet._'}`
+          : `### Log Aktivitas Percakapan (Activity Log)
 
 - **Total Sesi Tersimpan:** ${chatSessions.length} sesi
 - **Sesi Aktif:** ${currentSessionId || 'Baru'} (${updatedMessages.length} pesan)
 - **Model Aktif:** \`${selectedModel}\`
 
 **Daftar Sesi Terbaru:**
-${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '📌' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Pesan: ${s.messages?.length || 0}\n   - Terakhir diubah: ${new Date(s.updatedAt).toLocaleString('id-ID')}`).join('\n\n') || '_Belum ada riwayat sesi lain._'}`;
-        } else if (subCmd.startsWith('kuota')) {
+${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '[DISEMATKAN]' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Pesan: ${s.messages?.length || 0}\n   - Terakhir diubah: ${new Date(s.updatedAt).toLocaleString('id-ID')}`).join('\n\n') || '_Belum ada riwayat sesi lain._'}`;
+        } else if (subCmd.startsWith('kuota') || subCmd.startsWith('quota')) {
           const activeCustomApi = getActiveCustomApi();
-          systemReply = `### ⚡ Indikator Batas Penggunaan (Quota Monitor)
+          systemReply = lang === 'en' ? `### Quota & Usage Monitor (Bluefox Controller)
+
+| Quota Parameter | Usage Status | Description |
+| :--- | :--- | :--- |
+| **Rolling Limit (5 Hours)** | \`${dbLimits?.used5h ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
+| **Weekly Limit** | \`${dbLimits?.usedWeekly ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
+| **Custom API Limit** | \`${activeCustomApi ? activeCustomApi.name : 'No active custom API'}\` | 10 req/min • 50 req/day |
+| **System Status** | \`[NORMAL OPERATIONAL]\` | Auto quota reset window every 5 hours |
+
+_Developer Tip: Type \`@bluefox reset\` to reset all AI model usage limits to 0%._`
+          : `### Indikator Batas Penggunaan (Quota Monitor)
 
 | Parameter Kuota | Status Penggunaan | Keterangan |
 | :--- | :--- | :--- |
 | **Rolling Limit (5 Jam)** | \`${dbLimits?.used5h ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
 | **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
-| **Custom API Limit** | \`${activeCustomApi ? '🟢 ' + activeCustomApi.name : '⚪ Tidak ada Custom API aktif'}\` | 10 req/menit • 50 req/hari |
-| **Status Sistem** | \`🟢 Operasional Normal\` | Reset kuota otomatis tiap 5 jam |
+| **Custom API Limit** | \`${activeCustomApi ? activeCustomApi.name : 'Tidak ada Custom API aktif'}\` | 10 req/menit • 50 req/hari |
+| **Status Sistem** | \`[OPERASIONAL NORMAL]\` | Reset kuota otomatis tiap 5 jam |
 
 _Tip Pengujian: Ketik \`@bluefox reset\` untuk mereset seluruh batas penggunaan AI ke 0%._`;
         } else if (subCmd.startsWith('reset')) {
           await handleResetLimits();
-          systemReply = `### 🔄 Kuota & Batas Penggunaan Berhasil Direset (Dev Mode)
+          systemReply = lang === 'en' ? `### Quota & Usage Limits Reset Successfully (Dev Mode)
+
+- **Rolling Limit (5 Hours):** \`0% used\` (Remaining 100%)
+- **Weekly Limit:** \`0% used\` (Remaining 100%)
+- **Database Table \`user_limits\`:** Synchronized back to 0%.
+
+All AI models have been re-enabled and are ready for queries.`
+          : `### Kuota & Batas Penggunaan Berhasil Direset (Dev Mode)
 
 - **Rolling Limit (5 Jam):** \`0% terpakai\` (Sisa 100%)
 - **Batas Mingguan (Weekly):** \`0% terpakai\` (Sisa 100%)
@@ -975,7 +1010,13 @@ Semua model AI telah aktif kembali dan siap digunakan.`;
             setCustomInstruction(instructionText);
             setShowActionToast(lang === 'id' ? 'Personalisasi AI berhasil diperbarui!' : 'AI Personalization updated!');
             setTimeout(() => setShowActionToast(null), 2500);
-            systemReply = `### ⚙️ Personalisasi AI Berhasil Disimpan
+            systemReply = lang === 'en' ? `### AI Personalization Saved
+
+Your custom system instructions have been updated:
+> *"**${instructionText}**"*
+
+The AI model will apply this context to all future responses.`
+            : `### Personalisasi AI Berhasil Disimpan
 
 Instruksi sistem kustom Anda telah diperbarui:
 > *"**${instructionText}**"*
@@ -983,7 +1024,12 @@ Instruksi sistem kustom Anda telah diperbarui:
 AI akan menerapkan preferensi ini ke setiap respons percakapan berikutnya.`;
           } else {
             const currentInst = localStorage.getItem('tmpa_custom_instruction') || customInstruction;
-            systemReply = `### ⚙️ Personalisasi AI Saat Ini
+            systemReply = lang === 'en' ? `### Current AI Personalization
+
+${currentInst ? `Active instructions:\n> *"**${currentInst}**"*` : '_No custom personalization instruction configured yet._'}
+
+_Tip: Type \`@bluefox personalization [your instructions]\` to update._`
+            : `### Personalisasi AI Saat Ini
 
 ${currentInst ? `Instruksi aktif:\n> *"**${currentInst}**"*` : '_Belum ada instruksi personalisasi yang tersimpan._'}
 
@@ -991,16 +1037,16 @@ _Tip: Ketik \`@bluefox personalization [instruksi kamu]\` untuk mengubah instruk
           }
         } else if (subCmd.startsWith('download')) {
           const sessionToDl = chatSessions.find(s => s.id === currentSessionId) || {
-            title: 'Percakapan TMPA Chat',
+            title: 'Bluefox Chat Session',
             messages: updatedMessages
           };
           const mdContent = [
-            `# TMPA Chat Export: ${sessionToDl.title}`,
-            `> Tanggal: ${new Date().toLocaleString('id-ID')} | Model: ${selectedModel}`,
+            `# Bluefox Chat Export: ${sessionToDl.title}`,
+            `> Date: ${new Date().toLocaleString(lang === 'id' ? 'id-ID' : 'en-US')} | Model: ${selectedModel}`,
             '',
             '---',
             '',
-            ...updatedMessages.map(m => `### ${m.role === 'user' ? '👤 Pengguna' : '🤖 TMPA Chat'}\n\n${m.text}\n`)
+            ...updatedMessages.map(m => `### ${m.role === 'user' ? 'User' : 'Bluefox AI'}\n\n${m.text}\n`)
           ].join('\n\n');
 
           const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8' });
@@ -1015,14 +1061,20 @@ _Tip: Ketik \`@bluefox personalization [instruksi kamu]\` untuk mengubah instruk
 
           setShowActionToast(lang === 'id' ? 'Berkas markdown (.md) berhasil diunduh!' : 'Markdown (.md) file downloaded!');
           setTimeout(() => setShowActionToast(null), 2500);
-          systemReply = `### 📥 Unduhan Percakapan Berhasil
+          systemReply = lang === 'en' ? `### Chat Download Completed
+
+This session's conversation has been formatted and exported as a **.md** (Markdown) file.`
+          : `### Unduhan Percakapan Berhasil
 
 Percakapan sesi ini telah dikonversi dan diunduh secara otomatis sebagai berkas **.md** (Markdown).`;
         } else if (subCmd.startsWith('delete')) {
           shouldDeleteSession = true;
           setShowActionToast(lang === 'id' ? 'Sesi percakapan berhasil dihapus!' : 'Chat session deleted!');
           setTimeout(() => setShowActionToast(null), 2500);
-          systemReply = `### 🗑️ Sesi Percakapan Dihapus
+          systemReply = lang === 'en' ? `### Chat Session Deleted
+
+The current chat session has been permanently removed from system storage.`
+          : `### Sesi Percakapan Dihapus
 
 Sesi percakapan ini telah dihapus dari riwayat sistem.`;
         } else if (subCmd.startsWith('pin')) {
@@ -1036,18 +1088,34 @@ Sesi percakapan ini telah dihapus dari riwayat sistem.`;
             });
             saveSessionsToLocal(updatedSessions);
             const isNowPinned = updatedSessions.find(s => s.id === currentSessionId)?.isPinned;
-            setShowActionToast(isNowPinned ? (lang === 'id' ? 'Chat berhasil disematkan di atas 📌' : 'Chat pinned to top 📌') : (lang === 'id' ? 'Sematkan chat dilepas' : 'Chat unpinned'));
+            setShowActionToast(isNowPinned ? (lang === 'id' ? 'Chat berhasil disematkan di atas' : 'Chat pinned to top') : (lang === 'id' ? 'Sematkan chat dilepas' : 'Chat unpinned'));
             setTimeout(() => setShowActionToast(null), 2500);
-            systemReply = `### 📌 Status Pin Diperbarui
+            systemReply = lang === 'en' ? `### Pin Status Updated
 
-Sesi percakapan ini sekarang **${isNowPinned ? 'DISEMATKAN di posisi paling atas 📌' : 'DILEPAS dari sematan'}**.`;
+This chat session is now **${isNowPinned ? 'PINNED at the top' : 'UNPINNED'}**.`
+            : `### Status Pin Diperbarui
+
+Sesi percakapan ini sekarang **${isNowPinned ? 'DISEMATKAN di posisi paling atas' : 'DILEPAS dari sematan'}**.`;
           } else {
-            systemReply = `### 📌 Sematkan Chat
+            systemReply = lang === 'en' ? `### Pin Session
+
+_Please send at least one message in this chat before pinning it to the top._`
+            : `### Sematkan Chat
 
 _Ketik dan kirim setidaknya satu pesan terlebih dahulu untuk menyematkan sesi ini ke daftar riwayat teratas._`;
           }
         } else {
-          systemReply = `### 🤖 Bluefox System Controller
+          systemReply = lang === 'en' ? `### Bluefox System Controller
+
+Available commands:
+- \`@bluefox profile\` : View account info and session status
+- \`@bluefox activity\` : View activity summary and recent chats
+- \`@bluefox quota\` : View 5-hour rolling, weekly & custom API limits
+- \`@bluefox personalization [text]\` : Set custom system prompt
+- \`@bluefox download\` : Export chat history to .md file
+- \`@bluefox delete\` : Delete current session
+- \`@bluefox pin\` : Pin session to the top of your list`
+          : `### Bluefox System Controller
 
 Daftar perintah yang tersedia:
 - \`@bluefox profile\` : Tampilkan detail akun & status sesi
@@ -1066,12 +1134,19 @@ Daftar perintah yang tersedia:
         setTimeout(() => setShowActionToast(null), 2500);
         
         const changesTable = themeResult.changes && themeResult.changes.length > 0 
-          ? `\n\n| Target Properti | Nilai Warna / Styling |\n| :--- | :--- |\n${themeResult.changes.map(c => `| **${c.target}** | \`${c.value}\` |`).join('\n')}`
+          ? `\n\n| ${lang === 'en' ? 'Property' : 'Target Properti'} | ${lang === 'en' ? 'Value' : 'Nilai Warna / Styling'} |\n| :--- | :--- |\n${themeResult.changes.map(c => `| **${c.target}** | \`${c.value}\` |`).join('\n')}`
           : '';
 
-        systemReply = `### 🎨 Visual Customization Controller (@theme)
+        systemReply = lang === 'en' ? `### Visual Customization Controller (@theme)
 
-**Status:** \`${themeResult.success ? '✅ Berhasil Diterapkan' : '⚠️ Format Tidak Sesuai'}\`
+**Status:** \`${themeResult.success ? '[APPLIED SUCCESSFULLY]' : '[INVALID FORMAT]'}\`
+
+${themeResult.message}${changesTable}
+
+_Tip: You can return to the default clean theme at any time by typing \`@theme reset\`._`
+        : `### Visual Customization Controller (@theme)
+
+**Status:** \`${themeResult.success ? '[BERHASIL DITERAPKAN]' : '[FORMAT TIDAK SESUAI]'}\`
 
 ${themeResult.message}${changesTable}
 
@@ -1085,7 +1160,16 @@ _Tip: Anda dapat mereset ke tema default kapan saja dengan mengetik \`@theme res
           setShowActionToast(lang === 'id' ? 'Memori baru tersimpan!' : 'New memory saved!');
           setTimeout(() => setShowActionToast(null), 2500);
           const allMem = getActiveMemories();
-          systemReply = `### 🧠 Memori Konteks Percakapan Tersimpan
+          systemReply = lang === 'en' ? `### Conversation Memory Saved
+
+The following context has been saved to your active memory:
+> *"**${memoryContent}**"*
+
+**Current Active Memories (${allMem.length}):**
+${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}
+
+_The AI will automatically reference this context in future queries._`
+          : `### Memori Konteks Percakapan Tersimpan
 
 Konteks berikut telah disimpan ke dalam memori aktif:
 > *"**${memoryContent}**"*
@@ -1096,7 +1180,14 @@ ${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}
 _AI akan secara otomatis mengingat informasi ini pada setiap percakapan mendatang._`;
         } else {
           const allMem = getActiveMemories();
-          systemReply = `### 🧠 Manajer Memori Konteks (@memory)
+          systemReply = lang === 'en' ? `### Context Memory Manager (@memory)
+
+${allMem.length > 0 ? `**Active Memories (${allMem.length}):**\n${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}` : '_No contextual memories saved yet._'}
+
+**Usage:**
+- Save memory: \`@memory I am a software engineer\`
+- Clear memories: \`@memory clear\``
+          : `### Manajer Memori Konteks (@memory)
 
 ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map((m, i) => `${i + 1}. ${m}`).join('\n')}` : '_Belum ada memori kontekstual yang tersimpan._'}
 
@@ -1666,16 +1757,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       )}
       
       {!showSplash && !authChecking && !authError && appState === 'chat' && (
-        <div className="flex flex-col h-screen bg-black text-gray-100 font-sans selection:bg-blue-600/30 overflow-hidden relative">
+        <div className="flex flex-col h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-blue-600/20 overflow-hidden relative app-clean-grid">
         {/* Header */}
-      <header className="sticky top-0 z-20 bg-black/80 backdrop-blur-md border-b border-gray-900 border-opacity-80">
+      <header className="sticky top-0 z-20 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="max-w-5xl mx-auto px-3 md:px-4 h-14 flex items-center justify-between">
           <div className="flex items-center">
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="w-10 h-10 -ml-2 rounded-lg flex items-center justify-center text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+              className="w-10 h-10 -ml-2 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
             >
-              <Menu size={22} />
+              <Menu size={20} />
             </button>
           </div>
 
@@ -1683,25 +1774,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           <div className="flex items-center gap-2">
             <div 
               onClick={() => setIsModelSelectorOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gray-900 hover:bg-gray-800 border border-gray-800 transition-colors cursor-pointer text-xs font-semibold text-gray-300 active:scale-95"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
             >
-              <span>Model: <strong className="text-blue-500">
+              <span>Model: <strong className="text-blue-600 dark:text-blue-400">
                 {selectedModel === 'agnes-2.0-flash' ? 'Tmpa ai v2' : selectedModel === 'tencent-hy3-free' ? 'Tmpa ai v1' : 'Dilo'}
               </strong></span>
               {isVisionActive && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-[10px] font-bold">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
                   <Eye size={10} /> Vision
                 </span>
               )}
-              <ChevronDown size={14} className="text-gray-400 shrink-0" />
+              <ChevronDown size={14} className="text-slate-400 shrink-0" />
             </div>
           </div>
 
           <div className="relative shrink-0">
             <button
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-              className="w-10 h-10 -mr-2 rounded-lg flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-              title="Export Konversasi"
+              className="w-10 h-10 -mr-2 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              title={lang === 'id' ? "Export Konversasi" : "Export Chat"}
             >
               <Download size={18} />
             </button>
@@ -1717,20 +1808,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -5, scale: 0.95 }}
                     transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-12 w-48 bg-gray-900 border border-gray-800 rounded-xl shadow-xl z-20 py-1 overflow-hidden"
+                    className="absolute right-0 top-12 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl z-20 py-1 overflow-hidden"
                   >
-                    <div className="px-3 py-2 border-b border-gray-800/50 mb-1">
-                      <p className="text-xs font-semibold text-gray-400">Export Chat</p>
+                    <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 mb-1">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{lang === 'id' ? 'Export Chat' : 'Export Chat'}</p>
                     </div>
                     <button
                       onClick={() => { exportChat('markdown'); setIsExportDropdownOpen(false); }}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                       Format Markdown (.md)
                     </button>
                     <button
                       onClick={() => { exportChat('json'); setIsExportDropdownOpen(false); }}
-                      className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 hover:text-white transition-colors"
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                       Format JSON (.json)
                     </button>
@@ -1744,9 +1835,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       {/* Progress Bar (AI response length indicator) */}
       {messages.length > 0 && lastAiMessage && (
-        <div className="w-full h-0.5 bg-gray-900 z-10 shrink-0 select-none pointer-events-none">
+        <div className="w-full h-0.5 bg-slate-200 dark:bg-slate-800 z-10 shrink-0 select-none pointer-events-none">
           <motion.div 
-            className="h-full bg-blue-500 rounded-r-full shadow-[0_0_8px_rgba(59,130,246,0.5)]"
+            className="h-full bg-blue-600 rounded-r-full shadow-[0_0_8px_rgba(37,99,235,0.4)]"
             initial={{ width: 0 }}
             animate={{ width: `${progressPercent}%` }}
             transition={{ duration: 0.6, ease: "easeOut" }}
@@ -1762,30 +1853,37 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.5 }}
-              className="w-14 h-14 md:w-16 md:h-16 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-500 mb-6 border border-blue-500/20 shrink-0"
+              className="w-14 h-14 md:w-16 md:h-16 bg-blue-50 dark:bg-blue-950/30 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 mb-6 border border-blue-200 dark:border-blue-800/50 shadow-sm shrink-0"
             >
               <Bot size={28} className="md:w-8 md:h-8" />
             </motion.div>
-            <h2 className="text-xl md:text-3xl font-medium text-white mb-3 tracking-tight text-center leading-tight">
-              Apa yang bisa saya bantu hari ini?
+            <h2 className="text-xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-3 tracking-tight text-center leading-tight">
+              {lang === 'id' ? 'Apa yang bisa saya bantu hari ini?' : 'How can I assist you today?'}
             </h2>
-            <p className="text-gray-400 max-w-md text-center text-xs md:text-sm mb-8 leading-relaxed px-4 md:px-0">
-              Saya asisten AI profesional untuk bertukar ide, menulis kode, memecahkan masalah, dan tugas lainnya menggunakan model OpenRouter.
+            <p className="text-slate-500 dark:text-slate-400 max-w-md text-center text-xs md:text-sm mb-8 leading-relaxed px-4 md:px-0">
+              {lang === 'id' 
+                ? 'Asisten AI cerdas untuk bertukar ide, penulisan kode, penelusuran web real-time, dan otomasi tugas.' 
+                : 'Intelligent AI assistant for coding, real-time web search, data synthesis, and task automation.'}
             </p>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 max-w-2xl w-full mx-auto">
-              {[
+              {(lang === 'id' ? [
                 "Tuliskan draf email lamaran kerja",
-                "Jelaskan fisika kuantum dengan sederhana",
+                "@search berita teknologi AI terkini hari ini",
                 "Buat rencana jadwal belajar 1 minggu",
-                "Bantu saya mencari ide bisnis konten"
-              ].map((suggestion, idx) => (
+                "Jelaskan konsep machine learning sederhana"
+              ] : [
+                "Draft a professional job application email",
+                "@search latest AI tech news today",
+                "Create a 1-week study schedule plan",
+                "Explain core machine learning concepts simply"
+              ]).map((suggestion, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleSendMessage(suggestion)}
-                  className="bg-gray-900/50 border border-gray-800 hover:border-blue-500/50 hover:bg-gray-900 transition-all rounded-xl p-3.5 md:p-4 text-left group flex items-center justify-between"
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-sm transition-all rounded-xl p-3.5 md:p-4 text-left group flex items-center justify-between cursor-pointer"
                 >
-                  <span className="text-sm text-gray-300 group-hover:text-white leading-snug">{suggestion}</span>
+                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 leading-snug">{suggestion}</span>
                   <Sparkles size={14} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2" />
                 </button>
               ))}
@@ -1800,16 +1898,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               <motion.div 
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }}
-                className="py-4 sm:py-6 px-4 sm:px-8 flex w-full bg-gray-900/30"
+                className="py-4 sm:py-6 px-4 sm:px-8 flex w-full bg-slate-50/50 dark:bg-slate-900/30"
               >
-                <div className="max-w-3xl mx-auto flex w-full gap-4 sm:gap-6">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5 sm:mt-1">
-                    <Bot size={16} className="sm:w-[18px] sm:h-[18px]" />
+                <div className="max-w-3xl mx-auto flex w-full gap-3 sm:gap-4">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                    <Bot size={15} />
                   </div>
-                  <div className="flex-1 w-0 pt-2 flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <div className="flex-1 w-0 pt-2 flex items-center gap-1.5">
+                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
                   </div>
                 </div>
               </motion.div>
@@ -1830,9 +1928,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           >
             <button
               onClick={scrollToBottom}
-              className="bg-gray-800/80 hover:bg-gray-700/90 text-white p-2.5 rounded-full shadow-[0_0_15px_rgba(0,0,0,0.5)] border border-gray-700 backdrop-blur-sm transition-colors group"
+              className="bg-white dark:bg-slate-800 text-slate-700 dark:text-white p-2.5 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 transition-colors group cursor-pointer"
             >
-              <ArrowDown size={20} className="group-hover:text-blue-400 transition-colors" />
+              <ArrowDown size={18} className="group-hover:text-blue-600 transition-colors" />
             </button>
           </motion.div>
         )}
@@ -1840,25 +1938,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       {/* Dev Mode Limit Alert Banner */}
       {isUsageLimitReached && (
-        <div className="bg-red-950/90 border-t border-b border-red-800/80 px-4 py-2.5 flex items-center justify-between gap-3 text-red-200 text-xs sm:text-sm z-20 shadow-lg">
+        <div className="bg-rose-50 dark:bg-rose-950/80 border-t border-b border-rose-200 dark:border-rose-800/80 px-4 py-2.5 flex items-center justify-between gap-3 text-rose-800 dark:text-rose-200 text-xs sm:text-sm z-20 shadow-sm">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-            <span className="font-semibold text-red-100">Batas Kuota Tercapai (100%)</span>
-            <span className="hidden sm:inline text-red-300/80">— Semua model AI sementara dijeda.</span>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="font-semibold">{lang === 'id' ? 'Batas Kuota Tercapai (100%)' : 'Usage Limit Reached (100%)'}</span>
+            <span className="hidden sm:inline opacity-80">{lang === 'id' ? '— Semua model AI sementara dijeda.' : '— All AI models are temporarily paused.'}</span>
           </div>
           <button
             onClick={handleResetLimits}
-            className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold text-xs shadow-md transition-all shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95"
-            title="Reset batas penggunaan AI untuk tahap develop / pengujian"
+            className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-sm transition-all shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95"
+            title={lang === 'id' ? "Reset batas penggunaan AI untuk tahap develop / pengujian" : "Reset AI usage limits for testing"}
           >
             <RotateCcw size={13} />
-            <span>Reset Limit (Dev)</span>
+            <span>{lang === 'id' ? 'Reset Limit (Dev)' : 'Reset Quota (Dev)'}</span>
           </button>
         </div>
       )}
 
       {/* Input Form */}
-      <footer className="bg-black border-t border-gray-900 pt-2 shrink-0 relative z-20">
+      <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/80 dark:border-slate-800/80 pt-2 shrink-0 relative z-20">
         <ChatInput 
           onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
           isLoading={isLoading} 

@@ -48,7 +48,7 @@ export const translations = {
 
     // Chat Interface
     emptyGreeting: "Apa yang bisa saya bantu hari ini?",
-    emptySubGreeting: "Saya asisten AI profesional untuk bertukar ide, menulis kode, memecahkan masalah, dan tugas lainnya menggunakan model OpenRouter.",
+    emptySubGreeting: "Saya asisten AI profesional untuk bertukar ide, menulis kode, memecahkan masalah, dan tugas lainnya.",
     exportChat: "Ekspor Chat",
     exportMarkdown: "Format Markdown (.md)",
     exportJson: "Format JSON (.json)",
@@ -57,7 +57,7 @@ export const translations = {
     confirmClearChat: "Hapus seluruh pesan dalam sesi ini?",
     visionActive: "Vision Aktif",
     visionLockedAlert: "Mode Vision sedang aktif: Model dikunci ke Agnes AI (agnes-2.0-flash). Nonaktifkan Vision jika ingin memilih model lain.",
-    inputPlaceholder: "Tanyakan apa saja ke AI...",
+    inputPlaceholder: "Tanyakan apa saja atau ketik @ untuk perintah...",
     inputPlaceholderVision: "Unggah gambar/video atau tanyakan apa saja...",
     send: "Kirim",
     stop: "Hentikan",
@@ -65,6 +65,14 @@ export const translations = {
     copyMessage: "Salin teks",
     copied: "Teks berhasil disalin!",
     regenerate: "Buat ulang",
+    you: "Anda",
+    assistant: "Bluefox AI",
+    viewSources: "Lihat Sumber",
+    sourcesTitle: "Sumber Informasi",
+    openWebsite: "Buka Website",
+    noSourcesAvailable: "Tidak ada data sumber tersedia.",
+    verifiedSource: "Sumber Terverifikasi",
+    searchEngineUsed: "Mesin Pencari",
 
     // Model Selector
     modelSelectTitle: "Pilih Model Kecerdasan Buatan",
@@ -106,10 +114,11 @@ export const translations = {
     usageDesc: "Persentase gabungan penggunaan seluruh model yang akan meningkat setelah setiap permintaan, hingga mencapai 100%.",
     totalQuota: "Kuota Keseluruhan",
     totalQuotaDesc: "Dihitung berdasarkan model yang digunakan dan waktu real-time",
-    resetQuota: "Reset Kuota",
+    resetQuota: "Reset Kuota (Dev)",
     fiveHourLimit: "Batas 5 Jam",
     weeklyLimit: "Batas Mingguan",
     used: "Terpakai",
+    remaining: "Sisa",
     usageReachedAlert: "Anda telah mencapai batas penggunaan. Semua model sementara dinonaktifkan.",
     modelConsumption: "Konsumsi Kuota Tiap Model",
 
@@ -186,7 +195,7 @@ export const translations = {
 
     // Chat Interface
     emptyGreeting: "How can I help you today?",
-    emptySubGreeting: "I am a professional AI assistant here to brainstorm, write code, solve problems, and complete tasks using OpenRouter models.",
+    emptySubGreeting: "I am a professional AI assistant here to brainstorm, write code, solve problems, and complete tasks.",
     exportChat: "Export Chat",
     exportMarkdown: "Markdown format (.md)",
     exportJson: "JSON format (.json)",
@@ -195,7 +204,7 @@ export const translations = {
     confirmClearChat: "Delete all messages in this conversation session?",
     visionActive: "Vision Active",
     visionLockedAlert: "Vision mode is active: Model is locked to Agnes AI (agnes-2.0-flash). Disable Vision to select another model.",
-    inputPlaceholder: "Ask AI anything...",
+    inputPlaceholder: "Ask AI anything or type @ for commands...",
     inputPlaceholderVision: "Upload image/video or ask anything...",
     send: "Send",
     stop: "Stop",
@@ -203,6 +212,14 @@ export const translations = {
     copyMessage: "Copy text",
     copied: "Text copied to clipboard!",
     regenerate: "Regenerate response",
+    you: "You",
+    assistant: "Bluefox AI",
+    viewSources: "View Sources",
+    sourcesTitle: "Information Sources",
+    openWebsite: "Open Website",
+    noSourcesAvailable: "No source data available.",
+    verifiedSource: "Verified Source",
+    searchEngineUsed: "Search Engine",
 
     // Model Selector
     modelSelectTitle: "Select AI Model",
@@ -244,10 +261,11 @@ export const translations = {
     usageDesc: "Combined usage percentage of all models which increases with every request up to 100%.",
     totalQuota: "Overall Quota",
     totalQuotaDesc: "Calculated dynamically based on the model used and real-time interval",
-    resetQuota: "Reset Quota",
+    resetQuota: "Reset Quota (Dev)",
     fiveHourLimit: "5-Hour Window Limit",
     weeklyLimit: "Weekly Limit",
     used: "Used",
+    remaining: "Remaining",
     usageReachedAlert: "You have reached your usage limit. All models are temporarily paused.",
     modelConsumption: "Quota Consumption per Model",
 
@@ -317,7 +335,12 @@ export function useLanguage() {
     setSavedLanguage(newLang);
   };
 
-  const t = translations[lang] || translations.id;
+  const currentDict = translations[lang] || translations.id;
+  const tFunc = ((key: keyof typeof translations.id): string => {
+    return (currentDict as any)[key] || (translations.id as any)[key] || key;
+  }) as typeof currentDict & ((key: keyof typeof translations.id) => string);
 
-  return { lang, changeLanguage, t };
+  Object.assign(tFunc, currentDict);
+
+  return { lang, changeLanguage, t: tFunc };
 }

@@ -26,16 +26,29 @@ const STORAGE_KEY = 'tmpa_custom_theme';
 
 export const THEME_PRESETS: Record<string, { name: string; config: ThemeConfig; keywords: string[] }> = {
   default: {
-    name: 'TMPA Dark (Default)',
-    keywords: ['default', 'standar', 'normal', 'reset', 'asli', 'hitam biru'],
+    name: 'Bluefox Clean White (Default)',
+    keywords: ['default', 'standar', 'normal', 'reset', 'asli', 'putih', 'clean', 'white', 'terang'],
     config: {
-      bg: '#000000',
-      font: '#f3f4f6',
+      bg: '#ffffff',
+      font: '#0f172a',
       cta: '#2563eb',
-      border: '#1f2937',
+      border: '#e2e8f0',
       hover: '#1d4ed8',
-      surface: '#0a0a0c',
-      name: 'TMPA Dark Default'
+      surface: '#f8fafc',
+      name: 'Bluefox Clean White'
+    }
+  },
+  dark: {
+    name: 'Bluefox Dark Minimal',
+    keywords: ['dark', 'gelap', 'hitam', 'night', 'malam'],
+    config: {
+      bg: '#090d16',
+      font: '#f8fafc',
+      cta: '#3b82f6',
+      border: '#1e293b',
+      hover: '#2563eb',
+      surface: '#0f172a',
+      name: 'Bluefox Dark Minimal'
     }
   },
   cyberpunk: {
@@ -344,7 +357,7 @@ export function parseThemeCommand(commandText: string): {
   if (!clean || lower === 'help' || lower === 'info') {
     return {
       success: false,
-      message: `🎨 **Sistem Kustomisasi Tema Bebas (@theme / @them)**\n\nCukup ketik konsep warna atau suasana yang Anda inginkan, sistem akan langsung meracik palet warna yang serasi!\n\n**Contoh Penggunaan Bebas (Prompt Alami):**\n- \`@them tema cyberpunk neon ungu\`\n- \`@them gaya kopi hangat vintage cokelat\`\n- \`@them nuansa laut biru samudra tenang\`\n- \`@them emerald hijau hutan elegan\`\n- \`@them sakura pastel pink imut\`\n- \`@them merah ruby gelap mewah\`\n- \`@them minimalis monokrom abu abu\`\n- \`@them luxury black gold emas\`\n- \`@them mode terang putih bersih\`\n- \`@them reset\` (Kembali ke tema default)`,
+      message: `[Theme Customization System (@theme)]\n\nType any color mood or palette concept to apply dynamic theme styling.\n\n**Usage Examples:**\n- \`@theme clean white minimal\`\n- \`@theme warm coffee vintage\`\n- \`@theme deep ocean blue\`\n- \`@theme emerald green forest\`\n- \`@theme cyberpunk neon\`\n- \`@theme reset\` (Reset to default Clean White)`,
       changes: []
     };
   }
@@ -356,8 +369,8 @@ export function parseThemeCommand(commandText: string): {
       success: true,
       isReset: true,
       theme: {},
-      message: '✅ Tema aplikasi telah dikembalikan ke **TMPA Dark Default**.',
-      changes: [{ target: 'Seluruh Tampilan', value: 'Default Theme' }]
+      message: '[SUCCESS] Theme has been reset to **Bluefox Clean White (Default)**.',
+      changes: [{ target: 'Interface Theme', value: 'Clean White Grid' }]
     };
   }
 
@@ -380,22 +393,22 @@ export function parseThemeCommand(commandText: string): {
 
       if (key === 'bg' || key === 'background') {
         currentTheme.bg = val;
-        changes.push({ target: 'Latar Belakang (Background)', value: val });
+        changes.push({ target: 'Background', value: val });
       } else if (key === 'font' || key === 'text' || key === 'color') {
         currentTheme.font = val;
-        changes.push({ target: 'Warna Teks (Font)', value: val });
+        changes.push({ target: 'Text Color', value: val });
       } else if (key === 'cta' || key === 'button' || key === 'primary') {
         currentTheme.cta = val;
-        changes.push({ target: 'Tombol Aksi (CTA)', value: val });
+        changes.push({ target: 'CTA Button', value: val });
       } else if (key === 'border' || key === 'stroke') {
         currentTheme.border = val;
-        changes.push({ target: 'Garis Pembatas (Border)', value: val });
+        changes.push({ target: 'Border', value: val });
       } else if (key === 'hover') {
         currentTheme.hover = val;
-        changes.push({ target: 'Efek Hover', value: val });
+        changes.push({ target: 'Hover State', value: val });
       } else if (key === 'surface' || key === 'card') {
         currentTheme.surface = val;
-        changes.push({ target: 'Kontainer Kartu (Surface)', value: val });
+        changes.push({ target: 'Card Surface', value: val });
       }
     }
 
@@ -404,7 +417,7 @@ export function parseThemeCommand(commandText: string): {
       return {
         success: true,
         theme: currentTheme,
-        message: `🎨 **Visual Theme Kustom Berhasil Diterapkan** secara instan!`,
+        message: `[SUCCESS] **Custom Visual Theme Applied** successfully.`,
         changes
       };
     }
@@ -449,7 +462,7 @@ export function parseThemeCommand(commandText: string): {
     return {
       success: true,
       theme: preset.config,
-      message: `✨ AI mengenali konsep tema Anda dan menerapkan **${preset.name}**!`,
+      message: `Sistem AI mengenali konsep tema Anda dan menerapkan **${preset.name}**!`,
       changes
     };
   }
@@ -491,7 +504,7 @@ export function parseThemeCommand(commandText: string): {
       return {
         success: true,
         theme: palette,
-        message: `🎨 AI berhasil meracik palet warna **${palette.name}** berdasarkan prompt "${clean}"!`,
+        message: `Sistem AI berhasil meracik palet warna **${palette.name}** berdasarkan prompt "${clean}"!`,
         changes
       };
     }
@@ -512,7 +525,7 @@ export function parseThemeCommand(commandText: string): {
   return {
     success: true,
     theme: customPalette,
-    message: `✨ AI menginterpretasikan prompt "${clean}" dan menerapkan palet modern bernuansa Slate Blue!`,
+    message: `Sistem AI menginterpretasikan prompt "${clean}" dan menerapkan palet modern bernuansa Slate Blue!`,
     changes: [
       { target: 'Background', value: customPalette.bg },
       { target: 'Warna Teks', value: customPalette.font },

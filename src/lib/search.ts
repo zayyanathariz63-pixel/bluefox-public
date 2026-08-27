@@ -20,14 +20,38 @@ export function detectSearchIntent(text: string): boolean {
   if (
     lower.startsWith('@search') ||
     lower.startsWith('@web') ||
+    lower.startsWith('@cari') ||
+    lower.startsWith('@browse') ||
+    lower.startsWith('@google') ||
+    lower.startsWith('@find') ||
+    lower.startsWith('@internet') ||
+    lower.startsWith('@online') ||
     lower.startsWith('search:') ||
-    lower.startsWith('/search')
+    lower.startsWith('cari:') ||
+    lower.startsWith('browse:') ||
+    lower.startsWith('find:') ||
+    lower.startsWith('/search') ||
+    lower.startsWith('/web') ||
+    lower.startsWith('/cari') ||
+    lower.includes('@search') ||
+    lower.includes('@web')
   ) {
     return true;
   }
 
-  // 2. High-priority keyword triggers as stated in the PRD
+  // 2. High-priority keyword triggers as stated in the PRD + search keywords
   const prdTriggers = [
+    'cari',
+    'search',
+    'browsing',
+    'browse',
+    'googling',
+    'carikan',
+    'look up',
+    'search for',
+    'find out',
+    'web search',
+    'pencarian web',
     'cari tahu apakah',
     'apakah benar',
     'cek harga',
@@ -54,7 +78,14 @@ export function detectSearchIntent(text: string): boolean {
     'daftar harga',
     'harga pasar',
     'tren terbaru',
-    'trending sekarang'
+    'trending sekarang',
+    'latest news',
+    'current price',
+    'today news',
+    'release date',
+    'match score',
+    'weather today',
+    'who won'
   ];
 
   for (const trigger of prdTriggers) {
@@ -63,13 +94,13 @@ export function detectSearchIntent(text: string): boolean {
 
   // 3. Regular expressions for dynamic facts, years, and real-time questions
   const patterns = [
-    /\b(harga|tarif|biaya|promo|diskon)\s+([a-z0-9]+)/i,
-    /\b(berita|kabar|isu|peristiwa|kejadian)\s+(terkini|terbaru|hari ini|minggu ini|dari|tentang)/i,
-    /\b(apakah|benarkah|beneran)\s+(sudah|sedang|ada|terjadi)/i,
-    /\b(cek|cari|search|browsing)\s+(informasi|data|fakta|spek|spesifikasi|berita)/i,
-    /\b(rilis|launching|peluncuran)\s+(tahun|bulan|terbaru|2024|2025|2026|2027)/i,
-    /\b(presiden|menteri|gubernur|ceo|pemimpin|juara|skor)\s+(sekarang|terbaru|saat ini|hari ini)/i,
-    /\b(skor|hasil|klasemen|jadwal)\s+(liga|piala|f1|motogp|badminton|esport|timnas)/i,
+    /\b(harga|tarif|biaya|promo|diskon|price|cost)\s+([a-z0-9]+)/i,
+    /\b(berita|kabar|isu|peristiwa|kejadian|news|headline)\s+(terkini|terbaru|hari ini|minggu ini|dari|tentang|today|latest)/i,
+    /\b(apakah|benarkah|beneran|is it true that)\s+(sudah|sedang|ada|terjadi)/i,
+    /\b(cek|cari|search|browse|browsing|find|lookup)\s+(informasi|data|fakta|spek|spesifikasi|berita|info|details)/i,
+    /\b(rilis|launching|peluncuran|release|launch)\s+(tahun|bulan|terbaru|2024|2025|2026|2027)/i,
+    /\b(presiden|menteri|gubernur|ceo|pemimpin|juara|skor|president|champion)\s+(sekarang|terbaru|saat ini|hari ini|current|now)/i,
+    /\b(skor|hasil|klasemen|jadwal|score|standings|schedule)\s+(liga|piala|f1|motogp|badminton|esport|timnas|epl|nba|ucl)/i,
   ];
 
   return patterns.some(pattern => pattern.test(lower));
@@ -81,10 +112,10 @@ export function detectSearchIntent(text: string): boolean {
 export function cleanSearchQuery(rawText: string): string {
   if (!rawText) return '';
   return rawText
-    .replace(/^@(search|web)\s*/i, '')
-    .replace(/^search:\s*/i, '')
-    .replace(/^\/search\s*/i, '')
-    .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari|apa saja|apa)\s+/i, '')
+    .replace(/^@(search|web|cari|browse|google|find|internet|online)\s*/i, '')
+    .replace(/^(search|cari|browse|find):\s*/i, '')
+    .replace(/^\/(search|web|cari)\s*/i, '')
+    .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari|apa saja|apa|tolong carikan|search for|please search|look up)\s+/i, '')
     .trim();
 }
 

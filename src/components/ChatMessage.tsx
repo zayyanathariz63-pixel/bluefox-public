@@ -2,11 +2,12 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Bot, User, Pencil, Power, Copy, Check, Globe, ChevronRight, Sparkles, Search } from 'lucide-react';
+import { Bot, User, Pencil, Power, Copy, Check, Globe, Sparkles, Search, ExternalLink } from 'lucide-react';
 import { Message } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { SourcesBottomSheet } from './SourcesBottomSheet';
+import { useLanguage } from '../lib/i18n';
 
 interface ChatMessageProps {
   message: Message;
@@ -30,37 +31,38 @@ const CodeBlock = ({ className, children, ...props }: any) => {
     };
     
     return (
-      <div className="relative group rounded-xl overflow-hidden my-4 border border-gray-800 bg-[#0d1117] shadow-sm">
-         <div className="flex items-center justify-between px-4 py-2 bg-[#161b22] text-xs text-gray-400 border-b border-gray-800 select-none">
-           <span className="font-mono lowercase">{language}</span>
+      <div className="relative group rounded-xl overflow-hidden my-4 border border-slate-700 dark:border-slate-800 bg-[#0f172a] shadow-sm">
+         <div className="flex items-center justify-between px-4 py-2 bg-[#1e293b] text-xs text-slate-300 border-b border-slate-700 select-none">
+           <span className="font-mono lowercase text-slate-400">{language}</span>
            <button 
              onClick={handleCopy} 
-             className="flex items-center gap-1.5 hover:text-white transition-all bg-gray-800/50 hover:bg-gray-700 px-2 py-1 rounded-md"
+             className="flex items-center gap-1.5 hover:text-white transition-all bg-slate-800/80 hover:bg-slate-700 px-2.5 py-1 rounded-md text-slate-300"
            >
               {copied ? (
                 <>
-                  <Check size={14} className="text-emerald-500" />
-                  <span className="text-emerald-500">Copied!</span>
+                  <Check size={13} className="text-emerald-400" />
+                  <span className="text-emerald-400 font-medium">Copied!</span>
                 </>
               ) : (
                 <>
-                  <Copy size={14} />
-                  <span>Copy code</span>
+                  <Copy size={13} />
+                  <span>Copy</span>
                 </>
               )}
            </button>
          </div>
-         <div className="overflow-x-auto p-4 text-[13px] sm:text-sm">
+         <div className="overflow-x-auto p-4 text-[13px] sm:text-sm text-slate-100 font-mono">
             <code className={className} {...props}>{children}</code>
          </div>
       </div>
     );
   }
   
-  return <code className={cn("bg-gray-800/60 text-blue-200 px-1.5 py-0.5 rounded-md text-[0.9em] font-mono", className)} {...props}>{children}</code>;
+  return <code className={cn("bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded text-[0.9em] font-mono border border-slate-200 dark:border-slate-700", className)} {...props}>{children}</code>;
 };
 
 export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
+  const { lang, t } = useLanguage();
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.text);
@@ -89,41 +91,40 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
 
   return (
     <motion.div 
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.25 }}
       className={cn(
-        "py-4 sm:py-6 px-4 sm:px-8 flex w-full group",
-        isUser ? "bg-black" : "bg-gray-900/30",
-        isEditing && "bg-gray-900/20"
+        "py-4 sm:py-5 px-4 sm:px-8 flex w-full border-b border-slate-100/80 dark:border-slate-800/40",
+        isUser ? "bg-slate-50/50 dark:bg-slate-900/20" : "bg-white dark:bg-transparent"
       )}
     >
-      <div className="max-w-3xl mx-auto flex w-full gap-4 sm:gap-6 relative">
+      <div className="max-w-3xl mx-auto flex w-full gap-3 sm:gap-4 relative">
         <div className={cn(
-          "w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 sm:mt-1",
-          isUser ? "bg-blue-600/20 text-blue-500" : "bg-blue-600 text-white"
+          "w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm",
+          isUser ? "bg-slate-900 dark:bg-slate-800 text-white" : "bg-blue-600 text-white"
         )}>
-          {isUser ? <User size={16} className="sm:w-[18px] sm:h-[18px]" /> : <Bot size={16} className="sm:w-[18px] sm:h-[18px]" />}
+          {isUser ? <User size={15} /> : <Bot size={15} />}
         </div>
-        <div className="flex-1 w-0 pt-0.5 sm:pt-1 min-w-0">
-          <div className="flex items-center mb-1 h-5">
-            <span className="font-medium text-xs sm:text-sm text-gray-400">
-              {isUser ? 'You' : 'tmpa chat'}
+        <div className="flex-1 w-0 pt-0.5 min-w-0">
+          <div className="flex items-center mb-1 h-5 justify-between">
+            <span className="font-semibold text-xs text-slate-500 dark:text-slate-400">
+              {isUser ? (lang === 'id' ? 'Anda' : 'You') : 'Bluefox AI'}
             </span>
             {isUser && !isEditing && (
-              <div className="flex items-center gap-2 ml-3">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="text-gray-500 hover:text-gray-300 md:opacity-0 opacity-100 md:group-hover:opacity-100 transition-opacity"
-                  title="Edit message"
+                  className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 rounded"
+                  title={t('editMessage')}
                 >
-                  <Pencil size={14} />
+                  <Pencil size={13} />
                 </button>
                 {onStop && (
                   <button
                     onClick={onStop}
-                    className="text-red-500 hover:text-red-400 bg-red-950/20 border border-red-500/40 p-1 rounded-md md:opacity-0 opacity-100 md:group-hover:opacity-100 transition-all flex items-center justify-center cursor-pointer hover:bg-red-500 hover:text-white"
-                    title="Hentikan AI (Restart Respon)"
+                    className="text-rose-500 hover:text-rose-600 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/40 p-1 rounded transition-all cursor-pointer"
+                    title={lang === 'id' ? "Hentikan AI" : "Stop AI"}
                   >
                     <Power size={12} />
                   </button>
@@ -133,13 +134,13 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
           </div>
           
           {message.media && (
-            <div className="mb-3 flex items-center justify-start gap-2.5 overflow-x-auto py-1 max-w-full scrollbar-thin scrollbar-thumb-gray-800 flex-nowrap">
+            <div className="mb-3 flex items-center justify-start gap-2.5 overflow-x-auto py-1 max-w-full flex-nowrap">
               {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => (
-                <div key={idx} className="relative inline-block max-w-[260px] sm:max-w-xs shrink-0 rounded-xl overflow-hidden border border-gray-800 bg-gray-950 shadow-md">
+                <div key={idx} className="relative inline-block max-w-[260px] sm:max-w-xs shrink-0 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 shadow-sm">
                   {item.type === 'image' ? (
                     <img
                       src={item.url}
-                      alt={item.name || 'Uploaded photo'}
+                      alt={item.name || 'Uploaded file'}
                       className="max-h-48 sm:max-h-56 w-auto object-contain rounded-t-xl mx-auto"
                     />
                   ) : (
@@ -149,10 +150,10 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
                       className="max-h-48 sm:max-h-56 w-full rounded-t-xl bg-black"
                     />
                   )}
-                  <div className="text-[11px] text-gray-400 px-2.5 py-1 bg-gray-900/90 border-t border-gray-800 flex items-center justify-between gap-2">
-                    <span className="truncate max-w-[180px]">{item.name || (item.type === 'video' ? 'Video' : 'Foto')}</span>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 px-2.5 py-1 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
+                    <span className="truncate max-w-[180px]">{item.name || (item.type === 'video' ? 'Video' : 'Photo')}</span>
                     {item.type === 'video' && item.duration !== undefined && (
-                      <span className="text-cyan-400 font-mono text-[10px] shrink-0">
+                      <span className="text-blue-600 dark:text-blue-400 font-mono text-[10px] shrink-0 font-medium">
                         {Math.round(item.duration)}s
                       </span>
                     )}
@@ -163,26 +164,26 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
           )}
 
           {isEditing ? (
-            <div className="flex flex-col gap-3 mt-2 w-full pr-2">
+            <div className="flex flex-col gap-2.5 mt-2 w-full">
               <textarea
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
-                className="w-full bg-gray-950 text-gray-100 rounded-xl p-3 text-[15px] sm:text-base border border-gray-800 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/50 resize-y min-h-[120px] transition-all"
-                placeholder="Edit pesan Anda..."
+                className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 rounded-xl p-3 text-sm border border-slate-300 dark:border-slate-700 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 resize-y min-h-[100px] shadow-sm"
+                placeholder={t('inputPlaceholder')}
                 autoFocus
               />
               <div className="flex justify-end gap-2">
                 <button 
                   onClick={handleCancel} 
-                  className="px-4 py-1.5 text-sm font-medium bg-gray-900 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors border border-gray-800"
+                  className="px-3 py-1.5 text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700"
                 >
-                  Batal
+                  {t('cancel')}
                 </button>
                 <button 
                   onClick={handleSave} 
-                  className="px-4 py-1.5 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm shadow-blue-500/20"
+                  className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
                 >
-                  Kirim & Perbarui
+                  {lang === 'id' ? 'Kirim & Perbarui' : 'Save & Resubmit'}
                 </button>
               </div>
             </div>
@@ -191,10 +192,9 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
               <div 
                 onClick={handleMessageTap}
                 className={cn(
-                  "markdown-body text-gray-200 leading-relaxed font-sans text-[15px] sm:text-base transition-colors",
-                  onStop && "cursor-pointer hover:text-gray-300"
+                  "markdown-body text-slate-900 dark:text-slate-100 leading-relaxed text-[15px] transition-colors",
+                  onStop && "cursor-pointer"
                 )}
-                title={onStop ? "Tekan untuk menghentikan respons AI" : undefined}
               >
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -207,7 +207,7 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
               </div>
             ) : (
               <div className="flex flex-col items-start w-full">
-                <div className="markdown-body text-[15px] sm:text-base w-full">
+                <div className="markdown-body text-[15px] text-slate-900 dark:text-slate-100 w-full">
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm, remarkBreaks]}
                     components={{
@@ -218,20 +218,19 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
                   </ReactMarkdown>
                 </div>
 
-                {/* 4.1 & 4.3 Tombol Lihat Sumber di Chat Bubble */}
+                {/* Tombol Lihat Sumber di Chat Bubble */}
                 {hasWebSources && (
-                  <div className="mt-2.5 pt-1 flex items-center gap-2 flex-wrap">
+                  <div className="mt-3 pt-1 flex items-center gap-2 flex-wrap">
                     <button
                       onClick={() => setShowSourcesModal(true)}
-                      className="btn-sources inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[#f0f4f8] dark:bg-blue-950/40 border border-[#cbd5e1] dark:border-blue-800/60 text-xs font-semibold text-[#0f172a] dark:text-blue-300 hover:bg-[#e2e8f0] dark:hover:bg-blue-900/60 transition-colors shadow-sm select-none cursor-pointer group"
-                      title="Buka Bottom Sheet Sumber Informasi"
+                      className="btn-sources inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors shadow-sm select-none cursor-pointer group"
                     >
-                      <span className="icon-link text-[13px]">🔗</span>
-                      <span>Lihat Sumber ({message.sources?.length || 0})</span>
+                      <Globe size={13} className="text-blue-600 dark:text-blue-400 group-hover:rotate-12 transition-transform" />
+                      <span>{t('viewSources')} ({message.sources?.length || 0})</span>
                       <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border ml-1 ${
                         isTavily 
-                          ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/25' 
-                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border-amber-500/25'
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 border-blue-200 dark:border-blue-700' 
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border-amber-200 dark:border-amber-700'
                       }`}>
                         {isTavily ? 'Tavily' : 'DuckDuckGo'}
                       </span>
@@ -256,3 +255,4 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
     </motion.div>
   );
 }
+

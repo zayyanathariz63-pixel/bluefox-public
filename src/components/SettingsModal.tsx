@@ -374,8 +374,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         )}
                       >
                         <div className="flex items-center gap-3.5">
-                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xl font-bold border border-neutral-800">
-                            🇮🇩
+                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xs font-bold font-mono text-cyan-400 border border-cyan-500/30 shadow-inner">
+                            ID
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
@@ -408,8 +408,8 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                         )}
                       >
                         <div className="flex items-center gap-3.5">
-                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xl font-bold border border-neutral-800">
-                            🇺🇸
+                          <div className="w-10 h-10 rounded-xl bg-neutral-900 flex items-center justify-center text-xs font-bold font-mono text-blue-400 border border-blue-500/30 shadow-inner">
+                            EN
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
