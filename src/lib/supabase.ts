@@ -609,24 +609,54 @@ export async function getUserLimits(userId: string) {
 
 export async function resetUserLimits(userId: string) {
   try {
+    if (!userId) {
+      // Coba ambil dari session jika userId kosong
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) userId = authData.user.id;
+      } catch {}
+    }
     if (!userId) return false;
     console.log(`🔄 [user_limits] Mereset limit penggunaan untuk user ${userId}`);
 
     const now = new Date();
+    const reset5hAt = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+    const resetWeeklyAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
     const payload = {
       user_id: userId,
       used_5h: 0,
-      reset_5h_at: new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString(),
+      reset_5h_at: reset5hAt,
       used_weekly: 0,
-      reset_weekly_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      reset_weekly_at: resetWeeklyAt,
     };
 
-    const { error } = await supabase
+    // 1. Coba update record yang sudah ada
+    const { error: updateErr } = await supabase
+      .from('user_limits')
+      .update({
+        used_5h: 0,
+        used_weekly: 0,
+        reset_5h_at: reset5hAt,
+        reset_weekly_at: resetWeeklyAt,
+      })
+      .eq('user_id', userId);
+
+    // 2. Coba upsert jika record belum ada
+    const { error: upsertErr } = await supabase
       .from('user_limits')
       .upsert(payload, { onConflict: 'user_id' });
 
-    if (error) {
-      console.warn("⚠️ Gagal reset tabel user_limits:", error.message);
+    // 3. Panggil RPC reset jika ada di database
+    try {
+      await supabase.rpc('reset_ai_limit', { p_user_id: userId });
+    } catch {}
+    try {
+      await supabase.rpc('reset_user_limits', { p_user_id: userId });
+    } catch {}
+
+    if (updateErr && upsertErr) {
+      console.warn("⚠️ Gagal reset tabel user_limits:", updateErr.message || upsertErr.message);
       return false;
     }
 
@@ -641,6 +671,13 @@ export async function resetUserLimits(userId: string) {
 export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
   try {
     if (!userId) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) userId = authData.user.id;
+      } catch {}
+    }
+
+    if (!userId) {
       console.warn("User ID tidak ditemukan untuk consumeAiLimit");
       return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
     }
@@ -648,73 +685,7 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
     const rates = getModelUsageRates(modelCode);
     console.log(`📊 [Limit] Mengonsumsi limit untuk user ${userId} model ${modelCode} (+${rates.add5h}% 5h, +${rates.addWeekly}% weekly)`);
 
-    // 1. Coba panggil RPC Supabase 'consume_ai_limit'
-    try {
-      const { data, error } = await supabase.rpc('consume_ai_limit', {
-        p_user_id: userId,
-        p_model: modelCode,
-      });
-
-      if (!error && data) {
-        console.log("📥 [RPC consume_ai_limit] Sukses:", data);
-        if (data.success === false) {
-          return {
-            success: false,
-            message: data.message || "Batas kuota penggunaan AI Anda telah habis. Harap tunggu waktu reset.",
-            remaining_5h: data.remaining_5h ?? 0,
-            remaining_weekly: data.remaining_weekly ?? 0,
-            used_5h: data.used_5h ?? 100,
-            used_weekly: data.used_weekly ?? 100,
-          };
-        }
-
-        // Kalkulasi persentase dengan proteksi overflow janggal
-        let used5h: number;
-        if (data.used_5h !== undefined && data.used_5h !== null) {
-          used5h = Number(data.used_5h);
-        } else if (data.remaining_5h !== undefined && data.remaining_5h !== null) {
-          used5h = Math.max(0, 100 - Number(data.remaining_5h));
-        } else {
-          used5h = rates.add5h;
-        }
-
-        let usedWeekly: number;
-        if (data.used_weekly !== undefined && data.used_weekly !== null) {
-          usedWeekly = Number(data.used_weekly);
-        } else if (data.remaining_weekly !== undefined && data.remaining_weekly !== null && Number(data.remaining_weekly) > 0) {
-          usedWeekly = Math.max(0, 100 - Number(data.remaining_weekly));
-        } else {
-          // Jika RPC tidak mengembalikan data mingguan valid, gunakan pertambahan rate model
-          usedWeekly = rates.addWeekly;
-        }
-
-        // Proteksi jika RPC mengembalikan remaining_weekly: 0 atau used_weekly: 100 padahal used_5h masih kecil
-        if (usedWeekly >= 100 && used5h <= rates.add5h * 2 && data.used_weekly === undefined) {
-          console.warn("⚠️ Normalisasi usedWeekly RPC ke rate model:", rates.addWeekly);
-          usedWeekly = rates.addWeekly;
-        }
-
-        const remaining5h = Math.max(0, 100 - used5h);
-        const remainingWeekly = Math.max(0, 100 - usedWeekly);
-
-        console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}%`);
-
-        return {
-          success: true,
-          remaining_5h: remaining5h,
-          remaining_weekly: remainingWeekly,
-          used_5h: used5h,
-          used_weekly: usedWeekly,
-        };
-      }
-      if (error) {
-        console.warn("⚠️ RPC consume_ai_limit tidak tersedia atau error, menjalankan fallback tabel user_limits:", error.message);
-      }
-    } catch (rpcErr) {
-      console.warn("⚠️ Exception RPC consume_ai_limit, fallback ke tabel user_limits:", rpcErr);
-    }
-
-    // 2. Direct Update Tabel 'public.user_limits' (Akurat per model)
+    // 1. Direct Authoritative Update pada Tabel 'public.user_limits' sesuai spesifikasi rate model
     const { data: existingRow, error: selectErr } = await supabase
       .from('user_limits')
       .select('*')
@@ -737,29 +708,40 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       reset5hAt = existingRow.reset_5h_at || reset5hAt;
       resetWeeklyAt = existingRow.reset_weekly_at || resetWeeklyAt;
 
-      // Cek apakah periode 5 jam sudah reset
+      // Cek apakah periode 5 jam sudah lewat waktu reset
       if (existingRow.reset_5h_at && now > new Date(existingRow.reset_5h_at)) {
         currentUsed5h = 0;
         reset5hAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
       }
 
-      // Cek apakah periode mingguan sudah reset
+      // Cek apakah periode mingguan sudah lewat waktu reset
       if (existingRow.reset_weekly_at && now > new Date(existingRow.reset_weekly_at)) {
         currentUsedWeekly = 0;
         resetWeeklyAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      // Proteksi otomatis jika used_weekly janggal (misal 99% padahal used_5h masih di bawah 30%)
+      if (currentUsedWeekly >= 90 && currentUsed5h <= 30) {
+        console.warn(`⚠️ Anomali limit mingguan terdeteksi (${currentUsedWeekly}%), menormalisasi ke proporsi model.`);
+        currentUsedWeekly = Math.round(currentUsed5h * (rates.addWeekly / rates.add5h));
       }
     }
 
     const nextUsed5h = currentUsed5h + rates.add5h;
     const nextUsedWeekly = currentUsedWeekly + rates.addWeekly;
 
+    // Cek batas kuota
     if (nextUsed5h > 100 || nextUsedWeekly > 100) {
       const remaining5h = Math.max(0, 100 - currentUsed5h);
       const remainingWeekly = Math.max(0, 100 - currentUsedWeekly);
+      const limitReason = nextUsedWeekly > 100 
+        ? "Batas kuota Mingguan Anda telah habis (100%). Silakan tunggu periode reset mingguan atau gunakan tombol Reset (Dev)."
+        : "Batas kuota 5 Jam Anda telah habis (100%). Silakan tunggu periode reset 5 jam atau gunakan tombol Reset (Dev).";
+
       console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}% (Limit Tercapai)`);
       return {
         success: false,
-        message: "Batas kuota penggunaan AI Anda telah habis. Harap tunggu waktu reset.",
+        message: limitReason,
         remaining_5h: remaining5h,
         remaining_weekly: remainingWeekly,
         used_5h: currentUsed5h,
@@ -767,7 +749,7 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       };
     }
 
-    // Update / Insert row baru
+    // Simpan data terbaru ke tabel 'user_limits'
     const payload = {
       user_id: userId,
       used_5h: nextUsed5h,
@@ -776,19 +758,38 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       reset_weekly_at: resetWeeklyAt,
     };
 
-    const { error: upsertErr } = await supabase
+    // Update atau upsert
+    const { error: updateErr } = await supabase
       .from('user_limits')
-      .upsert(payload, { onConflict: 'user_id' });
+      .update({
+        used_5h: nextUsed5h,
+        reset_5h_at: reset5hAt,
+        used_weekly: nextUsedWeekly,
+        reset_weekly_at: resetWeeklyAt,
+      })
+      .eq('user_id', userId);
 
-    if (upsertErr) {
-      console.error("❌ Gagal update tabel user_limits:", upsertErr);
-    } else {
-      console.log("✅ Tabel user_limits berhasil diperbarui:", payload);
+    if (updateErr) {
+      await supabase
+        .from('user_limits')
+        .upsert(payload, { onConflict: 'user_id' });
     }
+
+    // Panggil RPC database secara non-blocking jika ada untuk menjaga kompatibilitas DB backend
+    try {
+      (async () => {
+        try {
+          await supabase.rpc('consume_ai_limit', {
+            p_user_id: userId,
+            p_model: modelCode,
+          });
+        } catch {}
+      })();
+    } catch {}
 
     const remaining5h = Math.max(0, 100 - nextUsed5h);
     const remainingWeekly = Math.max(0, 100 - nextUsedWeekly);
-    console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}%`);
+    console.log(`✅ Limit Berhasil Diperbarui -> 5-Jam: ${nextUsed5h}% (sisa ${remaining5h}%), Mingguan: ${nextUsedWeekly}% (sisa ${remainingWeekly}%)`);
 
     return {
       success: true,

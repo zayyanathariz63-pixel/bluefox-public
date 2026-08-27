@@ -224,8 +224,23 @@ export default function App() {
     setUsageEvents([]);
     localStorage.setItem('ai_usage_events', '[]');
     setDbLimits({ used5h: 0, usedWeekly: 0 });
-    if (user?.id) {
-      await resetUserLimits(user.id);
+    
+    let targetUserId = user?.id;
+    if (!targetUserId) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) targetUserId = authData.user.id;
+      } catch {}
+    }
+    if (!targetUserId) {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.user?.id) targetUserId = sessionData.session.user.id;
+      } catch {}
+    }
+
+    if (targetUserId) {
+      await resetUserLimits(targetUserId);
     }
     showToast(lang === 'id' ? 'Kuota dan limit penggunaan AI berhasil direset ke 0% (Dev Mode)!' : 'Usage limits successfully reset to 0% (Dev Mode)!');
     setShowActionToast(lang === 'id' ? 'Limit AI direset ke 0% (Dev Mode)' : 'AI limits reset to 0% (Dev Mode)');
