@@ -479,39 +479,35 @@ export function ChatInput({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.92, y: 20 }}
               transition={{ type: "spring", damping: 26, stiffness: 320 }}
-              className="relative w-full max-w-md bg-gray-950/95 border border-red-500/30 rounded-3xl p-6 shadow-[0_0_50px_rgba(239,68,68,0.2)] z-10 overflow-hidden backdrop-blur-2xl"
+              className="relative w-full max-w-md bg-white border border-rose-200 rounded-3xl p-6 shadow-2xl z-10 overflow-hidden text-slate-900"
             >
-              {/* Glow Accent */}
-              <div className="absolute -top-20 -right-20 w-44 h-44 bg-red-600/15 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -bottom-20 -left-20 w-44 h-44 bg-orange-600/10 rounded-full blur-3xl pointer-events-none" />
-
               <div className="flex items-start gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0 shadow-inner">
+                <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
                   {errorModal.durationInfo ? <Film size={24} /> : <AlertTriangle size={24} />}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                     {errorModal.title}
                   </h3>
-                  <p className="text-xs sm:text-sm text-gray-300 mt-2 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
                     {errorModal.message}
                   </p>
 
                   {errorModal.fileName && (
-                    <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-gray-900 border border-gray-800 text-[11px] text-gray-300 font-mono truncate">
+                    <div className="mt-2.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-700 font-mono truncate">
                       File: {errorModal.fileName}
                     </div>
                   )}
 
                   {errorModal.durationInfo && (
-                    <div className="mt-3 px-3 py-2 rounded-xl bg-red-950/40 border border-red-500/20 text-xs text-red-300 font-mono flex items-center gap-2">
-                      <Clock size={14} className="shrink-0 text-red-400" />
+                    <div className="mt-3 px-3 py-2 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-mono flex items-center gap-2">
+                      <Clock size={14} className="shrink-0 text-rose-600" />
                       <span>{errorModal.durationInfo}</span>
                     </div>
                   )}
 
                   {errorModal.maxLimitInfo && (
-                    <div className="mt-3 px-3 py-2 rounded-xl bg-amber-950/40 border border-amber-500/20 text-xs text-amber-300 font-medium">
+                    <div className="mt-3 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-800 font-medium">
                       {errorModal.maxLimitInfo}
                     </div>
                   )}
@@ -522,7 +518,7 @@ export function ChatInput({
                 <button
                   type="button"
                   onClick={() => setErrorModal(null)}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-lg shadow-red-950/50 cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
+                  className="w-full sm:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-semibold rounded-xl transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                 >
                   Mengerti & Tutup
                 </button>
@@ -551,10 +547,10 @@ export function ChatInput({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute bottom-full left-0 mb-3 w-72 bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col backdrop-blur-xl"
+              className="absolute bottom-full left-0 mb-3 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col backdrop-blur-xl text-slate-900"
             >
               {/* Opsi 1: Upload Foto & Video */}
-              <div className="p-2 border-b border-gray-900 bg-gray-900/30">
+              <div className="p-2 border-b border-slate-100 bg-slate-50/70">
                 <button
                   type="button"
                   onClick={() => {
@@ -565,55 +561,55 @@ export function ChatInput({
                   className={cn(
                     "w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
                     attachedMediaList.length >= 5
-                      ? "opacity-50 cursor-not-allowed bg-gray-900/40 border-transparent"
-                      : "hover:bg-blue-600/15 border-blue-500/20 hover:border-blue-500/40 bg-blue-500/5"
+                      ? "opacity-50 cursor-not-allowed bg-slate-100 border-transparent text-slate-400"
+                      : "hover:bg-blue-50 border-blue-200 bg-blue-50/50"
                   )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-blue-600/20 text-blue-400 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-sm">
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
                       <Upload size={16} />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold text-white group-hover:text-blue-300 transition-colors truncate">
+                      <div className="text-xs font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
                         Upload Foto & Video
                       </div>
-                      <div className="text-[10px] text-gray-400 truncate">
+                      <div className="text-[10px] text-slate-500 truncate">
                         Maks 5 file • Video maks 1 mnt
                       </div>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 border border-cyan-500/30 px-1.5 py-0.5 rounded-full shrink-0">
+                  <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-full shrink-0">
                     Vision
                   </span>
                 </button>
               </div>
 
               {/* Opsi 2: Daftar Konektor Aktif */}
-              <div className="px-3 py-2 bg-gray-950 border-b border-gray-900 flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Konektor Eksternal</span>
-                <span className="text-[10px] text-gray-500">{activeConnectors.length} Aktif</span>
+              <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Konektor Eksternal</span>
+                <span className="text-[10px] text-slate-500 font-medium">{activeConnectors.length} Aktif</span>
               </div>
 
-              <div className="max-h-[160px] overflow-y-auto w-full divide-y divide-gray-900/60">
+              <div className="max-h-[160px] overflow-y-auto w-full divide-y divide-slate-100">
                 {activeConnectors.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-gray-500">
+                  <div className="p-4 text-center text-xs text-slate-500">
                     Belum ada konektor yang aktif.
                   </div>
                 ) : (
                   activeConnectors.map(connector => (
-                    <div key={connector.id} className="flex items-center justify-between px-3 py-2 hover:bg-gray-900/50 transition-colors">
+                    <div key={connector.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-5 h-5 rounded bg-gray-800 border border-gray-700 flex items-center justify-center text-[9px] font-bold text-gray-300 shrink-0">
+                        <div className="w-5 h-5 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600 shrink-0">
                           {connector.name.substring(0, 2).toUpperCase()}
                         </div>
-                        <span className="text-xs text-gray-200 truncate">{connector.name}</span>
+                        <span className="text-xs text-slate-800 font-medium truncate">{connector.name}</span>
                       </div>
                       <button
                         type="button"
                         onClick={() => onToggleConnector(connector.id)}
                         className={cn(
                           "relative inline-flex h-4 w-7 items-center rounded-full transition-colors shrink-0 cursor-pointer",
-                          connector.isActive ? "bg-blue-600" : "bg-gray-700"
+                          connector.isActive ? "bg-blue-600" : "bg-slate-300"
                         )}
                       >
                         <span
@@ -634,7 +630,7 @@ export function ChatInput({
                   setIsPopupOpen(false);
                   onShowAllConnectors();
                 }}
-                className="flex items-center justify-center gap-2 p-2.5 text-xs font-medium text-gray-400 hover:text-white hover:bg-gray-900 transition-colors border-t border-gray-900 cursor-pointer"
+                className="flex items-center justify-center gap-2 p-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors border-t border-slate-100 cursor-pointer"
               >
                 <MoreHorizontal size={14} />
                 Kelola Semua Konektor
@@ -650,14 +646,14 @@ export function ChatInput({
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              className="mb-2 p-2 bg-gray-950/95 border border-gray-800 rounded-2xl shadow-xl backdrop-blur-md overflow-hidden"
+              className="mb-2 p-2.5 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden"
             >
-              <div className="flex items-center justify-between pb-1.5 px-1 border-b border-gray-900 mb-1.5">
+              <div className="flex items-center justify-between pb-1.5 px-1 border-b border-slate-100 mb-1.5">
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-semibold text-gray-200">
+                  <span className="text-[11px] font-semibold text-slate-800">
                     File Terlampir ({attachedMediaList.length}/5)
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-medium flex items-center gap-1">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 font-semibold flex items-center gap-1">
                     <Eye size={10} /> Auto-Vision
                   </span>
                 </div>
@@ -665,40 +661,40 @@ export function ChatInput({
                   <button
                     type="button"
                     onClick={handleClearAllMedia}
-                    className="text-[10px] text-gray-400 hover:text-red-400 transition-colors cursor-pointer"
+                    className="text-[10px] text-slate-400 hover:text-rose-600 transition-colors cursor-pointer font-medium"
                   >
                     Hapus Semua
                   </button>
                 )}
               </div>
 
-              {/* Container Horizontal Scroll ke Kiri (Tidak Memenuhi Layar) */}
-              <div className="flex items-center justify-start gap-2 overflow-x-auto py-1 px-0.5 flex-nowrap scroll-smooth scrollbar-thin scrollbar-thumb-gray-800 scrollbar-track-transparent">
+              {/* Container Horizontal Scroll ke Kiri */}
+              <div className="flex items-center justify-start gap-2 overflow-x-auto py-1 px-0.5 flex-nowrap scroll-smooth scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
                 {attachedMediaList.map((item, index) => (
                   <div
                     key={index}
-                    className="relative group flex items-center gap-2 p-1.5 pr-2 rounded-xl bg-gray-900 border border-gray-800 w-[190px] sm:w-[210px] shrink-0 shadow-sm"
+                    className="relative group flex items-center gap-2 p-1.5 pr-2 rounded-xl bg-slate-50 border border-slate-200 w-[190px] sm:w-[210px] shrink-0 shadow-xs"
                   >
-                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-black shrink-0 border border-gray-800 flex items-center justify-center">
+                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-slate-200 flex items-center justify-center">
                       {item.type === 'image' ? (
                         <img src={item.url} alt="Thumbnail" className="w-full h-full object-cover" />
                       ) : (
                         <video src={item.url} className="w-full h-full object-cover" />
                       )}
-                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
                         {item.type === 'image' ? (
-                          <ImageIcon size={12} className="text-white" />
+                          <ImageIcon size={12} className="text-white drop-shadow" />
                         ) : (
-                          <VideoIcon size={12} className="text-cyan-400" />
+                          <VideoIcon size={12} className="text-cyan-300 drop-shadow" />
                         )}
                       </div>
                     </div>
                     
                     <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs text-gray-200 font-medium truncate">
+                      <span className="text-xs text-slate-800 font-medium truncate">
                         {item.name}
                       </span>
-                      <span className="text-[10px] text-gray-400 truncate">
+                      <span className="text-[10px] text-slate-500 truncate">
                         {item.type === 'video' && item.duration !== undefined
                           ? `Video • ${Math.round(item.duration)}s`
                           : `Foto • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
@@ -709,7 +705,7 @@ export function ChatInput({
                     <button
                       type="button"
                       onClick={() => handleRemoveSingleMedia(index)}
-                      className="w-5 h-5 rounded-md bg-gray-800 hover:bg-red-500/20 hover:text-red-400 text-gray-400 flex items-center justify-center transition-all cursor-pointer border border-gray-700/60 hover:border-red-500/40 shrink-0"
+                      className="w-5 h-5 rounded-md bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-400 flex items-center justify-center transition-all cursor-pointer border border-slate-200 hover:border-rose-200 shrink-0 shadow-xs"
                       title="Hapus file ini"
                     >
                       <X size={11} />
@@ -723,9 +719,9 @@ export function ChatInput({
 
         <form 
           onSubmit={handleSubmit}
-          className="relative flex items-end overflow-hidden rounded-2xl bg-gray-900 focus-within:bg-gray-900/90 border border-gray-800 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all shadow-sm"
+          className="relative flex items-end overflow-hidden rounded-2xl bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all shadow-sm"
         >
-          {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) SESUAI GAMBAR */}
+          {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) */}
           <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
             <button
               type="button"
@@ -733,13 +729,13 @@ export function ChatInput({
               className={cn(
                 "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
                 isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
-                  ? "text-blue-400 bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 shadow-[0_0_12px_rgba(59,130,246,0.15)]"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
+                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
               )}
               title="Konektor & Upload File"
             >
               {isProcessingMedia ? (
-                <Loader2 className="w-5 h-5 animate-spin text-cyan-400" />
+                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
               ) : (
                 <Link2 className="w-5 h-5" />
               )}
@@ -756,14 +752,14 @@ export function ChatInput({
                   exit={{ opacity: 0, y: 10 }}
                   className="w-full flex items-center justify-between px-2 pr-28"
                 >
-                  <div className="text-gray-300 text-sm truncate flex-1 pl-1">
+                  <div className="text-slate-800 text-sm font-medium truncate flex-1 pl-1">
                     {recordingText || "Mendengarkan..."}
                   </div>
                   <div className="flex items-center justify-center gap-1 h-6 mx-2 shrink-0">
                     {[1, 2, 3, 4, 5].map((i) => (
                       <motion.div
                         key={i}
-                        className="w-1 bg-blue-500 rounded-full"
+                        className="w-1 bg-blue-600 rounded-full"
                         animate={{ height: ['40%', '100%', '40%'] }}
                         transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
                       />
@@ -787,7 +783,7 @@ export function ChatInput({
                         ? (lang === 'id' ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` : `Ask about these ${attachedMediaList.length} attached files...`)
                         : t.inputPlaceholder
                   }
-                  className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-gray-100 placeholder:text-gray-500 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
+                  className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-slate-800 placeholder:text-slate-400 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
                   rows={1}
                   disabled={isLoading || disabled}
                 />
@@ -800,7 +796,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={handleStopRecording}
-                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-red-600/20 text-red-500 hover:bg-red-600/30 cursor-pointer"
+                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer border border-rose-200"
                 title="Hentikan rekaman"
               >
                 <StopCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px] fill-current" />
@@ -812,7 +808,7 @@ export function ChatInput({
                  disabled={isLoading || disabled}
                  className={cn(
                    "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
-                   (isLoading || disabled) ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-gray-800 text-gray-400 hover:text-white cursor-pointer hover:bg-gray-700"
+                   (isLoading || disabled) ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer hover:bg-slate-200"
                  )}
                  title="Bicara"
                >
@@ -824,7 +820,7 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={onStop}
-                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-gray-800 text-gray-400 hover:text-white cursor-pointer"
+                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 cursor-pointer"
                 title="Hentikan respons"
               >
                 <Square className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
@@ -836,8 +832,8 @@ export function ChatInput({
                 className={cn(
                   "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
                   (input.trim() || attachedMediaList.length > 0) && !disabled && !isRecording
-                    ? "bg-blue-600 text-white hover:bg-blue-500 cursor-pointer shadow-md shadow-blue-900/20"
-                    : "bg-gray-800 text-gray-500 cursor-not-allowed"
+                    ? "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-sm shadow-blue-600/20"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
                 )}
               >
                 <Send className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
@@ -846,7 +842,7 @@ export function ChatInput({
           </div>
         </form>
       </div>
-      <div className="text-center mt-2 text-xs text-gray-500 font-medium">
+      <div className="text-center mt-2 text-xs text-slate-400 font-medium">
         tmpa chat dapat membuat kesalahan. Pertimbangkan untuk memverifikasi informasi penting.
       </div>
     </div>

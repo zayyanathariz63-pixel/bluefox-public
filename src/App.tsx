@@ -1987,13 +1987,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 bottom-0 w-[280px] bg-gray-950 border-r border-gray-900 z-50 flex flex-col"
+              className="fixed top-0 left-0 bottom-0 w-[280px] bg-white border-r border-slate-200 z-50 flex flex-col text-slate-900 shadow-2xl"
             >
               <div className="p-4 pt-6 flex-1 flex flex-col gap-1 overflow-y-auto">
                 {/* 1. BAGIAN ATAS: Chat Baru & Menu Utama (Store, MCP, Web Utama, Setting) */}
                 <button 
                   onClick={startNewChat} 
-                  className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors text-sm font-medium mb-2 shadow-lg shadow-blue-900/30 cursor-pointer"
+                  className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors text-sm font-semibold mb-2 shadow-sm cursor-pointer"
                 >
                   <Sparkles size={18} />
                   <span>{t.newChat}</span>
@@ -2002,9 +2002,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 <div className="space-y-1 mb-3">
                   <button 
                     onClick={() => { window.location.href = "https://tmpa.my.id"; }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
-                    <Globe size={18} className="text-blue-400" />
+                    <Globe size={18} className="text-blue-600" />
                     <span>{t.mainWebsite}</span>
                   </button>
 
@@ -2013,38 +2013,38 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       setShowActionToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...');
                       setTimeout(() => setShowActionToast(null), 2000);
                     }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
-                    <Store size={18} className="text-amber-400" />
+                    <Store size={18} className="text-amber-500" />
                     <span>{t.store}</span>
                   </button>
 
                   <button 
                     onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
-                    <Layers size={18} className="text-emerald-400" />
+                    <Layers size={18} className="text-emerald-600" />
                     <span>{t.mcpIntegrations}</span>
                   </button>
 
                   <button 
                     onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} 
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-gray-300 hover:text-white hover:bg-gray-900 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
-                    <Settings size={18} className="text-purple-400" />
+                    <Settings size={18} className="text-purple-600" />
                     <span>{t.settings}</span>
                   </button>
                 </div>
 
-                <div className="my-1 border-t border-gray-900" />
+                <div className="my-1 border-t border-slate-200" />
 
                 {/* 2. BAGIAN TENGAH: Riwayat Chat User (Dengan Search, Pin Priority, dan Tahan 1 Detik untuk Pin/Hapus) */}
                 <div className="flex-1 flex flex-col pt-2 min-h-0">
                   <div className="flex items-center justify-between px-3 mb-2">
-                    <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
                       {t.chatHistory}
                     </span>
-                    <span className="text-[10px] text-gray-500 font-mono">
+                    <span className="text-[10px] text-slate-400 font-mono">
                       {lang === 'id' ? 'Tahan 1dtk: Opsi' : 'Hold 1s: Options'}
                     </span>
                   </div>
@@ -2052,13 +2052,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   {chatSessions.length > 0 && (
                     <div className="mb-2.5 px-2">
                       <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                         <input 
                           type="text" 
                           placeholder={t.searchHistory} 
                           value={searchQuery}
                           onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full bg-gray-900/90 border border-gray-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-blue-500/50"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
                         />
                       </div>
                     </div>
@@ -2067,7 +2067,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   {/* Chat Session List: Sorted so pinned always stays at top */}
                   <div className="flex-1 overflow-y-auto space-y-1 pr-1">
                     {chatSessions.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-gray-500">
+                      <div className="p-4 text-center text-xs text-slate-400">
                         {lang === 'id' ? 'Belum ada riwayat percakapan' : 'No chat history yet'}
                       </div>
                     ) : (
@@ -2104,14 +2104,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                                 loadSession(session.id);
                               }}
                               className={`group relative flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl transition-all text-sm font-medium cursor-pointer select-none
-                                ${isActive ? 'bg-blue-950/40 border border-blue-800/50 text-blue-200' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-900/70 border border-transparent'}
-                                ${isPinned ? 'bg-amber-950/20 border-amber-900/30' : ''}`}
+                                ${isActive ? 'bg-blue-50 border border-blue-200 text-blue-700 font-semibold' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-transparent'}
+                                ${isPinned ? 'bg-amber-50/70 border-amber-200 text-amber-900' : ''}`}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 {isPinned && (
-                                  <Pin size={13} className="text-amber-400 flex-shrink-0 rotate-45" />
+                                  <Pin size={13} className="text-amber-500 flex-shrink-0 rotate-45" />
                                 )}
-                                <span className={`truncate text-xs ${isPinned ? 'text-amber-200 font-semibold' : ''}`}>
+                                <span className={`truncate text-xs ${isPinned ? 'text-amber-900 font-bold' : ''}`}>
                                   {session.title}
                                 </span>
                               </div>
@@ -2124,7 +2124,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                                   cancelLongPress();
                                   setContextMenuSession(session);
                                 }}
-                                className="p-1 text-gray-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-gray-800 cursor-pointer flex-shrink-0"
+                                className="p-1 text-slate-400 hover:text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-slate-200/60 cursor-pointer flex-shrink-0"
                                 title={lang === 'id' ? 'Opsi Percakapan' : 'Chat Options'}
                               >
                                 <MoreVertical size={14} />
@@ -2138,17 +2138,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               </div>
 
               {/* 3. BAGIAN BAWAH: Profil User & Logout */}
-              <div className="p-4 border-t border-gray-900 flex flex-col gap-3">
+              <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex flex-col gap-3">
                 <div className="flex items-center gap-3 px-2">
-                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-black flex-shrink-0" />
+                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-slate-100 border border-slate-200 flex-shrink-0" />
                   <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-medium text-white truncate">
+                    <span className="text-sm font-semibold text-slate-900 truncate">
                       {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                     </span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-400 truncate">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 truncate">
                       Plan: {userTier}
                     </span>
-                    <span className="text-xs text-gray-400 truncate opacity-75">
+                    <span className="text-xs text-slate-500 truncate">
                       {user?.email || 'user@tmpa.example'}
                     </span>
                   </div>
@@ -2156,7 +2156,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 
                 <button 
                   onClick={handleLogout}
-                  className="flex items-center w-full gap-2 px-4 py-2.5 text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  className="flex items-center w-full gap-2 px-4 py-2.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-sm font-semibold cursor-pointer border border-transparent hover:border-rose-200"
                 >
                   <LogOut size={16} />
                   <span>{t.logout}</span>
@@ -2175,7 +2175,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm" 
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs" 
               onClick={() => setIsModelSelectorOpen(false)}
             />
             
@@ -2185,13 +2185,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ y: 0 }}
               exit={{ y: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-gray-950 border-b border-gray-900 shadow-2xl z-40 overflow-y-auto"
+              className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-white border-b border-slate-200 shadow-2xl z-40 overflow-y-auto text-slate-900"
             >
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
-                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-900">
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Model AI</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Tentukan model yang disukai untuk memproses obrolan Anda</p>
+                    <h3 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">Pilih Model AI</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Tentukan model yang disukai untuk memproses obrolan Anda</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button 
@@ -2201,11 +2201,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       }}
                       className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
                         isVisionActive 
-                          ? 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/40 hover:bg-cyan-500/30' 
-                          : 'text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800'
+                          ? 'text-cyan-700 bg-cyan-50 border border-cyan-300 hover:bg-cyan-100' 
+                          : 'text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200'
                       }`}
                     >
-                      {isVisionActive ? <Eye size={14} className="text-cyan-400" /> : <EyeOff size={14} />}
+                      {isVisionActive ? <Eye size={14} className="text-cyan-600" /> : <EyeOff size={14} />}
                       Vision {isVisionActive ? '(Aktif)' : ''}
                     </button>
                     <button 
@@ -2213,14 +2213,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         setIsModelSelectorOpen(false);
                         setIsReasoningSelectorOpen(true);
                       }}
-                      className="text-xs font-semibold text-[#1a73e8] hover:text-white bg-[#1a73e8]/10 border border-[#1a73e8]/30 hover:bg-[#1a73e8]/20 px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5"
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5"
                     >
                       <Brain size={14} />
                       Penalaran
                     </button>
                     <button 
                       onClick={() => setIsModelSelectorOpen(false)}
-                      className="text-xs font-semibold text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800 px-3 py-1.5 rounded-full transition-all cursor-pointer"
+                      className="text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-all cursor-pointer"
                     >
                       Tutup
                     </button>
@@ -2232,9 +2232,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     initial={{ opacity: 0, y: -6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
-                    className="mb-4 p-3 rounded-xl bg-cyan-950/70 border border-cyan-500/50 text-cyan-200 text-xs flex items-center gap-2"
+                    className="mb-4 p-3 rounded-xl bg-cyan-50 border border-cyan-200 text-cyan-800 text-xs flex items-center gap-2"
                   >
-                    <Lock size={14} className="text-cyan-400 shrink-0" />
+                    <Lock size={14} className="text-cyan-600 shrink-0" />
                     <span>{visionLockedNotice}</span>
                   </motion.div>
                 )}
@@ -2245,25 +2245,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     onClick={() => handleSelectModel('agnes-2.0-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
                       selectedModel === 'agnes-2.0-flash' 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 ring-1 ring-blue-500/30' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                        ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'agnes-2.0-flash' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                        selectedModel === 'agnes-2.0-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Bot size={18} />
                       </div>
                       {isVisionActive && (
-                        <span className="text-[10px] font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <span className="text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 px-2 py-0.5 rounded-full flex items-center gap-1">
                           <Eye size={10} /> Vision Aktif
                         </span>
                       )}
                     </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v2</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by agnes-2.0-flash</span>
-                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Tmpa ai v2</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.0-flash</span>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Model AI cerdas multimodal berkecepatan tinggi dengan kapabilitas analisis visual komprehensif, coding, dan penalaran mutakhir.
                     </p>
                   </button>
@@ -2273,27 +2273,27 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     onClick={() => handleSelectModel('tencent-hy3-free')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
-                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
+                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
                         : selectedModel === 'tencent-hy3-free'
-                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
-                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
+                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Cpu size={18} />
                       </div>
                       {isVisionActive && (
-                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
+                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                           <Lock size={11} /> Terkunci
                         </span>
                       )}
                     </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Tmpa ai v1</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
-                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Tmpa ai v1</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
                     </p>
                   </button>
@@ -2303,27 +2303,27 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     onClick={() => handleSelectModel('laguna-s-2.1')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
-                        ? 'opacity-60 bg-gray-950/60 border-gray-900 cursor-not-allowed' 
+                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
                         : selectedModel === 'laguna-s-2.1'
-                          ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 cursor-pointer' 
-                          : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80 cursor-pointer'
+                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'
+                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Layers size={18} />
                       </div>
                       {isVisionActive && (
-                        <span className="text-[10px] text-gray-500 font-medium flex items-center gap-1">
+                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                           <Lock size={11} /> Terkunci
                         </span>
                       )}
                     </div>
-                    <h4 className="font-semibold text-white text-sm md:text-base leading-snug">Dilo</h4>
-                    <span className="text-[10px] text-blue-400 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
-                    <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Dilo</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.
                     </p>
                   </button>
@@ -2341,7 +2341,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm" 
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs" 
               onClick={() => setIsVisionSelectorOpen(false)}
             />
             
@@ -2350,20 +2350,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="relative w-full max-h-[80vh] md:max-h-[60vh] bg-gray-950 border-t border-gray-900 shadow-2xl z-40 overflow-y-auto rounded-t-3xl"
+              className="relative w-full max-h-[80vh] md:max-h-[60vh] bg-white border-t border-slate-200 shadow-2xl z-40 overflow-y-auto rounded-t-3xl text-slate-900"
             >
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-900">
+                <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight flex items-center gap-2">
-                      <Eye size={20} className="text-cyan-400" />
+                    <h3 className="text-base md:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                      <Eye size={20} className="text-cyan-600" />
                       Pengaturan Mode Vision
                     </h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Tentukan apakah mode pemrosesan visual aktif atau nonaktif</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Tentukan apakah mode pemrosesan visual aktif atau nonaktif</p>
                   </div>
                   <button 
                     onClick={() => setIsVisionSelectorOpen(false)}
-                    className="text-xs font-semibold text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800 px-3 py-1.5 rounded-full transition-all cursor-pointer"
+                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-all cursor-pointer"
                   >
                     Tutup
                   </button>
@@ -2375,35 +2375,35 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     onClick={handleEnableVision}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
                       isVisionActive 
-                        ? 'bg-cyan-950/40 border-cyan-500 shadow-sm shadow-cyan-500/20 ring-1 ring-cyan-500/40' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                        ? 'bg-cyan-50 border-2 border-cyan-500 shadow-sm' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isVisionActive ? 'bg-cyan-500 text-black shadow-[0_0_12px_rgba(6,182,212,0.5)]' : 'bg-gray-800 text-gray-400'}`}>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isVisionActive ? 'bg-cyan-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                           <Eye size={18} />
                         </div>
                         <div>
-                          <h4 className="font-semibold text-white text-sm md:text-base flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900 text-sm md:text-base flex items-center gap-2">
                             Aktifkan Vision (Agnes AI)
                             {isVisionActive && (
-                              <span className="text-[11px] font-medium bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 px-2 py-0.5 rounded-full">
+                              <span className="text-[11px] font-semibold bg-cyan-100 text-cyan-800 border border-cyan-300 px-2 py-0.5 rounded-full">
                                 Sedang Digunakan
                               </span>
                             )}
                           </h4>
-                          <span className="text-[10px] text-cyan-400 font-mono">model: agnes-2.0-flash</span>
+                          <span className="text-[10px] text-cyan-600 font-mono font-medium">model: agnes-2.0-flash</span>
                         </div>
                       </div>
                       {isVisionActive && (
-                        <div className="w-6 h-6 rounded-full bg-cyan-500 text-black flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center">
                           <Check size={14} className="stroke-[3]" />
                         </div>
                       )}
                     </div>
-                    <p className="text-xs text-gray-300 leading-relaxed pl-12">
-                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-300">Agnes AI (agnes-2.0-flash)</strong> sehingga model tidak dapat diubah selama mode Vision menyala.
+                    <p className="text-xs text-slate-600 leading-relaxed pl-12">
+                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-700">Agnes AI (agnes-2.0-flash)</strong> sehingga model tidak dapat diubah selama mode Vision menyala.
                     </p>
                   </button>
 
@@ -2412,34 +2412,34 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     onClick={handleDisableVision}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
                       !isVisionActive 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10 ring-1 ring-blue-500/30' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                        ? 'bg-blue-50 border-2 border-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${!isVisionActive ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${!isVisionActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                           <EyeOff size={18} />
                         </div>
                         <div>
-                          <h4 className="font-semibold text-white text-sm md:text-base flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900 text-sm md:text-base flex items-center gap-2">
                             No Vision
                             {!isVisionActive && (
-                              <span className="text-[11px] font-medium bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-full">
+                              <span className="text-[11px] font-semibold bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded-full">
                                 Standar Teks
                               </span>
                             )}
                           </h4>
-                          <span className="text-[10px] text-gray-400 font-mono">Bebas memilih model</span>
+                          <span className="text-[10px] text-slate-400 font-mono">Bebas memilih model</span>
                         </div>
                       </div>
                       {!isVisionActive && (
-                        <div className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center">
+                        <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center">
                           <Check size={14} className="stroke-[3]" />
                         </div>
                       )}
                     </div>
-                    <p className="text-xs text-gray-400 leading-relaxed pl-12">
+                    <p className="text-xs text-slate-500 leading-relaxed pl-12">
                       Mode percakapan standar tanpa analisis visual khusus. Anda bebas memilih model apa saja (Tmpa ai v2, Tmpa ai v1, atau Dilo).
                     </p>
                   </button>
@@ -2457,7 +2457,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/75 backdrop-blur-sm" 
+              className="absolute inset-0 bg-black/40 backdrop-blur-xs" 
               onClick={() => setIsReasoningSelectorOpen(false)}
             />
             
@@ -2466,17 +2466,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-gray-950 border-t border-gray-900 shadow-2xl z-40 overflow-y-auto rounded-t-3xl"
+              className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-white border-t border-slate-200 shadow-2xl z-40 overflow-y-auto rounded-t-3xl text-slate-900"
             >
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-gray-900">
+                <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
                   <div>
-                    <h3 className="text-base md:text-lg font-semibold text-white tracking-tight">Pilih Mode Penalaran</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">Atur seberapa pintar AI dalam berpikir sebelum merespons</p>
+                    <h3 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">Pilih Mode Penalaran</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">Atur seberapa pintar AI dalam berpikir sebelum merespons</p>
                   </div>
                   <button 
                     onClick={() => setIsReasoningSelectorOpen(false)}
-                    className="text-xs font-semibold text-gray-300 hover:text-white bg-gray-900 border border-gray-800 hover:bg-gray-800 px-3 py-1.5 rounded-full transition-all cursor-pointer"
+                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-all cursor-pointer"
                   >
                     Tutup
                   </button>
@@ -2490,17 +2490,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     }}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
                       reasoningMode === 'standar' 
-                        ? 'bg-blue-600/10 border-blue-500 shadow-sm shadow-blue-500/10' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                        ? 'bg-blue-50 border-2 border-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center gap-3 mb-2">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'standar' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'standar' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                          <Zap size={16} />
                        </div>
-                       <h4 className="font-semibold text-white text-sm md:text-base">Standar</h4>
+                       <h4 className="font-bold text-slate-900 text-sm md:text-base">Standar</h4>
                     </div>
-                    <p className="text-xs text-gray-400 leading-relaxed pl-11">
+                    <p className="text-xs text-slate-500 leading-relaxed pl-11">
                       Merespons dengan cepat dan langsung berdasarkan pengetahuan bawaan.
                     </p>
                   </button>
@@ -2512,17 +2512,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     }}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
                       reasoningMode === 'penalaran' 
-                        ? 'bg-[#1a73e8]/10 border-[#1a73e8] shadow-sm shadow-[#1a73e8]/10' 
-                        : 'bg-gray-900/40 border-gray-900 hover:border-gray-800 hover:bg-gray-900/80'
+                        ? 'bg-blue-50 border-2 border-blue-600 shadow-sm' 
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center gap-3 mb-2">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'penalaran' ? 'bg-[#1a73e8] text-white' : 'bg-gray-800 text-gray-400'}`}>
+                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'penalaran' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                          <Brain size={16} />
                        </div>
-                       <h4 className="font-semibold text-white text-sm md:text-base">Penalaran</h4>
+                       <h4 className="font-bold text-slate-900 text-sm md:text-base">Penalaran</h4>
                     </div>
-                    <p className="text-xs text-gray-400 leading-relaxed pl-11">
+                    <p className="text-xs text-slate-500 leading-relaxed pl-11">
                       AI wajib memahami konteks, berpikir keras, dan mencari solusi terlebih dahulu sebelum memberikan jawaban terbaik.
                     </p>
                   </button>
@@ -2541,7 +2541,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/50 backdrop-blur-xs"
               onClick={() => setContextMenuSession(null)}
             />
             
@@ -2550,28 +2550,28 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.92, y: 15 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="relative w-full max-w-sm bg-neutral-950 border border-neutral-800/90 rounded-3xl p-5 shadow-2xl z-10 overflow-hidden text-white space-y-4"
+              className="relative w-full max-w-sm bg-white border border-slate-200 rounded-3xl p-5 shadow-2xl z-10 overflow-hidden text-slate-900 space-y-4"
             >
               {/* Header */}
-              <div className="flex items-start justify-between gap-3 pb-3 border-b border-neutral-800/80">
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-200">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     {contextMenuSession.isPinned && (
-                      <span className="p-1 rounded-md bg-amber-950/60 text-amber-400 border border-amber-800/40">
+                      <span className="p-1 rounded-md bg-amber-50 text-amber-600 border border-amber-200">
                         <Pin size={12} className="rotate-45" />
                       </span>
                     )}
-                    <h3 className="font-semibold text-white text-base truncate">
+                    <h3 className="font-bold text-slate-900 text-base truncate">
                       {contextMenuSession.title}
                     </h3>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {lang === 'id' ? 'Kelola Sesi Percakapan' : 'Manage Chat Session'}
                   </p>
                 </div>
                 <button 
                   onClick={() => setContextMenuSession(null)}
-                  className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors"
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
                 >
                   <X size={18} />
                 </button>
@@ -2584,25 +2584,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   onClick={() => handleTogglePinChat(contextMenuSession)}
                   className={`w-full flex items-center gap-3.5 p-3.5 rounded-2xl border transition-all text-left cursor-pointer group ${
                     contextMenuSession.isPinned
-                      ? 'bg-neutral-900/60 border-neutral-800 hover:bg-neutral-800 hover:border-neutral-700'
-                      : 'bg-amber-950/20 border-amber-900/40 hover:bg-amber-950/40 hover:border-amber-700/60'
+                      ? 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                      : 'bg-amber-50/60 border-amber-200 hover:bg-amber-100/80'
                   }`}
                 >
                   <div className={`p-2.5 rounded-xl flex-shrink-0 ${
                     contextMenuSession.isPinned 
-                      ? 'bg-neutral-800 text-gray-300 group-hover:text-white' 
-                      : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      ? 'bg-slate-200 text-slate-700' 
+                      : 'bg-amber-100 text-amber-700 border border-amber-200'
                   }`}>
                     {contextMenuSession.isPinned ? <PinOff size={18} /> : <Pin size={18} className="rotate-45" />}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-sm text-white flex items-center justify-between">
+                    <div className="font-semibold text-sm text-slate-900 flex items-center justify-between">
                       <span>{contextMenuSession.isPinned ? t.unpinChat : t.pinChat}</span>
-                      <span className="text-[10px] uppercase font-bold text-amber-400/90 font-mono tracking-wider">
+                      <span className="text-[10px] uppercase font-bold text-amber-700 font-mono tracking-wider">
                         {contextMenuSession.isPinned ? 'Unpin' : 'Pin Top'}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       {contextMenuSession.isPinned 
                         ? (lang === 'id' ? 'Kembalikan ke urutan normal' : 'Return to standard order')
                         : (lang === 'id' ? 'Pindahkan ke paling atas & kunci posisi' : 'Move to very top & keep position')}
@@ -2613,17 +2613,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 {/* 2. Delete Chat Button */}
                 <button
                   onClick={() => handleDeleteChatSession(contextMenuSession)}
-                  className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl bg-red-950/20 hover:bg-red-950/40 border border-red-900/30 hover:border-red-800/60 transition-all text-left cursor-pointer group"
+                  className="w-full flex items-center gap-3.5 p-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100/80 border border-rose-200 transition-all text-left cursor-pointer group"
                 >
-                  <div className="p-2.5 rounded-xl bg-red-500/20 text-red-400 border border-red-500/30 flex-shrink-0 group-hover:scale-105 transition-transform">
+                  <div className="p-2.5 rounded-xl bg-rose-100 text-rose-600 border border-rose-200 flex-shrink-0 group-hover:scale-105 transition-transform">
                     <Trash2 size={18} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium text-sm text-red-400 flex items-center justify-between">
+                    <div className="font-semibold text-sm text-rose-700 flex items-center justify-between">
                       <span>{t.deleteChat}</span>
-                      <span className="text-[10px] uppercase font-bold text-red-400/80 font-mono">Delete</span>
+                      <span className="text-[10px] uppercase font-bold text-rose-600 font-mono">Delete</span>
                     </div>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-slate-500 mt-0.5">
                       {lang === 'id' ? 'Hapus riwayat obrolan ini secara permanen' : 'Permanently remove this conversation'}
                     </p>
                   </div>
@@ -2634,7 +2634,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               <div className="pt-1">
                 <button
                   onClick={() => setContextMenuSession(null)}
-                  className="w-full py-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-gray-300 hover:text-white text-xs font-medium transition-colors cursor-pointer border border-neutral-800"
+                  className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer border border-slate-200"
                 >
                   {t.cancel}
                 </button>

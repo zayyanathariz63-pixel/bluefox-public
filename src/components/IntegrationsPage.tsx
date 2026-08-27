@@ -347,7 +347,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
 
   return (
     <div className={cn(
-      "w-full min-h-screen bg-black text-white flex flex-col font-sans select-none",
+      "w-full min-h-screen bg-slate-50 app-clean-grid text-slate-900 flex flex-col font-sans select-none",
       !isStandalone && "min-h-0 bg-transparent"
     )}>
       {/* Toast Notification */}
@@ -357,7 +357,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-neutral-900/95 border border-blue-500/40 text-blue-300 px-5 py-3 rounded-2xl shadow-[0_0_30px_rgba(59,130,246,0.3)] backdrop-blur-xl flex items-center gap-3 text-sm font-medium"
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-5 py-3 rounded-full shadow-2xl backdrop-blur-xl flex items-center gap-3 text-sm font-semibold border border-slate-800"
           >
             <Sparkles size={16} className="text-blue-400 shrink-0" />
             <span>{toastMessage}</span>
@@ -366,12 +366,12 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
       </AnimatePresence>
 
       {/* Header Bar */}
-      <div className="border-b border-gray-900 bg-gray-950/80 backdrop-blur-md sticky top-0 z-20 px-4 sm:px-8 py-4 flex items-center justify-between">
+      <div className="border-b border-slate-200 bg-white/95 backdrop-blur-md sticky top-0 z-20 px-4 sm:px-8 py-4 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3">
           {onBack && (
             <button
               onClick={onBack}
-              className="w-10 h-10 -ml-1 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-900 transition-colors cursor-pointer"
+              className="w-10 h-10 -ml-1 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
               title="Kembali"
             >
               <ArrowLeft size={20} />
@@ -379,14 +379,14 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
           )}
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                 Integrasi Provider MCP
               </h1>
-              <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono">
+              <span className="text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-mono">
                 COMING SOON
               </span>
             </div>
-            <p className="text-xs text-gray-400 hidden sm:block mt-0.5">
+            <p className="text-xs text-slate-500 hidden sm:block mt-0.5">
               Hubungkan akun & API Key untuk memberikan kemampuan otomatisasi penuh kepada AI Bluefox (Fitur Segera Hadir).
             </p>
           </div>
@@ -396,12 +396,12 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
           <button
             onClick={fetchStatusIntegrasi}
             disabled={loading}
-            className="p-2 rounded-xl bg-gray-900 border border-gray-800 text-gray-400 hover:text-white transition-colors cursor-pointer"
+            className="p-2 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer shadow-xs"
             title="Muat Ulang Status"
           >
-            <RefreshCw size={16} className={cn(loading && "animate-spin text-blue-400")} />
+            <RefreshCw size={16} className={cn(loading && "animate-spin text-blue-600")} />
           </button>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-900/80 border border-gray-800 text-xs text-gray-300">
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 shadow-xs">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             <span>{connectedCount} / {PROVIDERS_CONFIG.length} Terhubung</span>
           </div>
@@ -413,8 +413,8 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
         
         {/* Banner / Header Description */}
         <div className="mb-2">
-          <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-white">Integrasi Provider MCP</h2>
-          <p className="text-sm text-gray-400 leading-relaxed max-w-3xl">
+          <h2 className="text-2xl sm:text-3xl font-bold mb-2 text-slate-900">Integrasi Provider MCP</h2>
+          <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
             Klik pada provider untuk melihat deskripsi lengkap dan menghubungkan layanan Anda dengan AI Bluefox.
           </p>
         </div>
@@ -422,13 +422,13 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
         {/* Filter Pills & Search Box */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
           {/* Filter Pills */}
-          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-gray-900/80 border border-gray-800 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1.5 p-1 rounded-2xl bg-white border border-slate-200 shadow-xs overflow-x-auto scrollbar-none">
             <button
               type="button"
               onClick={() => setFilterType("all")}
               className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 cursor-pointer",
-                filterType === "all" ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer",
+                filterType === "all" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               )}
             >
               Semua ({integrations.length})
@@ -437,8 +437,8 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
               type="button"
               onClick={() => setFilterType("oauth")}
               className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 cursor-pointer",
-                filterType === "oauth" ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer",
+                filterType === "oauth" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               )}
             >
               OAuth ({integrations.filter(i => i.type === "oauth").length})
@@ -447,8 +447,8 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
               type="button"
               onClick={() => setFilterType("apikey")}
               className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 cursor-pointer",
-                filterType === "apikey" ? "bg-blue-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer",
+                filterType === "apikey" ? "bg-blue-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               )}
             >
               API Key ({integrations.filter(i => i.type === "apikey").length})
@@ -457,8 +457,8 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
               type="button"
               onClick={() => setFilterType("connected")}
               className={cn(
-                "px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
-                filterType === "connected" ? "bg-emerald-600 text-white shadow-md" : "text-gray-400 hover:text-white"
+                "px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shrink-0 cursor-pointer flex items-center gap-1.5",
+                filterType === "connected" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
               )}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
@@ -468,18 +468,18 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
 
           {/* Search Box */}
           <div className="relative sm:w-72">
-            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input 
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Cari provider MCP..."
-              className="w-full bg-gray-900/80 border border-gray-800 rounded-2xl pl-10 pr-4 py-2 text-xs sm:text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-all"
+              className="w-full bg-white border border-slate-200 rounded-2xl pl-10 pr-4 py-2 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 shadow-xs transition-all"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X size={14} />
               </button>
@@ -490,13 +490,13 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
         {/* Grid Provider */}
         {loading ? (
           <div className="text-center py-20 space-y-3">
-            <RefreshCw size={28} className="animate-spin text-blue-400 mx-auto" />
-            <div className="text-sm font-medium text-gray-400">Memuat integrasi provider MCP...</div>
+            <RefreshCw size={28} className="animate-spin text-blue-600 mx-auto" />
+            <div className="text-sm font-semibold text-slate-500">Memuat integrasi provider MCP...</div>
           </div>
         ) : filteredIntegrations.length === 0 ? (
-          <div className="text-center py-20 px-4 border border-dashed border-gray-800 rounded-3xl bg-gray-950/40 space-y-3">
-            <h3 className="text-base font-semibold text-gray-300">Tidak ada provider yang cocok</h3>
-            <p className="text-xs text-gray-500 max-w-sm mx-auto">
+          <div className="text-center py-20 px-4 border border-dashed border-slate-300 rounded-3xl bg-white space-y-3">
+            <h3 className="text-base font-bold text-slate-800">Tidak ada provider yang cocok</h3>
+            <p className="text-xs text-slate-500 max-w-sm mx-auto">
               Coba gunakan kata kunci pencarian lain atau ubah filter tipe integrasi.
             </p>
           </div>
@@ -510,23 +510,22 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
                   setApiKeyInput("");
                 }}
                 className={cn(
-                  "bg-gray-900/60 border rounded-2xl p-5 cursor-pointer transition duration-200 hover:bg-gray-800/40 flex flex-col justify-between group relative overflow-hidden",
+                  "bg-white border rounded-2xl p-5 cursor-pointer transition duration-200 hover:bg-slate-50 flex flex-col justify-between group relative overflow-hidden shadow-xs hover:shadow-md",
                   item.connected 
-                    ? "border-emerald-500/30 hover:border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.05)]" 
-                    : "border-gray-800 hover:border-gray-600"
+                    ? "border-emerald-400 ring-1 ring-emerald-400/30" 
+                    : "border-slate-200 hover:border-slate-300"
                 )}
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     {/* Logo Provider */}
-                    <div className="w-12 h-12 rounded-xl bg-gray-800/80 border border-gray-700/50 flex items-center justify-center p-2.5 group-hover:scale-105 transition-transform">
+                    <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center p-2.5 group-hover:scale-105 transition-transform shadow-xs">
                       <img 
                         src={item.logo} 
                         alt={item.name} 
                         className="w-full h-full object-contain" 
                         loading="lazy"
                         onError={(e) => {
-                          // Fallback jika icon simpleicons lambat termuat
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
@@ -534,36 +533,36 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
 
                     {/* Status Badge */}
                     {item.connected ? (
-                      <span className="bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                      <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-full border border-emerald-200 font-semibold flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                         Connected
                       </span>
                     ) : (
-                      <span className="bg-gray-800/80 text-gray-400 text-xs px-2.5 py-1 rounded-full font-medium border border-gray-700/40">
+                      <span className="bg-slate-100 text-slate-600 text-xs px-2.5 py-1 rounded-full font-semibold border border-slate-200">
                         Not Connected
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-lg text-gray-100 group-hover:text-blue-400 transition">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-bold text-lg text-slate-900 group-hover:text-blue-600 transition">
                       {item.name}
                     </h3>
-                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-gray-950 border border-gray-800 text-gray-400">
+                    <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600 font-semibold">
                       {item.type}
                     </span>
-                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-bold">
                       Coming Soon
                     </span>
                   </div>
 
-                  <p className="text-sm text-gray-400 mt-1.5 line-clamp-2 leading-relaxed">
+                  <p className="text-sm text-slate-600 mt-1.5 line-clamp-2 leading-relaxed">
                     {item.shortDesc}
                   </p>
                 </div>
 
-                <div className="mt-6 pt-3 border-t border-gray-800/60 flex justify-between items-center text-xs text-gray-400 group-hover:text-gray-300">
-                  <span className="font-medium">Lihat Detail & Konfigurasi</span>
+                <div className="mt-6 pt-3 border-t border-slate-100 flex justify-between items-center text-xs font-semibold text-slate-500 group-hover:text-blue-600">
+                  <span>Lihat Detail & Konfigurasi</span>
                   <span className="group-hover:translate-x-1 transition-transform">→</span>
                 </div>
               </div>
@@ -581,97 +580,97 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setActiveModalProvider(null)}
-              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              className="absolute inset-0 bg-black/60 backdrop-blur-xs"
             />
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="bg-gray-900 border border-gray-800 rounded-3xl max-w-xl w-full p-6 sm:p-7 relative shadow-2xl z-10 overflow-hidden"
+              className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-6 sm:p-7 relative shadow-2xl z-10 overflow-hidden text-slate-900"
             >
               {/* Tombol Close Modal */}
               <button
                 type="button"
                 onClick={() => setActiveModalProvider(null)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-white w-9 h-9 rounded-xl bg-gray-800/50 hover:bg-gray-800 flex items-center justify-center transition cursor-pointer"
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition cursor-pointer"
               >
                 ✕
               </button>
 
               {/* Header Modal */}
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-gray-800 border border-gray-700/80 flex items-center justify-center p-3 shadow-inner">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center p-3 shadow-xs">
                   <img src={activeModalProvider.logo} alt={activeModalProvider.name} className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h2 className="text-xl sm:text-2xl font-bold text-white">{activeModalProvider.name}</h2>
+                    <h2 className="text-xl sm:text-2xl font-bold text-slate-900">{activeModalProvider.name}</h2>
                     {activeModalProvider.connected ? (
-                      <span className="bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-0.5 rounded-full border border-emerald-500/20 font-medium flex items-center gap-1">
+                      <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full border border-emerald-200 font-semibold flex items-center gap-1">
                         <Check size={12} />
                         Connected
                       </span>
                     ) : (
-                      <span className="bg-gray-800 text-gray-400 text-xs px-2.5 py-0.5 rounded-full border border-gray-700 font-medium">
+                      <span className="bg-slate-100 text-slate-600 text-xs px-2.5 py-0.5 rounded-full border border-slate-200 font-semibold">
                         Not Connected
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-1">Metode Integrasi: <span className="font-semibold text-gray-300 uppercase font-mono">{activeModalProvider.type}</span></p>
+                  <p className="text-xs text-slate-500 mt-1">Metode Integrasi: <span className="font-bold text-slate-700 uppercase font-mono">{activeModalProvider.type}</span></p>
                 </div>
               </div>
 
               {/* Deskripsi Lengkap */}
               <div className="mb-5">
-                <h4 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2 flex items-center gap-1.5">
-                  <ShieldCheck size={14} className="text-blue-400" />
+                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2 flex items-center gap-1.5">
+                  <ShieldCheck size={14} className="text-blue-600" />
                   Tentang Integrasi
                 </h4>
-                <p className="text-xs sm:text-sm text-gray-300 leading-relaxed bg-gray-800/40 p-4 rounded-2xl border border-gray-800">
+                <p className="text-xs sm:text-sm text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-200">
                   {activeModalProvider.fullDesc}
                 </p>
               </div>
 
               {/* Fitur Kemampuan MCP */}
               <div className="mb-6">
-                <h4 className="text-xs uppercase tracking-wider text-gray-400 font-semibold mb-2 flex items-center gap-1.5">
-                  <Sparkles size={14} className="text-yellow-400" />
+                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2 flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-amber-500" />
                   Kemampuan AI Bluefox
                 </h4>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-gray-300">
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700">
                   {activeModalProvider.features.map((feat, idx) => (
-                    <li key={idx} className="flex items-center gap-2 bg-gray-800/30 p-2.5 rounded-xl border border-gray-800/60">
-                      <span className="text-blue-400 font-bold">✓</span> {feat}
+                    <li key={idx} className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-blue-600 font-bold">✓</span> {feat}
                     </li>
                   ))}
                 </ul>
               </div>
 
               {/* AREA AKSI / TOMBOL CONNECT */}
-              <div className="pt-4 border-t border-gray-800 flex items-center justify-between">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-between">
                 {activeModalProvider.connected ? (
                   <div className="w-full flex items-center justify-between gap-3">
-                    <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
+                    <span className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
                       <CheckCircle2 size={16} />
                       Akun terhubung dan siap digunakan AI Bluefox.
                     </span>
                     <button
                       type="button"
                       onClick={() => handleDisconnect(activeModalProvider.id)}
-                      className="px-4 py-2 text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl border border-red-500/20 transition font-medium cursor-pointer shrink-0"
+                      className="px-4 py-2 text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl border border-rose-200 transition font-semibold cursor-pointer shrink-0"
                     >
                       Putuskan Koneksi
                     </button>
                   </div>
                 ) : activeModalProvider.type === "oauth" ? (
                   <div className="w-full flex items-center justify-between gap-3">
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-slate-500">
                       Akan membuka halaman otorisasi resmi {activeModalProvider.name}.
                     </span>
                     <button
                       type="button"
                       onClick={() => handleOAuthConnect(activeModalProvider.id)}
-                      className="px-5 py-2.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold transition shadow-lg shadow-blue-600/20 cursor-pointer shrink-0 flex items-center gap-1.5"
+                      className="px-5 py-2.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition shadow-sm cursor-pointer shrink-0 flex items-center gap-1.5"
                     >
                       <ExternalLink size={14} />
                       Connect {activeModalProvider.name}
@@ -680,7 +679,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
                 ) : (
                   /* Form Input API Key */
                   <div className="w-full">
-                    <label className="block text-xs font-medium text-gray-300 mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
                       Masukkan API Key {activeModalProvider.name}:
                     </label>
                     <div className="flex gap-2">
@@ -689,14 +688,14 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
                         placeholder="Paste API Key di sini..."
                         value={apiKeyInput}
                         onChange={(e) => setApiKeyInput(e.target.value)}
-                        className="flex-1 bg-gray-800/90 border border-gray-700 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 font-mono transition-all"
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-mono transition-all"
                         autoFocus
                       />
                       <button
                         type="button"
                         disabled={isSubmitting || !apiKeyInput.trim()}
                         onClick={() => handleSaveApiKey(activeModalProvider.id)}
-                        className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-semibold transition disabled:opacity-50 cursor-pointer shrink-0 flex items-center gap-1.5"
+                        className="px-4 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition disabled:opacity-50 cursor-pointer shrink-0 flex items-center gap-1.5"
                       >
                         {isSubmitting ? (
                           <>
