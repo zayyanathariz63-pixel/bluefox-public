@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { executeDualEngineSearch, BLUEFOX_SYSTEM_PROMPT } from "./src/lib/search";
 
 async function startServer() {
   const app = express();
@@ -131,7 +132,33 @@ async function startServer() {
     return text.replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{1F9B0}-\u{1F9B3}]/gu, '');
   };
 
-  // API Route for Chat with Realtime Streaming & Autonomous Self-Validation
+  // API Route for Standalone Web Search (Dual-Engine: Tavily -> DuckDuckGo)
+  app.post("/api/search", async (req, res) => {
+    try {
+      const { query = "", force = true } = req.body;
+      const searchRes = await executeDualEngineSearch(query, {
+        forceSearch: force,
+        tavilyApiKey: process.env.TAVILY_API_KEY,
+      });
+
+      return res.json({
+        status: "success",
+        data: {
+          has_sources: searchRes.has_sources,
+          search_engine_used: searchRes.search_engine_used,
+          sources: searchRes.sources,
+        },
+      });
+    } catch (err: any) {
+      console.error("Error in /api/search route:", err);
+      return res.status(500).json({
+        status: "error",
+        message: err.message || "Gagal melakukan pencarian web",
+      });
+    }
+  });
+
+  // API Route for Chat with Realtime Streaming, Dual-Engine Search & Autonomous Self-Validation
   app.post("/api/chat", async (req, res) => {
     const abortController = new AbortController();
     
@@ -144,7 +171,16 @@ async function startServer() {
     });
 
     try {
-      const { history = [], message = "", model = "agnes-2.0-flash", customInstruction = "", reasoningMode = "" } = req.body;
+      const { 
+        history = [], 
+        message = "", 
+        model = "agnes-2.0-flash", 
+        customInstruction = "", 
+        reasoningMode = "", 
+        forceSearch = false,
+        stream = true 
+      } = req.body;
+
       const openRouterKey = process.env.OPENROUTER_API_KEY;
       const geminiKey = process.env.GEMINI_API_KEY;
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
@@ -163,16 +199,31 @@ async function startServer() {
 
       const requestedModelId = modelMapping[model] || "agnes-2.0-flash";
 
+      // =========================================================================
+      // 2.2 DUAL-ENGINE FALLBACK WEB SEARCH (TAVILY -> DUCKDUCKGO)
+      // =========================================================================
+      const searchRes = await executeDualEngineSearch(message, {
+        forceSearch: forceSearch || message.toLowerCase().startsWith('@search') || message.toLowerCase().startsWith('@web'),
+        tavilyApiKey: process.env.TAVILY_API_KEY,
+        signal: abortController.signal,
+      });
+
       // Detect special trigger command modes
       const isVerifyAi = message.includes('[VERIFY-AI PROTOKOL') || message.toLowerCase().startsWith('@verifyai');
       const isDeepVerify = message.includes('[DEEP REASONING') || message.toLowerCase().startsWith('@deep verify');
       const isCreative = message.includes('[CREATIVE DYNAMIC') || message.toLowerCase().startsWith('@creative');
 
-      // Base Prompts
+      // Base Prompts according to PRD 3.3
       const DILO_SYSTEM_PROMPT = `Anda adalah Dilo, AI resmi keluarga besar TMPA. Ramah, santai, ceria, suportif. Gunakan bahasa Indonesia luwes sehari-hari.`;
-      const TMPA_V2_SYSTEM_PROMPT = `Anda adalah TMPA v2 (The Multi Platform AI). Cerdas, presisi, chill, lugas, tanpa emoji jika mode normal.`;
+      const TMPA_V2_SYSTEM_PROMPT = BLUEFOX_SYSTEM_PROMPT;
 
       let systemPrompt = model === "mistral_nemotron" ? DILO_SYSTEM_PROMPT : TMPA_V2_SYSTEM_PROMPT;
+
+      // Inject web search data context if available
+      if (searchRes.has_sources && searchRes.contextSnippet) {
+        systemPrompt += `\n\n${searchRes.contextSnippet}`;
+      }
+
       if (customInstruction) {
         systemPrompt += `\n\nInstruksi Kustom Pengguna:\n${customInstruction}`;
       }
@@ -212,23 +263,56 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
         { role: 'user', content: message }
       ];
 
-      // Setup Server-Sent Events (SSE) for Realtime Streaming Typewriter
-      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-      res.setHeader("Cache-Control", "no-cache, no-transform");
-      res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no");
-      res.flushHeaders();
+      const isSse = stream !== false && req.headers.accept?.includes("text/event-stream") !== false;
+
+      if (isSse) {
+        // Setup Server-Sent Events (SSE) for Realtime Streaming Typewriter
+        res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("Connection", "keep-alive");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+
+        // Send initial search sources metadata to frontend immediately
+        if (searchRes.has_sources) {
+          res.write(`data: ${JSON.stringify({
+            type: "search_sources",
+            has_sources: true,
+            search_engine_used: searchRes.search_engine_used,
+            sources: searchRes.sources,
+          })}\n\n`);
+        }
+      }
 
       const sendChunk = (text: string) => {
-        if (!res.writableEnded && text) {
+        if (isSse && !res.writableEnded && text) {
           res.write(`data: ${JSON.stringify({ delta: text })}\n\n`);
         }
       };
 
       const sendDone = (fullText: string) => {
         if (!res.writableEnded) {
-          res.write(`data: ${JSON.stringify({ done: true, fullText })}\n\n`);
-          res.end();
+          if (isSse) {
+            res.write(`data: ${JSON.stringify({ 
+              done: true, 
+              fullText,
+              has_sources: searchRes.has_sources,
+              search_engine_used: searchRes.search_engine_used,
+              sources: searchRes.sources,
+            })}\n\n`);
+            res.end();
+          } else {
+            // Kontrak Respon API Backend PRD 3.2
+            res.json({
+              status: "success",
+              data: {
+                reply: fullText,
+                has_sources: searchRes.has_sources,
+                search_engine_used: searchRes.search_engine_used,
+                sources: searchRes.sources,
+              }
+            });
+          }
         }
       };
 

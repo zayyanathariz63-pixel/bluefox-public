@@ -6,11 +6,21 @@ export interface MediaAttachment {
   duration?: number;
 }
 
+export interface SearchSource {
+  id: string;
+  title: string;
+  url: string;
+  snippet: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'model';
   text: string;
   media?: MediaAttachment | MediaAttachment[];
+  has_sources?: boolean;
+  search_engine_used?: 'tavily' | 'duckduckgo' | string;
+  sources?: SearchSource[];
 }
 
 export interface Connector {

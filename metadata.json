@@ -1,6 +1,6 @@
 {
   "name": "tmpa chat",
-  "description": "A sleek, professional AI chat platform featuring trigger commands (@), theme customization, multi-model support, and SSO integration.",
+  "description": "A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration.",
   "requestFramePermissions": ["microphone"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

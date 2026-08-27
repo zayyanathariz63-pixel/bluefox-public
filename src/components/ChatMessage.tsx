@@ -2,10 +2,11 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Bot, User, Pencil, Power, Copy, Check } from 'lucide-react';
+import { Bot, User, Pencil, Power, Copy, Check, Globe, ChevronRight, Sparkles, Search } from 'lucide-react';
 import { Message } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
+import { SourcesBottomSheet } from './SourcesBottomSheet';
 
 interface ChatMessageProps {
   message: Message;
@@ -63,6 +64,10 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.text);
+  const [showSourcesModal, setShowSourcesModal] = useState(false);
+
+  const hasWebSources = !isUser && Boolean(message.sources && message.sources.length > 0);
+  const isTavily = message.search_engine_used === 'tavily';
 
   const handleSave = () => {
     if (editValue.trim() !== '' && onEdit) {
@@ -201,15 +206,48 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
                 </ReactMarkdown>
               </div>
             ) : (
-              <div className="markdown-body text-[15px] sm:text-base">
-                <ReactMarkdown 
-                  remarkPlugins={[remarkGfm, remarkBreaks]}
-                  components={{
-                    code: CodeBlock
-                  }}
-                >
-                  {message.text}
-                </ReactMarkdown>
+              <div className="flex flex-col items-start w-full">
+                <div className="markdown-body text-[15px] sm:text-base w-full">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm, remarkBreaks]}
+                    components={{
+                      code: CodeBlock
+                    }}
+                  >
+                    {message.text}
+                  </ReactMarkdown>
+                </div>
+
+                {/* 4.1 & 4.3 Tombol Lihat Sumber di Chat Bubble */}
+                {hasWebSources && (
+                  <div className="mt-2.5 pt-1 flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setShowSourcesModal(true)}
+                      className="btn-sources inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl bg-[#f0f4f8] dark:bg-blue-950/40 border border-[#cbd5e1] dark:border-blue-800/60 text-xs font-semibold text-[#0f172a] dark:text-blue-300 hover:bg-[#e2e8f0] dark:hover:bg-blue-900/60 transition-colors shadow-sm select-none cursor-pointer group"
+                      title="Buka Bottom Sheet Sumber Informasi"
+                    >
+                      <span className="icon-link text-[13px]">🔗</span>
+                      <span>Lihat Sumber ({message.sources?.length || 0})</span>
+                      <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border ml-1 ${
+                        isTavily 
+                          ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300 border-cyan-500/25' 
+                          : 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border-amber-500/25'
+                      }`}>
+                        {isTavily ? 'Tavily' : 'DuckDuckGo'}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Bottom Sheet Modal Setengah Layar */}
+                {hasWebSources && (
+                  <SourcesBottomSheet
+                    isOpen={showSourcesModal}
+                    onClose={() => setShowSourcesModal(false)}
+                    sources={message.sources}
+                    engine={message.search_engine_used}
+                  />
+                )}
               </div>
             )
           )}

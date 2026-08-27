@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Message, Connector, MediaAttachment, ChatSession } from './types';
+import { Message, Connector, MediaAttachment, ChatSession, SearchSource } from './types';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
@@ -28,6 +28,7 @@ import {
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
+import { executeDualEngineSearch, detectSearchIntent } from './lib/search';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -1215,12 +1216,40 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
+      // =========================================================================
+      // DUAL-ENGINE FALLBACK WEB SEARCH INTENT DETECTION & CONTEXT INJECTION
+      // =========================================================================
+      let attachedSources: SearchSource[] = [];
+      let attachedEngine: 'tavily' | 'duckduckgo' | string | undefined = undefined;
+
+      const isSearchTriggered = detectSearchIntent(userText) || lowerText.startsWith('@search') || lowerText.startsWith('@web');
+      if (isSearchTriggered) {
+        try {
+          const searchPayload = await executeDualEngineSearch(userText, {
+            forceSearch: true,
+            signal: abortControllerRef.current?.signal,
+          });
+          if (searchPayload.has_sources && searchPayload.sources.length > 0) {
+            attachedSources = searchPayload.sources;
+            attachedEngine = searchPayload.search_engine_used || 'tavily';
+            if (searchPayload.contextSnippet) {
+              effectiveAiPrompt += `\n\n${searchPayload.contextSnippet}`;
+            }
+          }
+        } catch (searchErr) {
+          console.warn("Client-side search error:", searchErr);
+        }
+      }
+
       // Setup placeholder message for real-time streaming typewriter display
       const aiMessageId = (Date.now() + 1).toString();
       const initialAiMessage: Message = {
         id: aiMessageId,
         role: 'model',
         text: '',
+        has_sources: attachedSources.length > 0,
+        search_engine_used: attachedEngine,
+        sources: attachedSources.length > 0 ? attachedSources : undefined,
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
@@ -1247,6 +1276,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         if (edgeRes.data.conversation_id) {
           effectiveConvId = edgeRes.data.conversation_id;
           setCurrentSessionId(effectiveConvId);
+        }
+
+        // If edge response already returns sources, use them
+        if (edgeRes.data.sources && Array.isArray(edgeRes.data.sources)) {
+          attachedSources = edgeRes.data.sources;
+          attachedEngine = edgeRes.data.search_engine_used || attachedEngine || 'tavily';
         }
 
         // Tampilkan teks dengan efek ketikan (Typewriter Streaming) per kata seperti GPT / Gemini
@@ -1276,7 +1311,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               const next = [...prev];
               const targetIdx = next.findIndex(m => m.id === aiMessageId);
               if (targetIdx !== -1) {
-                next[targetIdx] = { ...next[targetIdx], text: currentTyped };
+                next[targetIdx] = { 
+                  ...next[targetIdx], 
+                  text: currentTyped,
+                  has_sources: attachedSources.length > 0,
+                  search_engine_used: attachedEngine,
+                  sources: attachedSources.length > 0 ? attachedSources : undefined
+                };
               }
               return next;
             });
@@ -1336,23 +1377,58 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               if (jsonStr === '[DONE]') continue;
               try {
                 const parsed = JSON.parse(jsonStr);
+
+                if (parsed.type === 'search_sources' || (parsed.sources && parsed.sources.length > 0)) {
+                  attachedSources = parsed.sources;
+                  attachedEngine = parsed.search_engine_used || attachedEngine || 'tavily';
+                  setMessages(prev => {
+                    const next = [...prev];
+                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
+                    if (targetIdx !== -1) {
+                      next[targetIdx] = { 
+                        ...next[targetIdx], 
+                        has_sources: true, 
+                        search_engine_used: attachedEngine, 
+                        sources: attachedSources 
+                      };
+                    }
+                    return next;
+                  });
+                }
+
                 if (parsed.delta) {
                   aiReplyText += parsed.delta;
                   setMessages(prev => {
                     const next = [...prev];
                     const targetIdx = next.findIndex(m => m.id === aiMessageId);
                     if (targetIdx !== -1) {
-                      next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                      next[targetIdx] = { 
+                        ...next[targetIdx], 
+                        text: aiReplyText,
+                        has_sources: attachedSources.length > 0,
+                        search_engine_used: attachedEngine,
+                        sources: attachedSources.length > 0 ? attachedSources : undefined
+                      };
                     }
                     return next;
                   });
                 } else if (parsed.done && parsed.fullText) {
                   aiReplyText = parsed.fullText;
+                  if (parsed.sources && parsed.sources.length > 0) {
+                    attachedSources = parsed.sources;
+                    attachedEngine = parsed.search_engine_used || attachedEngine;
+                  }
                   setMessages(prev => {
                     const next = [...prev];
                     const targetIdx = next.findIndex(m => m.id === aiMessageId);
                     if (targetIdx !== -1) {
-                      next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+                      next[targetIdx] = { 
+                        ...next[targetIdx], 
+                        text: aiReplyText,
+                        has_sources: attachedSources.length > 0,
+                        search_engine_used: attachedEngine,
+                        sources: attachedSources.length > 0 ? attachedSources : undefined
+                      };
                     }
                     return next;
                   });
@@ -1371,7 +1447,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           const next = [...prev];
           const targetIdx = next.findIndex(m => m.id === aiMessageId);
           if (targetIdx !== -1) {
-            next[targetIdx] = { ...next[targetIdx], text: aiReplyText };
+            next[targetIdx] = { 
+              ...next[targetIdx], 
+              text: aiReplyText,
+              has_sources: attachedSources.length > 0,
+              search_engine_used: attachedEngine,
+              sources: attachedSources.length > 0 ? attachedSources : undefined
+            };
           }
           return next;
         });
@@ -1383,7 +1465,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const finalMessages = [...updatedMessages, {
         id: aiMessageId,
         role: 'model' as const,
-        text: aiReplyText
+        text: aiReplyText,
+        has_sources: attachedSources.length > 0,
+        search_engine_used: attachedEngine,
+        sources: attachedSources.length > 0 ? attachedSources : undefined,
       }];
 
       const updateIdx = currentSessions.findIndex(s => s.id === sessionId || s.id === effectiveConvId);

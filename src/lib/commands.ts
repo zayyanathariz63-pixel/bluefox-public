@@ -13,7 +13,20 @@ export interface TriggerCommand {
 }
 
 export const TRIGGER_COMMANDS: TriggerCommand[] = [
-  // 1. AI Module Commands
+  // 1. AI & Web Search Module Commands
+  {
+    id: 'web-search',
+    name: '@search',
+    category: 'ai',
+    categoryLabel: 'Web Search',
+    badge: 'Dual-Engine',
+    description: 'Pencarian web real-time (Tavily AI & DuckDuckGo fallback) dengan rincian sumber terverifikasi.',
+    syntax: '@search [topik / kata kunci yang dicari]',
+    example: '@search harga emas antam hari ini dan tren pasar',
+    iconName: 'Globe',
+    hasParameter: true,
+    parameterPlaceholder: 'ketik topik atau informasi web terbaru yang dicari...'
+  },
   {
     id: 'verifyai',
     name: '@verifyai',
