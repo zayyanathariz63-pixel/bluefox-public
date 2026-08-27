@@ -110,10 +110,10 @@ export async function searchWithSupabaseEdgeFunction(
 
     console.log(`🌐 [Supabase Edge Function] Memanggil bluefox-search untuk: "${cleanQ}"`);
 
-    // 1. Coba melalui supabase.functions.invoke()
+    // 1. Coba melalui supabase.functions.invoke('bluefox-search')
     try {
       const invokeRes = await supabase.functions.invoke('bluefox-search', {
-        body: { query: cleanQ },
+        body: { query: cleanQ, q: cleanQ, search: cleanQ },
       });
 
       clearTimeout(timeoutId);
@@ -121,17 +121,17 @@ export async function searchWithSupabaseEdgeFunction(
 
       if (invokeRes.data && !invokeRes.error) {
         const payload = invokeRes.data;
-        const rawSources = payload.sources || (Array.isArray(payload) ? payload : (payload.data?.sources || payload.results || []));
+        const rawSources = payload.sources || (Array.isArray(payload) ? payload : (payload.data?.sources || payload.results || payload.data?.results || payload.organic || []));
         
         if (Array.isArray(rawSources) && rawSources.length > 0) {
           const sources: SearchSource[] = rawSources.map((item: any, idx: number) => ({
             id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
-            title: item.title || `Sumber Web ${idx + 1}`,
-            url: item.url || 'https://google.com',
-            snippet: (item.snippet || item.content || item.raw_content || '').trim().slice(0, 300),
+            title: item.title || item.name || `Sumber Web ${idx + 1}`,
+            url: item.url || item.link || 'https://google.com',
+            snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 350),
           }));
 
-          const engineUsed = payload.search_engine_used || payload.engine || 'tavily';
+          const engineUsed = payload.search_engine_used || payload.engine || payload.provider || 'tavily';
           console.log(`✅ [bluefox-search via SDK] Berhasil mendapatkan ${sources.length} sumber (Engine: ${engineUsed})`);
           return { success: true, sources, engineUsed };
         }
@@ -151,7 +151,7 @@ export async function searchWithSupabaseEdgeFunction(
         'apikey': anonKey,
         'Authorization': `Bearer ${anonKey}`,
       },
-      body: JSON.stringify({ query: cleanQ }),
+      body: JSON.stringify({ query: cleanQ, q: cleanQ, search: cleanQ }),
       signal: controller.signal,
     });
 
@@ -160,17 +160,17 @@ export async function searchWithSupabaseEdgeFunction(
 
     if (directRes.ok) {
       const data = await directRes.json();
-      const rawSources = data.sources || (Array.isArray(data) ? data : (data.data?.sources || data.results || []));
+      const rawSources = data.sources || (Array.isArray(data) ? data : (data.data?.sources || data.results || data.data?.results || data.organic || []));
 
       if (Array.isArray(rawSources) && rawSources.length > 0) {
         const sources: SearchSource[] = rawSources.map((item: any, idx: number) => ({
           id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
-          title: item.title || `Sumber Web ${idx + 1}`,
-          url: item.url || 'https://google.com',
-          snippet: (item.snippet || item.content || item.raw_content || '').trim().slice(0, 300),
+          title: item.title || item.name || `Sumber Web ${idx + 1}`,
+          url: item.url || item.link || 'https://google.com',
+          snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 350),
         }));
 
-        const engineUsed = data.search_engine_used || data.engine || 'tavily';
+        const engineUsed = data.search_engine_used || data.engine || data.provider || 'tavily';
         console.log(`✅ [bluefox-search direct fetch] Berhasil mendapatkan ${sources.length} sumber (Engine: ${engineUsed})`);
         return { success: true, sources, engineUsed };
       }
