@@ -550,6 +550,19 @@ export function getModelLimitCode(model: string, isVision?: boolean): AiModelCod
   return 'v1';
 }
 
+export function getModelUsageRates(modelCode: AiModelCode): { add5h: number; addWeekly: number } {
+  if (modelCode === 'v2_vision') {
+    return { add5h: 19, addWeekly: 14 };
+  } else if (modelCode === 'v2_non_vision') {
+    return { add5h: 13, addWeekly: 10 };
+  } else if (modelCode === 'v1') {
+    return { add5h: 12, addWeekly: 9 };
+  } else if (modelCode === 'dilo') {
+    return { add5h: 8, addWeekly: 6 };
+  }
+  return { add5h: 12, addWeekly: 9 };
+}
+
 export async function getUserLimits(userId: string) {
   try {
     if (!userId) return null;
@@ -599,12 +612,13 @@ export async function resetUserLimits(userId: string) {
     if (!userId) return false;
     console.log(`🔄 [user_limits] Mereset limit penggunaan untuk user ${userId}`);
 
+    const now = new Date();
     const payload = {
       user_id: userId,
       used_5h: 0,
-      reset_5h_at: null,
+      reset_5h_at: new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString(),
       used_weekly: 0,
-      reset_weekly_at: null,
+      reset_weekly_at: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     };
 
     const { error } = await supabase
@@ -631,7 +645,8 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
     }
 
-    console.log(`📊 [Limit] Mengonsumsi limit untuk user ${userId} model ${modelCode}`);
+    const rates = getModelUsageRates(modelCode);
+    console.log(`📊 [Limit] Mengonsumsi limit untuk user ${userId} model ${modelCode} (+${rates.add5h}% 5h, +${rates.addWeekly}% weekly)`);
 
     // 1. Coba panggil RPC Supabase 'consume_ai_limit'
     try {
@@ -653,8 +668,34 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
           };
         }
 
-        const remaining5h = data.remaining_5h ?? Math.max(0, 100 - Number(data.used_5h || 0));
-        const remainingWeekly = data.remaining_weekly ?? Math.max(0, 100 - Number(data.used_weekly || 0));
+        // Kalkulasi persentase dengan proteksi overflow janggal
+        let used5h: number;
+        if (data.used_5h !== undefined && data.used_5h !== null) {
+          used5h = Number(data.used_5h);
+        } else if (data.remaining_5h !== undefined && data.remaining_5h !== null) {
+          used5h = Math.max(0, 100 - Number(data.remaining_5h));
+        } else {
+          used5h = rates.add5h;
+        }
+
+        let usedWeekly: number;
+        if (data.used_weekly !== undefined && data.used_weekly !== null) {
+          usedWeekly = Number(data.used_weekly);
+        } else if (data.remaining_weekly !== undefined && data.remaining_weekly !== null && Number(data.remaining_weekly) > 0) {
+          usedWeekly = Math.max(0, 100 - Number(data.remaining_weekly));
+        } else {
+          // Jika RPC tidak mengembalikan data mingguan valid, gunakan pertambahan rate model
+          usedWeekly = rates.addWeekly;
+        }
+
+        // Proteksi jika RPC mengembalikan remaining_weekly: 0 atau used_weekly: 100 padahal used_5h masih kecil
+        if (usedWeekly >= 100 && used5h <= rates.add5h * 2 && data.used_weekly === undefined) {
+          console.warn("⚠️ Normalisasi usedWeekly RPC ke rate model:", rates.addWeekly);
+          usedWeekly = rates.addWeekly;
+        }
+
+        const remaining5h = Math.max(0, 100 - used5h);
+        const remainingWeekly = Math.max(0, 100 - usedWeekly);
 
         console.log(`Sisa 5-Jam: ${remaining5h}%, Sisa Mingguan: ${remainingWeekly}%`);
 
@@ -662,8 +703,8 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
           success: true,
           remaining_5h: remaining5h,
           remaining_weekly: remainingWeekly,
-          used_5h: Number(data.used_5h ?? (100 - remaining5h)),
-          used_weekly: Number(data.used_weekly ?? (100 - remainingWeekly)),
+          used_5h: used5h,
+          used_weekly: usedWeekly,
         };
       }
       if (error) {
@@ -673,23 +714,7 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       console.warn("⚠️ Exception RPC consume_ai_limit, fallback ke tabel user_limits:", rpcErr);
     }
 
-    // 2. Fallback: Langsung update tabel 'public.user_limits'
-    let add5h = 12;
-    let addWeekly = 9;
-    if (modelCode === 'v2_vision') {
-      add5h = 19;
-      addWeekly = 14;
-    } else if (modelCode === 'v2_non_vision') {
-      add5h = 13;
-      addWeekly = 10;
-    } else if (modelCode === 'v1') {
-      add5h = 12;
-      addWeekly = 9;
-    } else if (modelCode === 'dilo') {
-      add5h = 8;
-      addWeekly = 6;
-    }
-
+    // 2. Direct Update Tabel 'public.user_limits' (Akurat per model)
     const { data: existingRow, error: selectErr } = await supabase
       .from('user_limits')
       .select('*')
@@ -725,8 +750,8 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
       }
     }
 
-    const nextUsed5h = currentUsed5h + add5h;
-    const nextUsedWeekly = currentUsedWeekly + addWeekly;
+    const nextUsed5h = currentUsed5h + rates.add5h;
+    const nextUsedWeekly = currentUsedWeekly + rates.addWeekly;
 
     if (nextUsed5h > 100 || nextUsedWeekly > 100) {
       const remaining5h = Math.max(0, 100 - currentUsed5h);
