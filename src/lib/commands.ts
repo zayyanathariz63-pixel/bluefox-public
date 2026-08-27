@@ -118,6 +118,18 @@ export const TRIGGER_COMMANDS: TriggerCommand[] = [
     hasParameter: false
   },
   {
+    id: 'bluefox-reset',
+    name: '@bluefox reset',
+    category: 'system',
+    categoryLabel: 'System Controller',
+    badge: 'Dev Reset',
+    description: 'Mereset kuota dan batas penggunaan AI ke 0% secara instan (Mode Development & Pengujian).',
+    syntax: '@bluefox reset',
+    example: '@bluefox reset',
+    iconName: 'RotateCcw',
+    hasParameter: false
+  },
+  {
     id: 'bluefox-personalization',
     name: '@bluefox personalization',
     category: 'system',

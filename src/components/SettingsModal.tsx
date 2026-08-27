@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
   Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check,
-  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink
+  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink, RotateCcw
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
@@ -530,10 +530,14 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                           <p className="text-xs text-gray-400">Dihitung berdasarkan model yang digunakan dan waktu real-time</p>
                         </div>
                         <button
-                          onClick={resetUsage}
-                          className="text-xs font-semibold bg-gray-800 text-gray-300 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition"
+                          onClick={() => {
+                            resetUsage();
+                            showToast(lang === 'id' ? 'Kuota dan limit penggunaan berhasil direset ke 0%!' : 'Usage limits successfully reset to 0%!');
+                          }}
+                          className="flex items-center gap-1.5 text-xs font-semibold bg-red-950/70 hover:bg-red-900/90 text-red-300 border border-red-800/60 px-3 py-1.5 rounded-lg transition shadow-sm cursor-pointer"
                         >
-                          Reset Kuota
+                          <RotateCcw size={13} />
+                          <span>Reset Kuota (Dev)</span>
                         </button>
                       </div>
                       

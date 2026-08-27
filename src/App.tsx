@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -23,6 +23,7 @@ import {
   invokeBluefoxProcessor,
   consumeAiLimit,
   getUserLimits,
+  resetUserLimits,
   getModelLimitCode
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
@@ -217,6 +218,18 @@ export default function App() {
     setTimeout(() => {
       setToastMessage(null);
     }, 3500);
+  };
+
+  const handleResetLimits = async () => {
+    setUsageEvents([]);
+    localStorage.setItem('ai_usage_events', '[]');
+    setDbLimits({ used5h: 0, usedWeekly: 0 });
+    if (user?.id) {
+      await resetUserLimits(user.id);
+    }
+    showToast(lang === 'id' ? 'Kuota dan limit penggunaan AI berhasil direset ke 0% (Dev Mode)!' : 'Usage limits successfully reset to 0% (Dev Mode)!');
+    setShowActionToast(lang === 'id' ? 'Limit AI direset ke 0% (Dev Mode)' : 'AI limits reset to 0% (Dev Mode)');
+    setTimeout(() => setShowActionToast(null), 3000);
   };
   const [isReasoningSelectorOpen, setIsReasoningSelectorOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -928,7 +941,18 @@ ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned 
 | **Rolling Limit (5 Jam)** | \`${dbLimits?.used5h ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
 | **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
 | **Custom API Limit** | \`${activeCustomApi ? '🟢 ' + activeCustomApi.name : '⚪ Tidak ada Custom API aktif'}\` | 10 req/menit • 50 req/hari |
-| **Status Sistem** | \`🟢 Operasional Normal\` | Reset kuota otomatis tiap 5 jam |`;
+| **Status Sistem** | \`🟢 Operasional Normal\` | Reset kuota otomatis tiap 5 jam |
+
+_Tip Pengujian: Ketik \`@bluefox reset\` untuk mereset seluruh batas penggunaan AI ke 0%._`;
+        } else if (subCmd.startsWith('reset')) {
+          await handleResetLimits();
+          systemReply = `### 🔄 Kuota & Batas Penggunaan Berhasil Direset (Dev Mode)
+
+- **Rolling Limit (5 Jam):** \`0% terpakai\` (Sisa 100%)
+- **Batas Mingguan (Weekly):** \`0% terpakai\` (Sisa 100%)
+- **Tabel \`user_limits\`:** Berhasil disinkronisasi ulang ke 0%.
+
+Semua model AI telah aktif kembali dan siap digunakan.`;
         } else if (subCmd.startsWith('personalization')) {
           const instructionText = userText.replace(/^@bluefox\s+personalization\s*/i, '').trim();
           if (instructionText) {
@@ -1799,6 +1823,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         )}
       </AnimatePresence>
 
+      {/* Dev Mode Limit Alert Banner */}
+      {isUsageLimitReached && (
+        <div className="bg-red-950/90 border-t border-b border-red-800/80 px-4 py-2.5 flex items-center justify-between gap-3 text-red-200 text-xs sm:text-sm z-20 shadow-lg">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            <span className="font-semibold text-red-100">Batas Kuota Tercapai (100%)</span>
+            <span className="hidden sm:inline text-red-300/80">— Semua model AI sementara dijeda.</span>
+          </div>
+          <button
+            onClick={handleResetLimits}
+            className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold text-xs shadow-md transition-all shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95"
+            title="Reset batas penggunaan AI untuk tahap develop / pengujian"
+          >
+            <RotateCcw size={13} />
+            <span>Reset Limit (Dev)</span>
+          </button>
+        </div>
+      )}
+
       {/* Input Form */}
       <footer className="bg-black border-t border-gray-900 pt-2 shrink-0 relative z-20">
         <ChatInput 
@@ -2511,7 +2554,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         chatSessions={chatSessions} 
         hourlyUsage={usage.hourly}
         weeklyUsage={usage.weekly}
-        resetUsage={() => { setUsageEvents([]); localStorage.setItem('ai_usage_events', '[]'); }}
+        resetUsage={handleResetLimits}
       />
 
       <ConnectorsModal

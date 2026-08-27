@@ -594,6 +594,36 @@ export async function getUserLimits(userId: string) {
   }
 }
 
+export async function resetUserLimits(userId: string) {
+  try {
+    if (!userId) return false;
+    console.log(`🔄 [user_limits] Mereset limit penggunaan untuk user ${userId}`);
+
+    const payload = {
+      user_id: userId,
+      used_5h: 0,
+      reset_5h_at: null,
+      used_weekly: 0,
+      reset_weekly_at: null,
+    };
+
+    const { error } = await supabase
+      .from('user_limits')
+      .upsert(payload, { onConflict: 'user_id' });
+
+    if (error) {
+      console.warn("⚠️ Gagal reset tabel user_limits:", error.message);
+      return false;
+    }
+
+    console.log("✅ Tabel user_limits berhasil direset ke 0%");
+    return true;
+  } catch (err) {
+    console.warn("Exception resetUserLimits:", err);
+    return false;
+  }
+}
+
 export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
   try {
     if (!userId) {
