@@ -1,8 +1,9 @@
 import { SearchSource } from '../types';
+import { supabase, supabaseUrl, supabaseKey } from './supabase';
 
 export interface SearchResultPayload {
   has_sources: boolean;
-  search_engine_used: 'tavily' | 'duckduckgo' | null;
+  search_engine_used: 'tavily' | 'duckduckgo' | string | null;
   sources: SearchSource[];
   contextSnippet: string;
 }
@@ -33,14 +34,19 @@ export function detectSearchIntent(text: string): boolean {
     'info terbaru',
     'informasi terbaru',
     'berita terbaru',
+    'berita terkini',
     'harga terbaru',
     'update terbaru',
     'berita hari ini',
+    'berita dari',
+    'kabar terbaru',
+    'kabar hari ini',
     'jadwal pertandingan',
     'skor pertandingan',
     'kurs rupiah',
     'kurs dollar',
     'cuaca hari ini',
+    'cuaca sekarang',
     'siapa juara',
     'siapa pemenang',
     'kapan rilis',
@@ -58,12 +64,12 @@ export function detectSearchIntent(text: string): boolean {
   // 3. Regular expressions for dynamic facts, years, and real-time questions
   const patterns = [
     /\b(harga|tarif|biaya|promo|diskon)\s+([a-z0-9]+)/i,
-    /\b(berita|kabar|isu|peristiwa)\s+(terkini|terbaru|hari ini|minggu ini)/i,
+    /\b(berita|kabar|isu|peristiwa|kejadian)\s+(terkini|terbaru|hari ini|minggu ini|dari|tentang)/i,
     /\b(apakah|benarkah|beneran)\s+(sudah|sedang|ada|terjadi)/i,
-    /\b(cek|cari|search|browsing)\s+(informasi|data|fakta|spek|spesifikasi)/i,
-    /\b(rilis|launching|peluncuran)\s+(tahun|bulan|terbaru|2024|2025|2026)/i,
-    /\b(presiden|menteri|gubernur|ceo|pemimpin)\s+(sekarang|terbaru|saat ini)/i,
-    /\b(skor|hasil|klasemen|jadwal)\s+(liga|piala|f1|motogp|badminton|esport)/i,
+    /\b(cek|cari|search|browsing)\s+(informasi|data|fakta|spek|spesifikasi|berita)/i,
+    /\b(rilis|launching|peluncuran)\s+(tahun|bulan|terbaru|2024|2025|2026|2027)/i,
+    /\b(presiden|menteri|gubernur|ceo|pemimpin|juara|skor)\s+(sekarang|terbaru|saat ini|hari ini)/i,
+    /\b(skor|hasil|klasemen|jadwal)\s+(liga|piala|f1|motogp|badminton|esport|timnas)/i,
   ];
 
   return patterns.some(pattern => pattern.test(lower));
@@ -78,12 +84,107 @@ export function cleanSearchQuery(rawText: string): string {
     .replace(/^@(search|web)\s*/i, '')
     .replace(/^search:\s*/i, '')
     .replace(/^\/search\s*/i, '')
-    .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari)\s+/i, '')
+    .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari|apa saja|apa)\s+/i, '')
     .trim();
 }
 
 /**
- * 3.1 Primary Engine: Tavily AI Search (Timeout strictly 4000ms / 4s per PRD [5])
+ * [ 3 ] Pemanggilan Supabase Edge Function 'bluefox-search'
+ * Endpoint: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search
+ */
+export async function searchWithSupabaseEdgeFunction(
+  query: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; sources: SearchSource[]; engineUsed?: string; error?: string }> {
+  const cleanQ = cleanSearchQuery(query);
+  if (!cleanQ) return { success: false, sources: [] };
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
+
+    const onAbort = () => controller.abort();
+    if (signal) {
+      signal.addEventListener('abort', onAbort);
+    }
+
+    console.log(`🌐 [Supabase Edge Function] Memanggil bluefox-search untuk: "${cleanQ}"`);
+
+    // 1. Coba melalui supabase.functions.invoke()
+    try {
+      const invokeRes = await supabase.functions.invoke('bluefox-search', {
+        body: { query: cleanQ },
+      });
+
+      clearTimeout(timeoutId);
+      if (signal) signal.removeEventListener('abort', onAbort);
+
+      if (invokeRes.data && !invokeRes.error) {
+        const payload = invokeRes.data;
+        const rawSources = payload.sources || (Array.isArray(payload) ? payload : (payload.data?.sources || payload.results || []));
+        
+        if (Array.isArray(rawSources) && rawSources.length > 0) {
+          const sources: SearchSource[] = rawSources.map((item: any, idx: number) => ({
+            id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
+            title: item.title || `Sumber Web ${idx + 1}`,
+            url: item.url || 'https://google.com',
+            snippet: (item.snippet || item.content || item.raw_content || '').trim().slice(0, 300),
+          }));
+
+          const engineUsed = payload.search_engine_used || payload.engine || 'tavily';
+          console.log(`✅ [bluefox-search via SDK] Berhasil mendapatkan ${sources.length} sumber (Engine: ${engineUsed})`);
+          return { success: true, sources, engineUsed };
+        }
+      }
+    } catch (invokeErr: any) {
+      console.warn("⚠️ supabase.functions.invoke error, mencoba direct fetch fallback:", invokeErr?.message);
+    }
+
+    // 2. Direct HTTPS fetch ke https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search
+    const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search';
+    const anonKey = supabaseKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy';
+
+    const directRes = await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ query: cleanQ }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener('abort', onAbort);
+
+    if (directRes.ok) {
+      const data = await directRes.json();
+      const rawSources = data.sources || (Array.isArray(data) ? data : (data.data?.sources || data.results || []));
+
+      if (Array.isArray(rawSources) && rawSources.length > 0) {
+        const sources: SearchSource[] = rawSources.map((item: any, idx: number) => ({
+          id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
+          title: item.title || `Sumber Web ${idx + 1}`,
+          url: item.url || 'https://google.com',
+          snippet: (item.snippet || item.content || item.raw_content || '').trim().slice(0, 300),
+        }));
+
+        const engineUsed = data.search_engine_used || data.engine || 'tavily';
+        console.log(`✅ [bluefox-search direct fetch] Berhasil mendapatkan ${sources.length} sumber (Engine: ${engineUsed})`);
+        return { success: true, sources, engineUsed };
+      }
+    }
+
+    return { success: false, sources: [], error: `bluefox-search returned HTTP ${directRes.status}` };
+  } catch (err: any) {
+    console.warn("⚠️ [bluefox-search] Gagal:", err?.message || err);
+    return { success: false, sources: [], error: err?.message || 'Gagal memanggil bluefox-search' };
+  }
+}
+
+/**
+ * 3.1 Primary Direct Engine: Tavily AI Search (Timeout strictly 4000ms / 4s per PRD [5])
  */
 export async function searchWithTavily(
   query: string, 
@@ -263,6 +364,7 @@ export async function searchWithDuckDuckGo(
 
 /**
  * 2.2 Dual-Engine Fallback Pipeline Execution
+ * Alur: Supabase Edge Function (bluefox-search) -> Direct Tavily AI -> DuckDuckGo Fallback
  */
 export async function executeDualEngineSearch(
   rawQuery: string,
@@ -283,14 +385,30 @@ export async function executeDualEngineSearch(
   }
 
   const cleanQ = cleanSearchQuery(rawQuery);
-  console.log(`🔍 [Dual-Engine Search] Memulai pencarian web untuk: "${cleanQ}"`);
+  console.log(`🔍 [Web Search] Memulai pencarian web untuk: "${cleanQ}"`);
 
-  // Step 1: Exec Primary Engine (Tavily AI)
-  console.log('⚡ [Dual-Engine Search] Mencoba Primary Engine: Tavily AI...');
+  // Step 1: Panggil Supabase Edge Function 'bluefox-search' (User Edge Engine)
+  console.log('⚡ [Web Search] Mencoba Edge Function: bluefox-search...');
+  const edgeSearchResult = await searchWithSupabaseEdgeFunction(cleanQ, options?.signal);
+
+  if (edgeSearchResult.success && edgeSearchResult.sources.length > 0) {
+    console.log(`✅ [Web Search] bluefox-search Sukses (${edgeSearchResult.sources.length} sumber ditemukan)`);
+    const engineType = (edgeSearchResult.engineUsed?.toLowerCase().includes('duck') ? 'duckduckgo' : 'tavily') as 'tavily' | 'duckduckgo';
+    const contextSnippet = formatSearchContext(edgeSearchResult.sources, engineType);
+    return {
+      has_sources: true,
+      search_engine_used: edgeSearchResult.engineUsed || 'tavily',
+      sources: edgeSearchResult.sources,
+      contextSnippet,
+    };
+  }
+
+  // Step 2: Fallback Direct Primary Engine (Tavily AI)
+  console.log('⚡ [Web Search] Mencoba Direct Tavily AI...');
   const tavilyResult = await searchWithTavily(cleanQ, options?.tavilyApiKey, options?.signal);
 
   if (tavilyResult.success && tavilyResult.sources.length > 0) {
-    console.log(`✅ [Dual-Engine Search] Tavily AI Sukses (${tavilyResult.sources.length} sumber ditemukan)`);
+    console.log(`✅ [Web Search] Direct Tavily AI Sukses (${tavilyResult.sources.length} sumber ditemukan)`);
     const contextSnippet = formatSearchContext(tavilyResult.sources, 'tavily');
     return {
       has_sources: true,
@@ -300,12 +418,12 @@ export async function executeDualEngineSearch(
     };
   }
 
-  // Step 2: Fallback Engine (DuckDuckGo)
-  console.warn(`⚠️ [Dual-Engine Search] Tavily AI gagal (${tavilyResult.error || 'No results'}), mengaktifkan Fallback Engine: DuckDuckGo...`);
+  // Step 3: Fallback Engine (DuckDuckGo)
+  console.warn(`⚠️ [Web Search] Edge & Tavily tidak menghasilkan data, mengaktifkan Fallback: DuckDuckGo...`);
   const ddgResult = await searchWithDuckDuckGo(cleanQ, options?.signal);
 
   if (ddgResult.success && ddgResult.sources.length > 0) {
-    console.log(`✅ [Dual-Engine Search] DuckDuckGo Fallback Sukses (${ddgResult.sources.length} sumber ditemukan)`);
+    console.log(`✅ [Web Search] DuckDuckGo Fallback Sukses (${ddgResult.sources.length} sumber ditemukan)`);
     const contextSnippet = formatSearchContext(ddgResult.sources, 'duckduckgo');
     return {
       has_sources: true,
@@ -315,7 +433,7 @@ export async function executeDualEngineSearch(
     };
   }
 
-  console.warn('❌ [Dual-Engine Search] Kedua mesin pencari web tidak menghasilkan data.');
+  console.warn('❌ [Web Search] Semua mesin pencari web tidak menghasilkan data.');
   return {
     has_sources: false,
     search_engine_used: null,
@@ -341,8 +459,9 @@ export function sanitizeHtml(str: string): string {
  * Format search sources into prompt injection context string
  * PRD [5]: Ringkasan teks (snippet) yang dikirim ke LLM dipotong maksimal 200 karakter per sumber
  */
-export function formatSearchContext(sources: SearchSource[], engine: 'tavily' | 'duckduckgo'): string {
-  const engineLabel = engine === 'tavily' ? 'Tavily AI Search' : 'DuckDuckGo Web Search';
+export function formatSearchContext(sources: SearchSource[], engine: 'tavily' | 'duckduckgo' | string): string {
+  const isDdg = engine.toLowerCase().includes('duck');
+  const engineLabel = isDdg ? 'DuckDuckGo Web Search' : 'Tavily AI Search';
   const sourceBlocks = sources
     .map(
       (s, i) => {
