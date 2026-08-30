@@ -1,9 +1,11 @@
 export interface MediaAttachment {
+  id?: string;
   url: string;
-  type: 'image' | 'video';
+  type: 'image' | 'video' | 'audio' | 'document' | 'file';
   name: string;
   size?: number;
   duration?: number;
+  textContent?: string;
 }
 
 export interface SearchSource {

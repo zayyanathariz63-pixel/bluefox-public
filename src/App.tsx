@@ -11,6 +11,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { IntegrationsPage } from './components/IntegrationsPage';
+import { MediaScreenViewer } from './components/MediaScreenViewer';
 import { useLanguage } from './lib/i18n';
 import { 
   supabase, 
@@ -76,9 +77,55 @@ export type SupportedModel = 'agnes-2.0-flash' | 'laguna-s-2.1' | 'tencent-hy3-f
 
 export default function App() {
   const { lang, changeLanguage, t } = useLanguage();
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  
+  // Ambil sesi obrolan yang tersimpan seketika dari localStorage
+  const [chatSessions, setChatSessions] = useState<ChatSession[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('tmpa_chat_sessions');
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.error("Failed to parse sessions", e);
+      }
+    }
+    return [];
+  });
+
+  // Tentukan session id yang aktif seketika
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const lastId = localStorage.getItem('tmpa_last_active_session_id');
+      if (lastId) return lastId;
+      try {
+        const saved = localStorage.getItem('tmpa_chat_sessions');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed.length > 0) return parsed[0].id;
+        }
+      } catch {}
+    }
+    return null;
+  });
+
+  // Tentukan pesan awal seketika sesuai session yang aktif
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const lastId = localStorage.getItem('tmpa_last_active_session_id');
+        const saved = localStorage.getItem('tmpa_chat_sessions');
+        if (saved) {
+          const sessions: ChatSession[] = JSON.parse(saved);
+          const active = sessions.find(s => s.id === lastId) || sessions[0];
+          if (active && active.messages) return active.messages;
+        }
+      } catch {}
+    }
+    return [];
+  });
+
+  // State untuk Media Screen Viewer Fullscreen (/screen-:id)
+  const [fullscreenMedia, setFullscreenMedia] = useState<MediaAttachment | null>(null);
+
   const [selectedModel, setSelectedModel] = useState<SupportedModel>('agnes-2.0-flash');
   const [isVisionActive, setIsVisionActive] = useState<boolean>(() => {
     try {
@@ -271,8 +318,28 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
-  const [appState, setAppState] = useState<'landing' | 'login' | 'chat' | 'verify' | 'integrations'>('landing');
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const hasExistingSession = localStorage.getItem('tmpa_chat_sessions') || localStorage.getItem('tmpa_last_active_session_id') || localStorage.getItem('tmpa_user_profile');
+      const isSpecialRoute = window.location.pathname.startsWith('/screen-') || window.location.pathname.startsWith('/verify') || window.location.pathname.startsWith('/integrations');
+      if (hasExistingSession || isSpecialRoute) return false;
+    }
+    return true;
+  });
+
+  const [appState, setAppState] = useState<'landing' | 'login' | 'chat' | 'verify' | 'integrations'>(() => {
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      if (currentPath.startsWith('/verify')) return 'verify';
+      if (currentPath.startsWith('/settings/integrations') || currentPath.startsWith('/integrations')) return 'integrations';
+      const lastSessionId = localStorage.getItem('tmpa_last_active_session_id');
+      const localSessions = localStorage.getItem('tmpa_chat_sessions');
+      if (lastSessionId || (localSessions && localSessions !== '[]') || currentPath.startsWith('/screen-')) {
+        return 'chat';
+      }
+    }
+    return 'landing';
+  });
   const [user, setUser] = useState<any>(null);
   const [userTier, setUserTier] = useState<string>('Loading...');
   const [authChecking, setAuthChecking] = useState(true);
@@ -658,12 +725,24 @@ export default function App() {
           console.warn("Gagal mendapatkan sesi lokal:", localSessErr);
         }
 
-        // 5. TIDAK ADA SESI: TAMPILKAN LANDING PAGE (JANGAN LANGSUNG REDIRECT)
-        console.log("Tidak ada sesi terdeteksi. Menampilkan Landing Page.");
-        setAppState('landing');
+        // 5. TIDAK ADA SESI: JIKA USER SUDAH ADA SESI LOKAL, TETAP DI CHAT TANPA LOADING
+        const hasLocalSessions = localStorage.getItem('tmpa_chat_sessions');
+        const lastSessionId = localStorage.getItem('tmpa_last_active_session_id');
+        if ((hasLocalSessions && hasLocalSessions !== '[]') || lastSessionId) {
+          console.log("Sesi lokal pengguna ditemukan. Mempertahankan ruang chat.");
+          setAppState('chat');
+        } else {
+          console.log("Tidak ada sesi terdeteksi. Menampilkan Landing Page.");
+          setAppState('landing');
+        }
       } catch (err: any) {
         console.error("Gagal verifikasi sesi utama:", err);
-        setAppState('landing');
+        const hasLocalSessions = localStorage.getItem('tmpa_chat_sessions');
+        if (hasLocalSessions && hasLocalSessions !== '[]') {
+          setAppState('chat');
+        } else {
+          setAppState('landing');
+        }
       } finally {
         setAuthChecking(false);
       }
@@ -852,6 +931,9 @@ export default function App() {
     if (currentSessionId === session.id) {
       setMessages([]);
       setCurrentSessionId(null);
+      try {
+        localStorage.removeItem('tmpa_last_active_session_id');
+      } catch {}
     }
     setShowActionToast(t.chatDeleted);
     setTimeout(() => setShowActionToast(null), 2500);
@@ -880,6 +962,9 @@ export default function App() {
   const startNewChat = () => {
     setMessages([]);
     setCurrentSessionId(null);
+    try {
+      localStorage.removeItem('tmpa_last_active_session_id');
+    } catch {}
     setIsSidebarOpen(false);
   };
 
@@ -889,9 +974,67 @@ export default function App() {
       setMessages(session.messages);
       setSelectedModel(session.model as any);
       setCurrentSessionId(session.id);
+      try {
+        localStorage.setItem('tmpa_last_active_session_id', session.id);
+      } catch {}
     }
     setIsSidebarOpen(false);
   };
+
+  // Handler untuk membuka halaman media fullscreen (/screen-:id)
+  const handleOpenMediaScreen = (mediaItem: MediaAttachment) => {
+    const mediaId = mediaItem.id || 'media-' + Math.random().toString(36).substring(2, 9);
+    const resolvedMedia: MediaAttachment = { ...mediaItem, id: mediaId };
+    try {
+      localStorage.setItem(`tmpa_media_${mediaId}`, JSON.stringify(resolvedMedia));
+    } catch {}
+    if (typeof window !== 'undefined') {
+      window.history.pushState({ screenId: mediaId }, '', `/screen-${mediaId}`);
+    }
+    setFullscreenMedia(resolvedMedia);
+  };
+
+  const handleCloseMediaScreen = () => {
+    setFullscreenMedia(null);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/screen-')) {
+      window.history.pushState(null, '', '/');
+    }
+  };
+
+  // Deteksi rute URL /screen-:id secara langsung (saat dibuka / direfresh)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = () => {
+      const path = window.location.pathname;
+      if (path.startsWith('/screen-')) {
+        const sId = path.replace(/^\/screen-/, '');
+        try {
+          const cached = localStorage.getItem(`tmpa_media_${sId}`);
+          if (cached) {
+            setFullscreenMedia(JSON.parse(cached));
+            return;
+          }
+        } catch {}
+
+        // Cari di seluruh riwayat sesi
+        const found = chatSessions
+          .flatMap(s => s.messages)
+          .flatMap(m => (m.media ? (Array.isArray(m.media) ? m.media : [m.media]) : []))
+          .find(m => m.id === sId || (m.url && m.url.includes(sId)));
+
+        if (found) {
+          setFullscreenMedia(found);
+        }
+      } else {
+        setFullscreenMedia(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    handlePopState();
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [chatSessions]);
 
   const handleEditMessage = (id: string, newText: string) => {
     const editIndex = messages.findIndex(m => m.id === id);
@@ -1913,7 +2056,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         ) : (
           <div className="pb-4">
             {messages.map(msg => (
-              <ChatMessage key={msg.id} message={msg} onEdit={handleEditMessage} onStop={isLoading ? stopGeneration : undefined} />
+              <ChatMessage 
+                key={msg.id} 
+                message={msg} 
+                onEdit={handleEditMessage} 
+                onStop={isLoading ? stopGeneration : undefined} 
+                onOpenMediaScreen={handleOpenMediaScreen}
+              />
             ))}
             {isLoading && (
               <motion.div 
@@ -2698,6 +2847,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           setAppState('integrations');
           setIsConnectorsModalOpen(false);
         }}
+      />
+
+      <MediaScreenViewer 
+        media={fullscreenMedia} 
+        onClose={handleCloseMediaScreen} 
       />
     </div>
       )}

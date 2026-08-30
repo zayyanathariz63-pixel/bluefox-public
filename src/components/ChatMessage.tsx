@@ -2,8 +2,8 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Bot, User, Pencil, Power, Copy, Check, Globe, Sparkles, Search, ExternalLink, Zap, AlertCircle } from 'lucide-react';
-import { Message } from '../types';
+import { Bot, User, Pencil, Power, Copy, Check, Globe, Sparkles, Search, ExternalLink, Zap, AlertCircle, Maximize2, Music, FileText, Play } from 'lucide-react';
+import { Message, MediaAttachment } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { SourcesBottomSheet } from './SourcesBottomSheet';
@@ -13,6 +13,7 @@ interface ChatMessageProps {
   message: Message;
   onEdit?: (id: string, newText: string) => void;
   onStop?: () => void;
+  onOpenMediaScreen?: (media: MediaAttachment) => void;
 }
 
 const CodeBlock = ({ className, children, ...props }: any) => {
@@ -75,7 +76,7 @@ const CustomBlockquote = ({ children, ...props }: any) => {
   );
 };
 
-export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
+export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: ChatMessageProps) {
   const { lang, t } = useLanguage();
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
@@ -152,31 +153,94 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
           
           {message.media && (
             <div className="mb-3 flex items-center justify-start gap-2.5 overflow-x-auto py-1 max-w-full flex-nowrap">
-              {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => (
-                <div key={idx} className="relative inline-block max-w-[260px] sm:max-w-xs shrink-0 rounded-xl overflow-hidden border border-slate-200 bg-white shadow-sm">
-                  {item.type === 'image' ? (
-                    <img
-                      src={item.url}
-                      alt={item.name || 'Uploaded file'}
-                      className="max-h-48 sm:max-h-56 w-auto object-contain rounded-t-xl mx-auto"
-                    />
-                  ) : (
-                    <video
-                      src={item.url}
-                      controls
-                      className="max-h-48 sm:max-h-56 w-full rounded-t-xl bg-black"
-                    />
-                  )}
-                  <div className="text-[11px] text-slate-500 px-2.5 py-1 bg-white border-t border-slate-100 flex items-center justify-between gap-2">
-                    <span className="truncate max-w-[180px]">{item.name || (item.type === 'video' ? 'Video' : 'Photo')}</span>
-                    {item.type === 'video' && item.duration !== undefined && (
-                      <span className="text-blue-600 font-mono text-[10px] shrink-0 font-medium">
-                        {Math.round(item.duration)}s
-                      </span>
+              {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => {
+                const isImg = item.type === 'image';
+                const isVid = item.type === 'video';
+                const isAud = item.type === 'audio';
+                const isDoc = item.type === 'document' || item.type === 'file';
+
+                return (
+                  <div 
+                    key={idx} 
+                    onClick={() => onOpenMediaScreen && onOpenMediaScreen(item)}
+                    className="relative group inline-block max-w-[260px] sm:max-w-xs shrink-0 rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
+                  >
+                    {isImg && (
+                      <div className="relative overflow-hidden bg-slate-100">
+                        <img
+                          src={item.url}
+                          alt={item.name || 'Uploaded file'}
+                          className="max-h-48 sm:max-h-56 w-auto object-contain rounded-t-xl mx-auto group-hover:scale-102 transition-transform duration-200"
+                        />
+                        <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs">
+                          <Maximize2 size={13} />
+                        </div>
+                      </div>
                     )}
+
+                    {isVid && (
+                      <div className="relative bg-black rounded-t-xl overflow-hidden">
+                        <video
+                          src={item.url}
+                          controls
+                          className="max-h-48 sm:max-h-56 w-full rounded-t-xl bg-black"
+                        />
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onOpenMediaScreen) onOpenMediaScreen(item);
+                          }}
+                          className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 text-white hover:bg-blue-600 transition-all backdrop-blur-xs cursor-pointer"
+                          title="Layar Penuh"
+                        >
+                          <Maximize2 size={13} />
+                        </button>
+                      </div>
+                    )}
+
+                    {isAud && (
+                      <div className="p-3 bg-slate-50 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                          <Music size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{item.name || 'Audio'}</p>
+                          <p className="text-[10px] text-slate-500">{item.duration ? `${Math.round(item.duration)}s` : 'Audio'}</p>
+                        </div>
+                        <div className="p-1 text-slate-400 group-hover:text-blue-600">
+                          <Maximize2 size={14} />
+                        </div>
+                      </div>
+                    )}
+
+                    {isDoc && (
+                      <div className="p-3 bg-slate-50 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                          <FileText size={18} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{item.name || 'Dokumen'}</p>
+                          <p className="text-[10px] text-slate-500 font-mono">
+                            {item.textContent ? `${item.textContent.length} karakter` : `${item.size ? (item.size/1024).toFixed(0) + ' KB' : 'Teks'}`}
+                          </p>
+                        </div>
+                        <div className="p-1 text-slate-400 group-hover:text-blue-600">
+                          <Maximize2 size={14} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="text-[11px] text-slate-500 px-2.5 py-1.5 bg-white border-t border-slate-100 flex items-center justify-between gap-2">
+                      <span className="truncate max-w-[170px] font-medium">{item.name || (isVid ? 'Video' : isAud ? 'Audio' : isDoc ? 'Dokumen' : 'Foto')}</span>
+                      {isVid && item.duration !== undefined && (
+                        <span className="text-blue-600 font-mono text-[10px] shrink-0 font-medium">
+                          {Math.round(item.duration)}s
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

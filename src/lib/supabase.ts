@@ -343,17 +343,28 @@ export async function invokeBluefoxProcessor(
 
     const primaryImageUrl = Array.isArray(imageUrl) ? (imageUrl[0] || null) : (imageUrl || null);
     const mediaUrls = Array.isArray(imageUrl) ? imageUrl : (imageUrl ? [imageUrl] : []);
+    const videoUrls = mediaUrls.filter(u => typeof u === 'string' && (u.startsWith('data:video') || u.includes('.mp4') || u.includes('.webm') || u.includes('.mov')));
+    const primaryVideoUrl = videoUrls.length > 0 ? videoUrls[0] : null;
 
     const requestBody: Record<string, any> = {
       message: message.trim(),
       prompt: message.trim(),
+      input: message.trim(),
+      query: message.trim(),
       conversation_id: cleanConvId,
+      conversationId: cleanConvId,
+      sessionId: cleanConvId,
       model: finalModel,
       is_vision: Boolean(isVisionActive),
       vision: Boolean(isVisionActive),
       image_url: primaryImageUrl,
       images: mediaUrls,
       media_urls: mediaUrls,
+      video_url: primaryVideoUrl,
+      videos: videoUrls,
+      media: mediaUrls,
+      file_urls: mediaUrls,
+      attachments: mediaUrls,
     };
 
     if (activeCustomApi) {
@@ -444,20 +455,37 @@ export async function invokeBluefoxProcessor(
           };
         }
 
-        const replyText = resData?.reply ?? 
+        let replyText = resData?.reply ?? 
           resData?.text ?? 
-          resData?.message ?? 
+          (typeof resData?.message === 'string' ? resData?.message : resData?.message?.content ?? resData?.message?.text) ??
           resData?.response ?? 
           resData?.content ?? 
           resData?.output ?? 
           resData?.result ?? 
+          resData?.answer ??
+          resData?.summary ??
+          resData?.description ??
+          resData?.video_analysis ??
+          resData?.output_text ??
+          resData?.generated_text ??
           resData?.data?.reply ?? 
           resData?.data?.text ?? 
           resData?.data?.content ?? 
+          resData?.data?.response ??
+          resData?.data?.result ??
           resData?.data?.output ?? 
           resData?.candidates?.[0]?.content?.parts?.[0]?.text ?? 
+          resData?.candidates?.[0]?.text ??
           resData?.choices?.[0]?.message?.content ?? 
+          resData?.choices?.[0]?.text ??
+          resData?.choices?.[0]?.delta?.content ??
           (typeof resData === 'string' ? resData : '');
+
+        if (typeof replyText !== 'string' && replyText) {
+          try {
+            replyText = JSON.stringify(replyText);
+          } catch {}
+        }
 
         const nextConvId = resData?.conversation_id || resData?.conversationId || cleanConvId;
 

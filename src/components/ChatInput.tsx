@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Upload, X, Image as ImageIcon, Video as VideoIcon, Eye, AlertTriangle, Clock, Film } from 'lucide-react';
+import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Upload, X, Image as ImageIcon, Video as VideoIcon, Eye, AlertTriangle, Clock, Film, Music, FileText } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
@@ -190,7 +190,7 @@ export function ChatInput({
     }
   };
 
-  // Handle Multi-file upload dengan validasi maksimal 5 file & video maksimal 1 menit
+  // Handle Multi-file upload dengan validasi maksimal 5 file, video 1 mnt, audio 2 mnt, dan teks 10.000 karakter
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -202,7 +202,7 @@ export function ChatInput({
       setErrorModal({
         isOpen: true,
         title: "Batas Maksimal 5 File Terlampaui",
-        message: "Anda hanya dapat mengunggah maksimal 5 file foto atau video secara bersamaan.",
+        message: "Anda hanya dapat mengunggah maksimal 5 file (foto, video, audio, atau dokumen) secara bersamaan.",
         maxLimitInfo: `Saat ini: ${attachedMediaList.length} terunggah, mencoba menambah: ${fileArray.length} file.`
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -212,22 +212,88 @@ export function ChatInput({
     setIsProcessingMedia(true);
     const newAttachments: MediaAttachment[] = [];
 
-    for (const file of fileArray) {
-      const isImage = file.type.startsWith('image/');
-      const isVideo = file.type.startsWith('video/');
+    const heavy3DOrArchiveExts = ['.glb', '.gltf', '.obj', '.fbx', '.stl', '.blend', '.dae', '.3ds', '.max', '.step', '.iges', '.zip', '.rar', '.7z', '.iso', '.exe', '.dmg', '.bin', '.tar', '.gz'];
 
-      if (!isImage && !isVideo) {
+    for (const file of fileArray) {
+      const lowerName = file.name.toLowerCase();
+      const is3DOrArchive = heavy3DOrArchiveExts.some(ext => lowerName.endsWith(ext));
+
+      if (is3DOrArchive) {
         setErrorModal({
           isOpen: true,
           title: "Format File Tidak Didukung",
-          message: `File "${file.name}" bukan format gambar atau video yang didukung. Harap pilih file JPG, PNG, WEBP, MP4, atau MOV.`,
+          message: `Format file 3D dan arsip (${file.name}) tidak didukung. Harap unggah foto, video, audio, atau dokumen teks.`,
           fileName: file.name
         });
         continue;
       }
 
-      if (isVideo) {
-        // Cek durasi video: Maksimal 1 menit (60 detik)
+      const isImage = file.type.startsWith('image/');
+      const isVideo = file.type.startsWith('video/');
+      const isAudio = file.type.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.aac', '.flac'].some(ext => lowerName.endsWith(ext));
+      const isTextOrDoc = file.type.startsWith('text/') || ['.txt', '.csv', '.json', '.md', '.html', '.css', '.js', '.ts', '.tsx', '.py', '.java', '.c', '.cpp', '.xml', '.yaml', '.yml', '.sql', '.log', '.pdf', '.docx', '.doc'].some(ext => lowerName.endsWith(ext));
+
+      const fileId = `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+      // 1. Audio check: maksimal 2 menit (120 detik)
+      if (isAudio) {
+        try {
+          const duration = await new Promise<number>((resolve, reject) => {
+            const audio = document.createElement('audio');
+            audio.preload = 'metadata';
+            const objectUrl = URL.createObjectURL(file);
+            
+            audio.onloadedmetadata = () => {
+              URL.revokeObjectURL(objectUrl);
+              resolve(audio.duration);
+            };
+            
+            audio.onerror = () => {
+              URL.revokeObjectURL(objectUrl);
+              reject(new Error("Gagal membaca durasi audio."));
+            };
+            
+            audio.src = objectUrl;
+          });
+
+          if (duration > 120) {
+            setErrorModal({
+              isOpen: true,
+              title: "Durasi Audio Melebihi Batas (Maks. 2 Menit)",
+              message: `File audio "${file.name}" berdurasi ${Math.round(duration)} detik. Sistem membatasi durasi audio maksimal 2 menit (120 detik).`,
+              fileName: file.name,
+              durationInfo: `Durasi audio: ${Math.round(duration)} detik • Batas: 120 detik`
+            });
+            continue;
+          }
+
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          newAttachments.push({
+            id: fileId,
+            url: dataUrl,
+            type: 'audio',
+            name: file.name,
+            size: file.size,
+            duration: duration,
+          });
+        } catch (err: any) {
+          setErrorModal({
+            isOpen: true,
+            title: "Gagal Membaca File Audio",
+            message: `Gagal memproses metadata file audio "${file.name}". Pastikan format audio didukung oleh browser Anda.`,
+            fileName: file.name
+          });
+          continue;
+        }
+      } 
+      // 2. Video check: maksimal 1 menit (60 detik)
+      else if (isVideo) {
         try {
           const duration = await new Promise<number>((resolve, reject) => {
             const video = document.createElement('video');
@@ -266,6 +332,7 @@ export function ChatInput({
           });
 
           newAttachments.push({
+            id: fileId,
             url: dataUrl,
             type: 'video',
             name: file.name,
@@ -281,8 +348,60 @@ export function ChatInput({
           });
           continue;
         }
-      } else {
-        // Foto / Gambar
+      } 
+      // 3. Document & Text file check: maksimal 10.000 karakter
+      else if (isTextOrDoc) {
+        try {
+          let textContent = '';
+          try {
+            textContent = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsText(file);
+            });
+          } catch {
+            textContent = `[File Dokumen: ${file.name}]`;
+          }
+
+          if (textContent && textContent.length > 10000) {
+            setErrorModal({
+              isOpen: true,
+              title: "Isi File Terlalu Panjang (Maks. 10.000 Huruf)",
+              message: `File "${file.name}" memiliki ${textContent.length.toLocaleString()} karakter (melebihi batas maksimal 10.000 karakter). Harap gunakan dokumen dengan teks yang lebih ringkas.`,
+              fileName: file.name,
+              maxLimitInfo: `Total karakter: ${textContent.length.toLocaleString()} • Batas: 10.000 karakter`
+            });
+            continue;
+          }
+
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+
+          newAttachments.push({
+            id: fileId,
+            url: dataUrl,
+            type: 'document',
+            name: file.name,
+            size: file.size,
+            textContent: textContent,
+          });
+        } catch (err: any) {
+          setErrorModal({
+            isOpen: true,
+            title: "Gagal Membaca Dokumen",
+            message: `Gagal membaca isi file "${file.name}".`,
+            fileName: file.name
+          });
+          continue;
+        }
+      }
+      // 4. Foto / Gambar
+      else if (isImage) {
         try {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -292,6 +411,7 @@ export function ChatInput({
           });
 
           newAttachments.push({
+            id: fileId,
             url: dataUrl,
             type: 'image',
             name: file.name,
@@ -306,13 +426,21 @@ export function ChatInput({
           });
           continue;
         }
+      } else {
+        setErrorModal({
+          isOpen: true,
+          title: "Format File Tidak Didukung",
+          message: `File "${file.name}" tidak didukung. Harap pilih foto, video, audio, atau dokumen teks.`,
+          fileName: file.name
+        });
       }
     }
 
     if (newAttachments.length > 0) {
       setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 5));
-      // Otomatis aktifkan mode Vision
-      if (onAutoEnableVision) {
+      // Otomatis aktifkan mode Vision jika ada foto/video
+      const hasVisionMedia = newAttachments.some(a => a.type === 'image' || a.type === 'video');
+      if (hasVisionMedia && onAutoEnableVision) {
         onAutoEnableVision();
       }
     }
@@ -452,12 +580,12 @@ export function ChatInput({
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6 pt-1 select-none relative">
-      {/* Hidden file input untuk multi-upload foto & video */}
+      {/* Hidden file input untuk multi-upload foto, video, audio, dan dokumen */}
       <input 
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,video/*"
+        accept="image/*,video/*,audio/*,.txt,.pdf,.docx,.doc,.csv,.json,.md,.html,.css,.js,.ts,.tsx,.py,.java,.c,.cpp,.xml,.yaml,.yml,.sql,.log,text/*,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         onChange={handleFileChange}
         className="hidden"
       />
@@ -549,7 +677,7 @@ export function ChatInput({
               transition={{ duration: 0.15 }}
               className="absolute bottom-full left-0 mb-3 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col backdrop-blur-xl text-slate-900"
             >
-              {/* Opsi 1: Upload Foto & Video */}
+              {/* Opsi 1: Upload File Lengkap (Foto, Video, Audio, Dokumen) */}
               <div className="p-2 border-b border-slate-100 bg-slate-50/70">
                 <button
                   type="button"
@@ -571,15 +699,15 @@ export function ChatInput({
                     </div>
                     <div className="min-w-0">
                       <div className="text-xs font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
-                        Upload Foto & Video
+                        Pilih File dari Perangkat
                       </div>
                       <div className="text-[10px] text-slate-500 truncate">
-                        Maks 5 file • Video maks 1 mnt
+                        Foto, Video, Audio, Dokumen
                       </div>
                     </div>
                   </div>
                   <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-full shrink-0">
-                    Vision
+                    Multi-Format
                   </span>
                 </button>
               </div>
@@ -670,48 +798,73 @@ export function ChatInput({
 
               {/* Container Horizontal Scroll ke Kiri */}
               <div className="flex items-center justify-start gap-2 overflow-x-auto py-1 px-0.5 flex-nowrap scroll-smooth scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
-                {attachedMediaList.map((item, index) => (
-                  <div
-                    key={index}
-                    className="relative group flex items-center gap-2 p-1.5 pr-2 rounded-xl bg-slate-50 border border-slate-200 w-[190px] sm:w-[210px] shrink-0 shadow-xs"
-                  >
-                    <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-slate-200 flex items-center justify-center">
-                      {item.type === 'image' ? (
-                        <img src={item.url} alt="Thumbnail" className="w-full h-full object-cover" />
-                      ) : (
-                        <video src={item.url} className="w-full h-full object-cover" />
-                      )}
-                      <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
-                        {item.type === 'image' ? (
-                          <ImageIcon size={12} className="text-white drop-shadow" />
-                        ) : (
-                          <VideoIcon size={12} className="text-cyan-300 drop-shadow" />
+                {attachedMediaList.map((item, index) => {
+                  const isImg = item.type === 'image';
+                  const isVid = item.type === 'video';
+                  const isAud = item.type === 'audio';
+                  const isDoc = item.type === 'document' || item.type === 'file';
+
+                  return (
+                    <div
+                      key={index}
+                      className="relative group flex items-center gap-2 p-1.5 pr-2 rounded-xl bg-slate-50 border border-slate-200 w-[190px] sm:w-[210px] shrink-0 shadow-xs"
+                    >
+                      <div className="relative w-9 h-9 rounded-lg overflow-hidden bg-slate-200 shrink-0 border border-slate-200 flex items-center justify-center">
+                        {isImg && (
+                          <>
+                            <img src={item.url} alt="Thumbnail" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                              <ImageIcon size={12} className="text-white drop-shadow" />
+                            </div>
+                          </>
+                        )}
+                        {isVid && (
+                          <>
+                            <video src={item.url} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/20 flex items-center justify-center pointer-events-none">
+                              <VideoIcon size={12} className="text-cyan-300 drop-shadow" />
+                            </div>
+                          </>
+                        )}
+                        {isAud && (
+                          <div className="w-full h-full bg-blue-100 flex items-center justify-center text-blue-600">
+                            <Music size={15} />
+                          </div>
+                        )}
+                        {isDoc && (
+                          <div className="w-full h-full bg-amber-100 flex items-center justify-center text-amber-700">
+                            <FileText size={15} />
+                          </div>
                         )}
                       </div>
-                    </div>
-                    
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="text-xs text-slate-800 font-medium truncate">
-                        {item.name}
-                      </span>
-                      <span className="text-[10px] text-slate-500 truncate">
-                        {item.type === 'video' && item.duration !== undefined
-                          ? `Video • ${Math.round(item.duration)}s`
-                          : `Foto • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
-                        }
-                      </span>
-                    </div>
+                      
+                      <div className="flex flex-col min-w-0 flex-1">
+                        <span className="text-xs text-slate-800 font-medium truncate">
+                          {item.name}
+                        </span>
+                        <span className="text-[10px] text-slate-500 truncate">
+                          {isVid && item.duration !== undefined
+                            ? `Video • ${Math.round(item.duration)}s`
+                            : isAud && item.duration !== undefined
+                            ? `Audio • ${Math.round(item.duration)}s`
+                            : isDoc && item.textContent
+                            ? `Dokumen • ${item.textContent.length} k`
+                            : `File • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
+                          }
+                        </span>
+                      </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveSingleMedia(index)}
-                      className="w-5 h-5 rounded-md bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-400 flex items-center justify-center transition-all cursor-pointer border border-slate-200 hover:border-rose-200 shrink-0 shadow-xs"
-                      title="Hapus file ini"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveSingleMedia(index)}
+                        className="w-5 h-5 rounded-md bg-white hover:bg-rose-50 hover:text-rose-600 text-slate-400 flex items-center justify-center transition-all cursor-pointer border border-slate-200 hover:border-rose-200 shrink-0 shadow-xs"
+                        title="Hapus file ini"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </motion.div>
           )}
