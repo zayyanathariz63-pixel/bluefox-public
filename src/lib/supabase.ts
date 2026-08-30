@@ -301,15 +301,18 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
 // ==========================================
 export const MODEL_MAPPING: Record<string, string> = {
-  tmpa_v2: "agnes-2.0-flash", // Support Vision
-  tmpa_v1: "laguna-s-2.1",
-  dilo: "tencent-hy3-free",
+  bluefox_pro: "agnes-2.0-flash", // bluefox pro (Supports Vision)
+  bluefox_standard: "tencent-hy3-free", // bluefox standard
+  bluefox_dilo: "laguna-s-2.1", // bluefox Dilo
+  tmpa_v2: "agnes-2.0-flash",
+  tmpa_v1: "tencent-hy3-free",
+  dilo: "laguna-s-2.1",
   "agnes-2.0-flash": "agnes-2.0-flash",
   "laguna-s-2.1": "laguna-s-2.1",
   "tencent-hy3-free": "tencent-hy3-free",
   qwen3_coder: "agnes-2.0-flash",
-  gpt_oss: "laguna-s-2.1",
-  mistral_nemotron: "tencent-hy3-free",
+  gpt_oss: "tencent-hy3-free",
+  mistral_nemotron: "laguna-s-2.1",
 };
 
 export async function invokeBluefoxProcessor(
@@ -802,6 +805,120 @@ export async function consumeAiLimit(userId: string, modelCode: AiModelCode) {
     console.error("❌ Exception consumeAiLimit:", err);
     return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
   }
+}
+
+/**
+ * G. Manajemen Limit Penggunaan Web Search & Maps
+ * Tarif per 5 jam:
+ * - Advanced search: 10%
+ * - Standard search: 5%
+ * - Map search advanced: 13%
+ * - Map standard search: 7%
+ * Tarif per minggu:
+ * - Advanced search: 5%
+ * - Standard search: 3%
+ * - Map search advanced: 7%
+ * - Map standard search: 4%
+ */
+export async function consumeSearchLimit(
+  userId: string,
+  searchMode: 'standard' | 'advanced' | 'map_standard' | 'map_advanced' = 'standard'
+) {
+  const ratesMap: Record<string, { add5h: number; addWeekly: number }> = {
+    advanced: { add5h: 10, addWeekly: 5 },
+    standard: { add5h: 5, addWeekly: 3 },
+    map_advanced: { add5h: 13, addWeekly: 7 },
+    map_standard: { add5h: 7, addWeekly: 4 },
+  };
+
+  const rates = ratesMap[searchMode] || ratesMap.standard;
+
+  try {
+    if (!userId) {
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user?.id) userId = authData.user.id;
+      } catch {}
+    }
+
+    if (!userId) {
+      return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
+    }
+
+    const { data: existingRow } = await supabase
+      .from('user_limits')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    const now = new Date();
+    let currentUsed5h = Number(existingRow?.used_5h || 0);
+    let currentUsedWeekly = Number(existingRow?.used_weekly || 0);
+    let reset5hAt = existingRow?.reset_5h_at || new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    let resetWeeklyAt = existingRow?.reset_weekly_at || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    if (existingRow?.reset_5h_at && now > new Date(existingRow.reset_5h_at)) {
+      currentUsed5h = 0;
+      reset5hAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    }
+    if (existingRow?.reset_weekly_at && now > new Date(existingRow.reset_weekly_at)) {
+      currentUsedWeekly = 0;
+      resetWeeklyAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    }
+
+    const nextUsed5h = currentUsed5h + rates.add5h;
+    const nextUsedWeekly = currentUsedWeekly + rates.addWeekly;
+
+    if (nextUsed5h > 100 || nextUsedWeekly > 100) {
+      return {
+        success: false,
+        message: "Batas kuota pencarian web tercapai. Silakan tunggu reset atau gunakan tombol Reset Kuota.",
+        remaining_5h: Math.max(0, 100 - currentUsed5h),
+        remaining_weekly: Math.max(0, 100 - currentUsedWeekly),
+        used_5h: currentUsed5h,
+        used_weekly: currentUsedWeekly,
+      };
+    }
+
+    const payload = {
+      user_id: userId,
+      used_5h: nextUsed5h,
+      reset_5h_at: reset5hAt,
+      used_weekly: nextUsedWeekly,
+      reset_weekly_at: resetWeeklyAt,
+    };
+
+    await supabase.from('user_limits').upsert(payload, { onConflict: 'user_id' });
+
+    return {
+      success: true,
+      remaining_5h: Math.max(0, 100 - nextUsed5h),
+      remaining_weekly: Math.max(0, 100 - nextUsedWeekly),
+      used_5h: nextUsed5h,
+      used_weekly: nextUsedWeekly,
+    };
+  } catch (err) {
+    console.warn("Exception consumeSearchLimit:", err);
+    return { success: true, remaining_5h: 100, remaining_weekly: 100, used_5h: 0, used_weekly: 0 };
+  }
+}
+
+/**
+ * Standardized Model Display Names
+ */
+export function getModelDisplayName(modelId?: string): string {
+  if (!modelId) return 'bluefox pro';
+  const clean = modelId.toLowerCase();
+  if (clean.includes('v2') || clean.includes('pro') || clean.includes('agnes') || clean.includes('qwen')) {
+    return 'bluefox pro';
+  }
+  if (clean.includes('v1') || clean.includes('standard') || clean.includes('tencent') || clean.includes('gpt')) {
+    return 'bluefox standard';
+  }
+  if (clean.includes('dilo') || clean.includes('laguna') || clean.includes('mistral') || clean.includes('nemotron')) {
+    return 'bluefox Dilo';
+  }
+  return 'bluefox pro';
 }
 
 

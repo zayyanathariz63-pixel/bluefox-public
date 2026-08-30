@@ -114,38 +114,41 @@ export function ChatMessage({ message, onEdit, onStop }: ChatMessageProps) {
       )}
     >
       <div className="max-w-3xl mx-auto flex w-full gap-3 sm:gap-4 relative">
-        <div className={cn(
-          "w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm",
-          isUser ? "bg-slate-900 text-white" : "bg-blue-600 text-white"
-        )}>
-          {isUser ? <User size={15} /> : <Bot size={15} />}
-        </div>
-        <div className="flex-1 w-0 pt-0.5 min-w-0">
-          <div className="flex items-center mb-1 h-5 justify-between">
-            <span className="font-semibold text-xs text-slate-500">
-              {isUser ? (lang === 'id' ? 'Anda' : 'You') : 'Bluefox AI'}
-            </span>
-            {isUser && !isEditing && (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-200/60 cursor-pointer"
-                  title={t('editMessage')}
-                >
-                  <Pencil size={13} />
-                </button>
-                {onStop && (
-                  <button
-                    onClick={onStop}
-                    className="text-rose-500 hover:text-rose-600 bg-rose-50 border border-rose-200 p-1 rounded transition-all cursor-pointer hover:bg-rose-100"
-                    title={lang === 'id' ? "Hentikan AI" : "Stop AI"}
-                  >
-                    <Power size={12} />
-                  </button>
-                )}
-              </div>
-            )}
+        {/* Only show avatar for user, omit bot profile mascot completely */}
+        {isUser ? (
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5 shadow-sm bg-slate-900 text-white">
+            <User size={15} />
           </div>
+        ) : null}
+
+        <div className={cn("flex-1 w-0 min-w-0", !isUser && "pl-1 sm:pl-2")}>
+          {isUser && (
+            <div className="flex items-center mb-1.5 h-5 justify-between">
+              <span className="font-semibold text-xs text-slate-500">
+                {lang === 'id' ? 'Anda' : 'You'}
+              </span>
+              {!isEditing && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="text-slate-400 hover:text-slate-700 transition-colors p-1 rounded hover:bg-slate-200/60 cursor-pointer"
+                    title={t('editMessage')}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                  {onStop && (
+                    <button
+                      onClick={onStop}
+                      className="text-rose-500 hover:text-rose-600 bg-rose-50 border border-rose-200 p-1 rounded transition-all cursor-pointer hover:bg-rose-100"
+                      title={lang === 'id' ? "Hentikan AI" : "Stop AI"}
+                    >
+                      <Power size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           
           {message.media && (
             <div className="mb-3 flex items-center justify-start gap-2.5 overflow-x-auto py-1 max-w-full flex-nowrap">

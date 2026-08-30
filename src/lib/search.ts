@@ -1,11 +1,27 @@
 import { SearchSource } from '../types';
 import { supabase, supabaseUrl, supabaseKey } from './supabase';
 
+export type SearchModeType = 'standard' | 'advanced' | 'map_standard' | 'map_advanced';
+
+export interface SearchUsageRate {
+  add5h: number;
+  addWeekly: number;
+}
+
+export const SEARCH_USAGE_RATES: Record<SearchModeType, SearchUsageRate> = {
+  advanced: { add5h: 10, addWeekly: 5 },
+  standard: { add5h: 5, addWeekly: 3 },
+  map_advanced: { add5h: 13, addWeekly: 7 },
+  map_standard: { add5h: 7, addWeekly: 4 },
+};
+
 export interface SearchResultPayload {
   has_sources: boolean;
   search_engine_used: 'tavily' | 'duckduckgo' | string | null;
   sources: SearchSource[];
   contextSnippet: string;
+  searchMode?: SearchModeType;
+  queriesRun?: string[];
 }
 
 /**
@@ -85,7 +101,12 @@ export function detectSearchIntent(text: string): boolean {
     'release date',
     'match score',
     'weather today',
-    'who won'
+    'who won',
+    'lokasi',
+    'rute',
+    'peta',
+    'alamat',
+    'rekomendasi tempat'
   ];
 
   for (const trigger of prdTriggers) {
@@ -101,9 +122,64 @@ export function detectSearchIntent(text: string): boolean {
     /\b(rilis|launching|peluncuran|release|launch)\s+(tahun|bulan|terbaru|2024|2025|2026|2027)/i,
     /\b(presiden|menteri|gubernur|ceo|pemimpin|juara|skor|president|champion)\s+(sekarang|terbaru|saat ini|hari ini|current|now)/i,
     /\b(skor|hasil|klasemen|jadwal|score|standings|schedule)\s+(liga|piala|f1|motogp|badminton|esport|timnas|epl|nba|ucl)/i,
+    /\b(dimana|lokasi|alamat|tempat makan|cafe terdekat|peta|rute|maps?)\b/i,
   ];
 
   return patterns.some(pattern => pattern.test(lower));
+}
+
+/**
+ * Mendeteksi apakah query membutuhkan mode Advance Search untuk akurasi tinggi
+ */
+export function detectNeedAdvanceSearch(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+
+  // 1. Explicit advance keywords
+  if (
+    lower.includes('advance') ||
+    lower.includes('akurat') ||
+    lower.includes('presisi') ||
+    lower.includes('detail') ||
+    lower.includes('mendalam') ||
+    lower.includes('komprehensif') ||
+    lower.includes('spesifikasi lengkap') ||
+    lower.includes('resmi') ||
+    lower.includes('analisis') ||
+    lower.includes('perbandingan') ||
+    lower.includes('bandingkan') ||
+    lower.includes('statistika') ||
+    lower.includes('data statistik') ||
+    lower.includes('laporan keuangan') ||
+    lower.includes('saham') ||
+    lower.includes('crypto') ||
+    lower.includes('benchmark') ||
+    lower.includes('jurnal') ||
+    lower.includes('ilmiah') ||
+    lower.includes('studi')
+  ) {
+    return true;
+  }
+
+  // 2. Pertanyaan berbasis tahun spesifik dan komparasi angka faktual
+  if (
+    /\b(2025|2026|2027)\b/.test(lower) ||
+    /\b(vs|versus|dibandingkan|kelebihan dan kekurangan|mana yang lebih bagus)\b/i.test(lower) ||
+    /\b(spesifikasi|arsitektur|algoritma|cara kerja mendalam)\b/i.test(lower)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Mendeteksi apakah query terkait Maps / Lokasi Geografis
+ */
+export function detectMapSearch(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+  return /\b(peta|map|maps|lokasi|arah|rute|alamat|jarak|terdekat|wisata|kuliner|restoran di|cafe di|hotel di)\b/i.test(lower);
 }
 
 /**
@@ -112,7 +188,7 @@ export function detectSearchIntent(text: string): boolean {
 export function cleanSearchQuery(rawText: string): string {
   if (!rawText) return '';
   return rawText
-    .replace(/^@(search|web|cari|browse|google|find|internet|online)\s*/i, '')
+    .replace(/^@(search|web|cari|browse|google|find|internet|online|map|maps)\s*/i, '')
     .replace(/^(search|cari|browse|find):\s*/i, '')
     .replace(/^\/(search|web|cari)\s*/i, '')
     .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari|apa saja|apa|tolong carikan|search for|please search|look up)\s+/i, '')
@@ -120,35 +196,78 @@ export function cleanSearchQuery(rawText: string): string {
 }
 
 /**
- * [ 3 ] Pemanggilan Supabase Edge Function 'bluefox-search'
+ * Menghasilkan 3-5 sub-queries cerdas untuk memperluas cakupan informasi web
+ */
+export function generateExpandedQueries(cleanQuery: string, count: number = 3): string[] {
+  if (!cleanQuery) return [];
+  const queries: string[] = [cleanQuery];
+
+  const words = cleanQuery.split(/\s+/).filter(Boolean);
+
+  // Variasi 2: Fokus data terbaru & akurat
+  if (!cleanQuery.toLowerCase().includes('terbaru') && !cleanQuery.toLowerCase().includes('latest')) {
+    queries.push(`${cleanQuery} terbaru berita fakta`);
+  } else {
+    queries.push(`${cleanQuery} rangkuman informasi resmi`);
+  }
+
+  // Variasi 3: Spesifik detail / fakta
+  if (words.length > 2) {
+    queries.push(`${words.slice(0, 4).join(' ')} update`);
+  } else {
+    queries.push(`${cleanQuery} penjelasan data akurat`);
+  }
+
+  // Variasi 4 & 5 jika count >= 4
+  if (count >= 4) {
+    queries.push(`${cleanQuery} review analisis`);
+  }
+  if (count >= 5) {
+    queries.push(`${cleanQuery} sumber terpercaya`);
+  }
+
+  return queries.slice(0, Math.max(3, Math.min(5, count)));
+}
+
+/**
+ * Pemanggilan Supabase Edge Function 'bluefox-search'
  * Endpoint: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search
  */
 export async function searchWithSupabaseEdgeFunction(
   query: string,
-  signal?: AbortSignal
+  options?: { isAdvanced?: boolean; signal?: AbortSignal }
 ): Promise<{ success: boolean; sources: SearchSource[]; engineUsed?: string; error?: string }> {
   const cleanQ = cleanSearchQuery(query);
   if (!cleanQ) return { success: false, sources: [] };
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 7000);
 
     const onAbort = () => controller.abort();
-    if (signal) {
-      signal.addEventListener('abort', onAbort);
+    if (options?.signal) {
+      options.signal.addEventListener('abort', onAbort);
     }
 
-    console.log(`🌐 [Supabase Edge Function] Memanggil bluefox-search untuk: "${cleanQ}"`);
+    console.log(`🌐 [Supabase Edge Function] Memanggil bluefox-search (Advance: ${Boolean(options?.isAdvanced)}) untuk: "${cleanQ}"`);
+
+    const requestPayload = {
+      query: cleanQ,
+      q: cleanQ,
+      search: cleanQ,
+      is_advanced: Boolean(options?.isAdvanced),
+      advanced: Boolean(options?.isAdvanced),
+      max_results: options?.isAdvanced ? 8 : 5,
+    };
 
     // 1. Coba melalui supabase.functions.invoke('bluefox-search')
     try {
       const invokeRes = await supabase.functions.invoke('bluefox-search', {
-        body: { query: cleanQ, q: cleanQ, search: cleanQ },
+        body: requestPayload,
       });
 
       clearTimeout(timeoutId);
-      if (signal) signal.removeEventListener('abort', onAbort);
+      if (options?.signal) options.signal.removeEventListener('abort', onAbort);
 
       if (invokeRes.data && !invokeRes.error) {
         const payload = invokeRes.data;
@@ -159,7 +278,7 @@ export async function searchWithSupabaseEdgeFunction(
             id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
             title: item.title || item.name || `Sumber Web ${idx + 1}`,
             url: item.url || item.link || 'https://google.com',
-            snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 350),
+            snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 380),
           }));
 
           const engineUsed = payload.search_engine_used || payload.engine || payload.provider || 'tavily';
@@ -171,7 +290,7 @@ export async function searchWithSupabaseEdgeFunction(
       console.warn("⚠️ supabase.functions.invoke error, mencoba direct fetch fallback:", invokeErr?.message);
     }
 
-    // 2. Direct HTTPS fetch ke https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search
+    // 2. Direct HTTPS fetch ke Edge Function
     const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-search';
     const anonKey = supabaseKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.dummy';
 
@@ -182,12 +301,12 @@ export async function searchWithSupabaseEdgeFunction(
         'apikey': anonKey,
         'Authorization': `Bearer ${anonKey}`,
       },
-      body: JSON.stringify({ query: cleanQ, q: cleanQ, search: cleanQ }),
+      body: JSON.stringify(requestPayload),
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
-    if (signal) signal.removeEventListener('abort', onAbort);
+    if (options?.signal) options.signal.removeEventListener('abort', onAbort);
 
     if (directRes.ok) {
       const data = await directRes.json();
@@ -198,7 +317,7 @@ export async function searchWithSupabaseEdgeFunction(
           id: item.id || `src-${(idx + 1).toString().padStart(2, '0')}`,
           title: item.title || item.name || `Sumber Web ${idx + 1}`,
           url: item.url || item.link || 'https://google.com',
-          snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 350),
+          snippet: (item.snippet || item.content || item.raw_content || item.description || '').trim().slice(0, 380),
         }));
 
         const engineUsed = data.search_engine_used || data.engine || data.provider || 'tavily';
@@ -215,11 +334,12 @@ export async function searchWithSupabaseEdgeFunction(
 }
 
 /**
- * 3.1 Primary Direct Engine: Tavily AI Search (Timeout strictly 4000ms / 4s per PRD [5])
+ * Primary Direct Engine: Tavily AI Search dengan mode advance & basic
  */
 export async function searchWithTavily(
   query: string, 
   apiKey?: string, 
+  isAdvanced: boolean = false,
   signal?: AbortSignal
 ): Promise<{ success: boolean; sources: SearchSource[]; error?: string }> {
   const effectiveKey = apiKey || (typeof process !== 'undefined' ? process.env.TAVILY_API_KEY : '');
@@ -232,8 +352,7 @@ export async function searchWithTavily(
 
   try {
     const controller = new AbortController();
-    // PRD [5]: Pengaturan Batas Waktu Respon (Timeout) Tavily API maksimal 4 detik (4.000 ms)
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), isAdvanced ? 6000 : 4000);
 
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -243,9 +362,9 @@ export async function searchWithTavily(
       body: JSON.stringify({
         api_key: effectiveKey,
         query: cleanQ,
-        search_depth: 'basic',
+        search_depth: isAdvanced ? 'advanced' : 'basic',
         include_answer: true,
-        max_results: 5,
+        max_results: isAdvanced ? 8 : 5,
       }),
       signal: signal || controller.signal,
     });
@@ -268,7 +387,7 @@ export async function searchWithTavily(
       id: `src-${(idx + 1).toString().padStart(2, '0')}`,
       title: item.title || `Sumber Web ${idx + 1}`,
       url: item.url || 'https://www.google.com',
-      snippet: (item.content || item.snippet || item.raw_content || '').trim().slice(0, 300),
+      snippet: (item.content || item.snippet || item.raw_content || '').trim().slice(0, 350),
     }));
 
     return { success: true, sources };
@@ -278,7 +397,7 @@ export async function searchWithTavily(
 }
 
 /**
- * 3.1 Fallback Engine: DuckDuckGo Search (Zero API Key Requirement)
+ * Fallback Engine: DuckDuckGo Search
  */
 export async function searchWithDuckDuckGo(
   query: string,
@@ -307,14 +426,10 @@ export async function searchWithDuckDuckGo(
     if (res.ok) {
       const html = await res.text();
       const sources: SearchSource[] = [];
-
-      // Extract result anchors and snippets using robust regex
       const resultBlocks = html.split(/class="result\s+results_links/g).slice(1);
 
-      for (let i = 0; i < resultBlocks.length && sources.length < 5; i++) {
+      for (let i = 0; i < resultBlocks.length && sources.length < 6; i++) {
         const block = resultBlocks[i];
-
-        // Title and URL extraction
         const urlMatch = block.match(/href="([^"]+)"/);
         const titleMatch = block.match(/<a class="result__a"[^>]*>([\s\S]*?)<\/a>/i);
         const snippetMatch = block.match(/<a class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
@@ -322,7 +437,6 @@ export async function searchWithDuckDuckGo(
 
         if (urlMatch && titleMatch) {
           let rawUrl = urlMatch[1];
-          // DuckDuckGo redirect wrapper: /l/?uddg=...
           if (rawUrl.includes('uddg=')) {
             const matchUddg = rawUrl.match(/uddg=([^&]+)/);
             if (matchUddg && matchUddg[1]) {
@@ -340,7 +454,7 @@ export async function searchWithDuckDuckGo(
               id: `src-${(sources.length + 1).toString().padStart(2, '0')}`,
               title: rawTitle,
               url: rawUrl,
-              snippet: rawSnippet.slice(0, 320),
+              snippet: rawSnippet.slice(0, 350),
             });
           }
         }
@@ -365,18 +479,18 @@ export async function searchWithDuckDuckGo(
           id: 'src-01',
           title: data.Heading || data.AbstractSource || 'DuckDuckGo Instant Answer',
           url: data.AbstractURL,
-          snippet: data.AbstractText.slice(0, 320),
+          snippet: data.AbstractText.slice(0, 350),
         });
       }
 
       if (Array.isArray(data.RelatedTopics)) {
         for (const topic of data.RelatedTopics) {
-          if (topic.Text && topic.FirstURL && sources.length < 5) {
+          if (topic.Text && topic.FirstURL && sources.length < 6) {
             sources.push({
               id: `src-${(sources.length + 1).toString().padStart(2, '0')}`,
               title: topic.Text.split(' - ')[0] || topic.Text.slice(0, 60),
               url: topic.FirstURL,
-              snippet: topic.Text.slice(0, 320),
+              snippet: topic.Text.slice(0, 350),
             });
           }
         }
@@ -394,13 +508,13 @@ export async function searchWithDuckDuckGo(
 }
 
 /**
- * 2.2 Dual-Engine Fallback Pipeline Execution
- * Alur: Supabase Edge Function (bluefox-search) -> Direct Tavily AI -> DuckDuckGo Fallback
+ * 2.2 Dual-Engine Fallback Pipeline Execution dengan Multi-Query (3-5 Search) & Auto-Advance
  */
 export async function executeDualEngineSearch(
   rawQuery: string,
   options?: {
     forceSearch?: boolean;
+    forceAdvance?: boolean;
     tavilyApiKey?: string;
     signal?: AbortSignal;
   }
@@ -416,65 +530,97 @@ export async function executeDualEngineSearch(
   }
 
   const cleanQ = cleanSearchQuery(rawQuery);
-  console.log(`🔍 [Web Search] Memulai pencarian web untuk: "${cleanQ}"`);
+  const isMap = detectMapSearch(rawQuery);
+  const isAdvance = Boolean(options?.forceAdvance || detectNeedAdvanceSearch(rawQuery));
 
-  // Step 1: Panggil Supabase Edge Function 'bluefox-search' (User Edge Engine)
-  console.log('⚡ [Web Search] Mencoba Edge Function: bluefox-search...');
-  const edgeSearchResult = await searchWithSupabaseEdgeFunction(cleanQ, options?.signal);
+  // Tentukan mode search untuk limit calculation
+  let searchMode: SearchModeType = 'standard';
+  if (isMap && isAdvance) searchMode = 'map_advanced';
+  else if (isMap) searchMode = 'map_standard';
+  else if (isAdvance) searchMode = 'advanced';
 
-  if (edgeSearchResult.success && edgeSearchResult.sources.length > 0) {
-    console.log(`✅ [Web Search] bluefox-search Sukses (${edgeSearchResult.sources.length} sumber ditemukan)`);
-    const engineType = (edgeSearchResult.engineUsed?.toLowerCase().includes('duck') ? 'duckduckgo' : 'tavily') as 'tavily' | 'duckduckgo';
-    const contextSnippet = formatSearchContext(edgeSearchResult.sources, engineType);
+  // Perluas pencarian menjadi 3-5 sub-queries
+  const searchQueries = generateExpandedQueries(cleanQ, isAdvance ? 5 : 3);
+  console.log(`🔍 [Multi-Search] Menjalankan ${searchQueries.length} pencarian web (Mode: ${searchMode}, Advance: ${isAdvance})`);
+
+  let allCollectedSources: SearchSource[] = [];
+  let primaryEngineUsed: string = 'tavily';
+
+  // Eksekusi multi-query: cari query utama + variasi
+  for (let i = 0; i < searchQueries.length; i++) {
+    const currentQ = searchQueries[i];
+
+    // 1. Coba Edge Function 'bluefox-search'
+    const edgeRes = await searchWithSupabaseEdgeFunction(currentQ, {
+      isAdvanced: isAdvance,
+      signal: options?.signal,
+    });
+
+    if (edgeRes.success && edgeRes.sources.length > 0) {
+      primaryEngineUsed = edgeRes.engineUsed || 'tavily';
+      allCollectedSources.push(...edgeRes.sources);
+    } else {
+      // 2. Direct Tavily Fallback
+      const tavilyRes = await searchWithTavily(currentQ, options?.tavilyApiKey, isAdvance, options?.signal);
+      if (tavilyRes.success && tavilyRes.sources.length > 0) {
+        primaryEngineUsed = 'tavily';
+        allCollectedSources.push(...tavilyRes.sources);
+      } else {
+        // 3. DuckDuckGo Fallback
+        const ddgRes = await searchWithDuckDuckGo(currentQ, options?.signal);
+        if (ddgRes.success && ddgRes.sources.length > 0) {
+          primaryEngineUsed = 'duckduckgo';
+          allCollectedSources.push(...ddgRes.sources);
+        }
+      }
+    }
+
+    // Jika sudah mengumpulkan cukup sumber unik (>= 5 sumber), kita bisa lanjut
+    const uniqueUrlCount = new Set(allCollectedSources.map(s => s.url)).size;
+    if (uniqueUrlCount >= (isAdvance ? 5 : 4)) break;
+  }
+
+  // Deduplikasi sumber berdasarkan URL
+  const seenUrls = new Set<string>();
+  const finalSources: SearchSource[] = [];
+
+  for (const item of allCollectedSources) {
+    if (!item.url || seenUrls.has(item.url)) continue;
+    seenUrls.add(item.url);
+    finalSources.push({
+      ...item,
+      id: `src-${(finalSources.length + 1).toString().padStart(2, '0')}`,
+    });
+    if (finalSources.length >= (isAdvance ? 5 : 4)) break;
+  }
+
+  if (finalSources.length > 0) {
+    console.log(`✅ [Multi-Search Berhasil] Ditemukan ${finalSources.length} sumber terverifikasi via ${primaryEngineUsed}`);
+    const engineType = primaryEngineUsed.toLowerCase().includes('duck') ? 'duckduckgo' : 'tavily';
+    const contextSnippet = formatSearchContext(finalSources, engineType, isAdvance);
     return {
       has_sources: true,
-      search_engine_used: edgeSearchResult.engineUsed || 'tavily',
-      sources: edgeSearchResult.sources,
+      search_engine_used: primaryEngineUsed,
+      sources: finalSources,
       contextSnippet,
+      searchMode,
+      queriesRun: searchQueries,
     };
   }
 
-  // Step 2: Fallback Direct Primary Engine (Tavily AI)
-  console.log('⚡ [Web Search] Mencoba Direct Tavily AI...');
-  const tavilyResult = await searchWithTavily(cleanQ, options?.tavilyApiKey, options?.signal);
-
-  if (tavilyResult.success && tavilyResult.sources.length > 0) {
-    console.log(`✅ [Web Search] Direct Tavily AI Sukses (${tavilyResult.sources.length} sumber ditemukan)`);
-    const contextSnippet = formatSearchContext(tavilyResult.sources, 'tavily');
-    return {
-      has_sources: true,
-      search_engine_used: 'tavily',
-      sources: tavilyResult.sources,
-      contextSnippet,
-    };
-  }
-
-  // Step 3: Fallback Engine (DuckDuckGo)
-  console.warn(`⚠️ [Web Search] Edge & Tavily tidak menghasilkan data, mengaktifkan Fallback: DuckDuckGo...`);
-  const ddgResult = await searchWithDuckDuckGo(cleanQ, options?.signal);
-
-  if (ddgResult.success && ddgResult.sources.length > 0) {
-    console.log(`✅ [Web Search] DuckDuckGo Fallback Sukses (${ddgResult.sources.length} sumber ditemukan)`);
-    const contextSnippet = formatSearchContext(ddgResult.sources, 'duckduckgo');
-    return {
-      has_sources: true,
-      search_engine_used: 'duckduckgo',
-      sources: ddgResult.sources,
-      contextSnippet,
-    };
-  }
-
-  console.warn('❌ [Web Search] Semua mesin pencari web tidak menghasilkan data.');
+  console.warn('❌ [Multi-Search] Tidak ada sumber ditemukan untuk semua variasi query.');
   return {
     has_sources: false,
     search_engine_used: null,
     sources: [],
     contextSnippet: '',
+    searchMode,
+    queriesRun: searchQueries,
   };
 }
 
 /**
- * 4.3 & [5] Pencegahan Serangan XSS: Sanitasi String
+ * Pencegahan Serangan XSS: Sanitasi String
  */
 export function sanitizeHtml(str: string): string {
   if (!str) return '';
@@ -488,30 +634,33 @@ export function sanitizeHtml(str: string): string {
 
 /**
  * Format search sources into prompt injection context string
- * PRD [5]: Ringkasan teks (snippet) yang dikirim ke LLM dipotong maksimal 200 karakter per sumber
  */
-export function formatSearchContext(sources: SearchSource[], engine: 'tavily' | 'duckduckgo' | string): string {
+export function formatSearchContext(
+  sources: SearchSource[], 
+  engine: 'tavily' | 'duckduckgo' | string,
+  isAdvanced: boolean = false
+): string {
   const isDdg = engine.toLowerCase().includes('duck');
-  const engineLabel = isDdg ? 'DuckDuckGo Web Search' : 'Tavily AI Search';
+  const engineLabel = isDdg ? 'DuckDuckGo Web Search' : (isAdvanced ? 'Tavily AI Advanced Search' : 'Tavily AI Search');
   const sourceBlocks = sources
     .map(
       (s, i) => {
-        const trimmedSnippet = (s.snippet || '').trim().slice(0, 200);
+        const trimmedSnippet = (s.snippet || '').trim().slice(0, 350);
         return `[Sumber ${i + 1}] ID: ${s.id}\nJudul: ${s.title}\nURL: ${s.url}\nRingkasan Fakta: ${trimmedSnippet}`;
       }
     )
     .join('\n\n');
 
-  return `[DATA WEB TERBARU] (Hasil Mesin Pencari: ${engineLabel})\n${sourceBlocks}`;
+  return `[DATA WEB TERBARU] (Hasil Mesin Pencari: ${engineLabel} - Akurasi Tinggi)\n${sourceBlocks}`;
 }
 
 /**
- * 3.3 Konfigurasi System Prompt Bluefox
+ * Konfigurasi System Prompt Bluefox
  */
-export const BLUEFOX_SYSTEM_PROMPT = `Kamu adalah Bluefox, asisten AI yang akurat dan terpercaya.
+export const BLUEFOX_SYSTEM_PROMPT = `Kamu adalah Bluefox, asisten AI yang akurat, terpercaya, dan berpengetahuan luas.
 
 Aturan Pencarian Web & Penggunaan Data:
 1. Jika terdapat blok [DATA WEB TERBARU], gunakan informasi tersebut sebagai referensi utama jawabanmu.
-2. Jawab pertanyaan pengguna secara ringkas, jelas, dan mudah dipahami.
+2. Jawab pertanyaan pengguna secara ringkas, jelas, terstruktur, dan akurat.
 3. Jangan menyertakan URL panjang secara langsung di dalam teks obrolan.
 4. Apabila data dari web tidak ditemukan atau gagal, sampaikan secara jujur bahwa informasi terbaru belum tersedia.`;

@@ -22,6 +22,7 @@ import {
   hasValidConfig,
   invokeBluefoxProcessor,
   consumeAiLimit,
+  consumeSearchLimit,
   getUserLimits,
   resetUserLimits,
   getModelLimitCode
@@ -29,7 +30,7 @@ import {
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
-import { executeDualEngineSearch, detectSearchIntent } from './lib/search';
+import { executeDualEngineSearch, detectSearchIntent, SearchModeType } from './lib/search';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -176,7 +177,11 @@ export default function App() {
   const usage = getUsage();
   const isUsageLimitReached = usage.hourly >= 100 || usage.weekly >= 100;
 
-  const updateUsage = (model: string, isVision?: boolean) => {
+  const updateUsage = (
+    model: string, 
+    isVision?: boolean, 
+    searchMode?: 'standard' | 'advanced' | 'map_standard' | 'map_advanced'
+  ) => {
     let h = 0, w = 0;
     if (model === 'agnes-2.0-flash' || model === 'qwen3_coder') {
       if (isVision) {
@@ -187,16 +192,32 @@ export default function App() {
         w = 10; // Non vision: 10% weekly
       }
     } else if (model === 'tencent-hy3-free' || model === 'gpt_oss') {
-      // Tmpa ai v1
+      // bluefox standard
       h = 12; // 12% per 5 jam
       w = 9;  // 9% weekly
     } else if (model === 'laguna-s-2.1' || model === 'mistral_nemotron') {
-      // Dilo
+      // bluefox Dilo
       h = 8;  // 8% per 5 jam
       w = 6;  // 6% weekly
     } else {
       h = 12;
       w = 9;
+    }
+
+    if (searchMode) {
+      if (searchMode === 'advanced') {
+        h += 10;
+        w += 5;
+      } else if (searchMode === 'standard') {
+        h += 5;
+        w += 3;
+      } else if (searchMode === 'map_advanced') {
+        h += 13;
+        w += 7;
+      } else if (searchMode === 'map_standard') {
+        h += 7;
+        w += 4;
+      }
     }
     
     const newEvent = { h, w, ts: Date.now() };
@@ -1347,18 +1368,26 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       let effectiveConvId = currentSessionId || sessionId;
 
       // =========================================================================
-      // DUAL-ENGINE FALLBACK WEB SEARCH INTENT DETECTION & CONTEXT INJECTION
+      // DUAL-ENGINE FALLBACK WEB SEARCH INTENT DETECTION & CONTEXT INJECTION (3-5 MULTI-SEARCH + ADVANCE)
       // =========================================================================
       let attachedSources: SearchSource[] = [];
       let attachedEngine: 'tavily' | 'duckduckgo' | string | undefined = undefined;
 
-      const isSearchTriggered = detectSearchIntent(userText) || lowerText.startsWith('@search') || lowerText.startsWith('@web');
+      const isSearchTriggered = detectSearchIntent(userText) || lowerText.startsWith('@search') || lowerText.startsWith('@web') || lowerText.startsWith('@cari');
       if (isSearchTriggered) {
         try {
           const searchPayload = await executeDualEngineSearch(userText, {
             forceSearch: true,
             signal: abortControllerRef.current?.signal,
           });
+
+          // Potong kuota limit pencarian
+          const mode: SearchModeType = searchPayload.searchMode || 'standard';
+          if (activeUserId) {
+            consumeSearchLimit(activeUserId, mode).catch(() => {});
+          }
+          updateUsage(currentEffectiveModel, isVisionNow, mode);
+
           if (searchPayload.has_sources && searchPayload.sources.length > 0) {
             attachedSources = searchPayload.sources;
             attachedEngine = searchPayload.search_engine_used || 'tavily';
@@ -1777,7 +1806,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
             >
               <span>Model: <strong className="text-blue-600 dark:text-blue-400">
-                {selectedModel === 'agnes-2.0-flash' ? 'Tmpa ai v2' : selectedModel === 'tencent-hy3-free' ? 'Tmpa ai v1' : 'Dilo'}
+                {selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'tencent-hy3-free' ? 'bluefox standard' : 'bluefox Dilo'}
               </strong></span>
               {isVisionActive && (
                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
@@ -1848,15 +1877,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       {/* Main Chat Area */}
       <main onScroll={handleScroll} className="flex-1 overflow-y-auto w-full scroll-smooth relative">
         {messages.length === 0 ? (
-          <div className="min-h-full flex flex-col items-center justify-center px-4 py-8">
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.5 }}
-              className="w-14 h-14 md:w-16 md:h-16 bg-blue-50 dark:bg-blue-950/30 rounded-2xl flex items-center justify-center text-blue-600 dark:text-blue-400 mb-6 border border-blue-200 dark:border-blue-800/50 shadow-sm shrink-0"
-            >
-              <Bot size={28} className="md:w-8 md:h-8" />
-            </motion.div>
+          <div className="min-h-full flex flex-col items-center justify-center px-4 py-8 max-w-2xl mx-auto">
             <h2 className="text-xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-3 tracking-tight text-center leading-tight">
               {lang === 'id' ? 'Apa yang bisa saya bantu hari ini?' : 'How can I assist you today?'}
             </h2>
@@ -1866,7 +1887,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 : 'Intelligent AI assistant for coding, real-time web search, data synthesis, and task automation.'}
             </p>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 max-w-2xl w-full mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 w-full">
               {(lang === 'id' ? [
                 "Tuliskan draf email lamaran kerja",
                 "@search berita teknologi AI terkini hari ini",
@@ -1898,17 +1919,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               <motion.div 
                 initial={{ opacity: 0 }} 
                 animate={{ opacity: 1 }}
-                className="py-4 sm:py-6 px-4 sm:px-8 flex w-full bg-slate-50/50 dark:bg-slate-900/30"
+                className="py-4 sm:py-5 px-4 sm:px-8 flex w-full"
               >
-                <div className="max-w-3xl mx-auto flex w-full gap-3 sm:gap-4">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0 mt-0.5">
-                    <Bot size={15} />
-                  </div>
-                  <div className="flex-1 w-0 pt-2 flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2 h-2 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
+                <div className="max-w-3xl mx-auto flex w-full items-center gap-1.5 pl-1 sm:pl-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </motion.div>
             )}
@@ -2140,7 +2156,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               {/* 3. BAGIAN BAWAH: Profil User & Logout */}
               <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex flex-col gap-3">
                 <div className="flex items-center gap-3 px-2">
-                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" alt="TMPA Logo" className="w-10 h-10 rounded-full object-cover bg-slate-100 border border-slate-200 flex-shrink-0" />
+                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png" alt="Bluefox AI Logo" className="w-10 h-10 rounded-xl object-cover bg-slate-100 border border-slate-200 flex-shrink-0 shadow-xs" />
                   <div className="flex flex-col min-w-0">
                     <span className="text-sm font-semibold text-slate-900 truncate">
                       {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
@@ -2261,14 +2277,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         </span>
                       )}
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Tmpa ai v2</h4>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox pro</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.0-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Model AI cerdas multimodal berkecepatan tinggi dengan kapabilitas analisis visual komprehensif, coding, dan penalaran mutakhir.
                     </p>
                   </button>
 
-                  {/* Tmpa ai v1 (tencent-hy3-free) Choice */}
+                  {/* bluefox standard (tencent-hy3-free) Choice */}
                   <button 
                     onClick={() => handleSelectModel('tencent-hy3-free')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
@@ -2291,14 +2307,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         </span>
                       )}
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Tmpa ai v1</h4>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
                     </p>
                   </button>
 
-                  {/* Dilo (laguna-s-2.1) Choice */}
+                  {/* bluefox Dilo (laguna-s-2.1) Choice */}
                   <button 
                     onClick={() => handleSelectModel('laguna-s-2.1')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
@@ -2321,7 +2337,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         </span>
                       )}
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Dilo</h4>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox Dilo</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.

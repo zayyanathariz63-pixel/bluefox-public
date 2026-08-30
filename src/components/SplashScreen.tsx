@@ -86,17 +86,16 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
                 */}
                 <div className="relative flex items-center justify-center p-4">
                    <img 
-                      src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png" 
-                      alt="TMPA Logo" 
-                      className="w-56 h-56 md:w-72 md:h-72 object-contain drop-shadow-[0_0_15px_rgba(0,153,255,0.3)] select-none pointer-events-none"
+                      src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png" 
+                      alt="Bluefox AI Logo" 
+                      className="w-44 h-44 md:w-56 md:h-56 rounded-3xl object-cover border border-cyan-400/30 shadow-[0_0_35px_rgba(0,153,255,0.4)] select-none pointer-events-none"
                       onError={(e) => {
-                        // Fallback message
                         e.currentTarget.style.display = 'none';
                         e.currentTarget.nextElementSibling?.classList.remove('hidden');
                       }}
                    />
-                   <div className="hidden text-white flex-col items-center justify-center w-56 h-56 text-center bg-gray-900 rounded-full border border-gray-700 shadow-xl">
-                     <p className="text-xs text-gray-400 mb-2">Upload gambar logo<br/>TMPA ke folder <code className="text-blue-400 text-[10px]">public/</code><br/>dengan nama fle:<br/><code className="text-blue-400 font-bold">logo.png</code></p>
+                   <div className="hidden text-white flex-col items-center justify-center w-44 h-44 text-center bg-slate-900 rounded-3xl border border-slate-700 shadow-xl">
+                     <p className="text-xs text-slate-400 mb-2">Bluefox AI</p>
                    </div>
                 </div>
               </motion.div>

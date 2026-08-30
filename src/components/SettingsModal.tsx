@@ -514,7 +514,13 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                               </div>
                             </div>
                             <div className="inline-flex items-center bg-slate-100 px-3 py-1 rounded-full text-xs font-semibold text-slate-700 capitalize">
-                              Model: {session.model === 'mistral_nemotron' ? 'Dilo' : session.model === 'qwen3_coder' ? 'tmpa v2' : 'tmpa v1'}
+                              Model: {
+                                session.model === 'mistral_nemotron' || session.model === 'dilo' || session.model === 'laguna-s-2.1'
+                                  ? 'bluefox Dilo' 
+                                  : session.model === 'qwen3_coder' || session.model === 'tmpa_v2' || session.model === 'agnes-2.0-flash'
+                                  ? 'bluefox pro' 
+                                  : 'bluefox standard'
+                              }
                             </div>
                           </div>
                         ))}
@@ -528,10 +534,10 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <div>
                       <h3 className="text-2xl font-bold text-slate-900 mb-2">
-                        {lang === 'id' ? 'Batas Penggunaan Model Gabungan' : 'Combined Model Usage Limits'}
+                        {lang === 'id' ? 'Batas Penggunaan Model & Pencarian' : 'Model & Search Usage Limits'}
                       </h3>
                       <p className="text-slate-500 text-sm">
-                        {lang === 'id' ? 'Persentase gabungan penggunaan seluruh model yang akan meningkat setelah setiap permintaan.' : 'Combined usage percentage of all models updated after each request.'}
+                        {lang === 'id' ? 'Persentase gabungan penggunaan seluruh model dan pencarian web yang diakumulasikan per permintaan.' : 'Combined usage percentage of models and web search accumulated per request.'}
                       </p>
                     </div>
 
@@ -539,7 +545,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                       <div className="flex justify-between items-start mb-2">
                         <div>
                           <h4 className="text-lg font-bold text-slate-900">{lang === 'id' ? 'Kuota Keseluruhan' : 'Total Quota'}</h4>
-                          <p className="text-xs text-slate-500">{lang === 'id' ? 'Dihitung berdasarkan model yang digunakan' : 'Calculated based on models used'}</p>
+                          <p className="text-xs text-slate-500">{lang === 'id' ? 'Dihitung berdasarkan model dan pencarian yang digunakan' : 'Calculated based on models and searches used'}</p>
                         </div>
                         <button
                           onClick={() => {
@@ -596,6 +602,91 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                             <span>{lang === 'id' ? 'Anda telah mencapai batas penggunaan. Semua model sementara dinonaktifkan.' : 'You have reached the usage limit. Models are temporarily paused.'}</span>
                           </div>
                         )}
+                      </div>
+                    </div>
+
+                    {/* Rincian Tarif Model & Pencarian */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+                      <div>
+                        <h4 className="text-base font-bold text-slate-900">
+                          {lang === 'id' ? 'Rincian Tarif Limit Pencarian Web' : 'Web Search Usage Limit Rates'}
+                        </h4>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {lang === 'id' ? 'Konsumsi kuota pencarian per 5 jam dan per minggu' : 'Search quota consumption per 5 hours and per week'}
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                        <table className="w-full text-xs text-left text-slate-700">
+                          <thead className="bg-slate-50 text-slate-900 font-bold border-b border-slate-200">
+                            <tr>
+                              <th className="py-2.5 px-3.5">Jenis Pencarian</th>
+                              <th className="py-2.5 px-3.5 text-blue-700">Per 5 Jam</th>
+                              <th className="py-2.5 px-3.5 text-emerald-700">Per Minggu</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-mono">
+                            <tr className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Advanced search</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">10%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">5%</td>
+                            </tr>
+                            <tr className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Standard search</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">5%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
+                            </tr>
+                            <tr className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map search advanced</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">13%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">7%</td>
+                            </tr>
+                            <tr className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map standard search</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">7%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <div className="pt-2">
+                        <h4 className="text-base font-bold text-slate-900 mb-1">
+                          {lang === 'id' ? 'Rincian Tarif Model AI' : 'AI Model Usage Rates'}
+                        </h4>
+                        <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                          <table className="w-full text-xs text-left text-slate-700">
+                            <thead className="bg-slate-50 text-slate-900 font-bold border-b border-slate-200">
+                              <tr>
+                                <th className="py-2.5 px-3.5">Nama Model</th>
+                                <th className="py-2.5 px-3.5 text-blue-700">Per 5 Jam</th>
+                                <th className="py-2.5 px-3.5 text-emerald-700">Per Minggu</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-mono">
+                              <tr className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Vision Aktif)</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">19%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">14%</td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Standar Teks)</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">13%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">10%</td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox standard</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">12%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">9%</td>
+                              </tr>
+                              <tr className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox Dilo</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">8%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">6%</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     </div>
 
