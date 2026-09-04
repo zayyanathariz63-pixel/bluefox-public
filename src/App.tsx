@@ -1585,9 +1585,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         ? media.map(m => m.url)
         : (media ? [media.url] : (imageUrl ? [imageUrl] : []));
 
+      const promptToSend = effectiveAiPrompt.trim() || (mediaUrls.length > 0 ? "Tolong jelaskan dan analisis gambar atau lampiran ini secara detail." : "Halo");
+
       // 1. Panggil Edge Function Bluefox Processor utama (https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-)
       const edgeRes = await invokeBluefoxProcessor(
-        effectiveAiPrompt,
+        promptToSend,
         currentSessionId || null,
         currentEffectiveModel,
         isVisionNow,

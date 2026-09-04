@@ -1,40 +1,61 @@
 /**
  * Utility Kompresi Gambar di Frontend Website (JavaScript / TypeScript)
- * Menggunakan URL.createObjectURL yang hemat memori (mencegah browser HP freeze),
- * urutan event listener onload/onerror sebelum img.src,
- * dimensi maksimal 1280px, dan kualitas JPEG 0.6.
+ * Aturan:
+ * 1. File <= 2MB (di bawah 1-2MB): Langsung kirim TANPA KOMPRES (fileToBase64).
+ * 2. File 2MB - 100MB: Kompres menggunakan ObjectURL & Canvas agar ukuran menjadi di bawah 2MB.
+ * 3. File > 100MB: Ditolak dengan pesan batas maksimal 100MB.
  */
 
-export function fileToBase64(file: File): Promise<string> {
+export function fileToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error("Gagal mengonversi file ke format Base64."));
+      }
+    };
     reader.onerror = (error) => reject(error);
   });
 }
 
 export async function processAndCompressImage(file: File): Promise<string> {
-  const ONE_MB = 1024 * 1024;
-  const HUNDRED_MB = 100 * 1024 * 1024;
+  const TWO_MB = 2 * 1024 * 1024; // 2MB
+  const HUNDRED_MB = 100 * 1024 * 1024; // 100MB
 
   if (file.size > HUNDRED_MB) {
     throw new Error("Ukuran file terlalu besar. Maksimal 100MB.");
   }
 
-  // Jika file 1MB atau kurang, konversi langsung tanpa kompresi Canvas
-  if (file.size <= ONE_MB) {
+  // Jika ukuran file di bawah 1-2MB (<= 2MB), LANGSUNG KIRIM TANPA KOMPRES
+  if (file.size <= TWO_MB) {
+    console.log(`[Image] File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(2)}MB (<= 2MB): langsung dikonversi tanpa kompresi Canvas.`);
     return await fileToBase64(file);
   }
 
-  // Jika ukuran file 1MB - 100MB, kompresi menggunakan ObjectURL (Sangat Hemat RAM)
-  return new Promise<string>((resolve, reject) => {
-    // Gunakan Blob URL agar tidak memakan RAM browser
+  // Jika ukuran file antara 2MB - 100MB, kompresi menggunakan ObjectURL & Canvas (Sangat Hemat RAM)
+  console.log(`[Image] File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(2)}MB (> 2MB): mengompresi gambar via Canvas...`);
+
+  return new Promise<string>((resolve) => {
+    // Timeout pelindung: jika pemrosesan Canvas macet > 5 detik, fallback ke file original agar request tetap terkirim
+    const fallbackTimer = setTimeout(async () => {
+      console.warn("[Image] Timeout proses kompresi, fallback langsung mengirim Base64 asli.");
+      try {
+        const fallback = await fileToBase64(file);
+        resolve(fallback);
+      } catch {
+        resolve('');
+      }
+    }, 5000);
+
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
 
     // 1. Wajib pasang handler ONLOAD & ONERROR sebelum mengisi img.src
     img.onload = () => {
+      clearTimeout(fallbackTimer);
       try {
         const canvas = document.createElement('canvas');
         let width = img.width;
@@ -58,9 +79,10 @@ export async function processAndCompressImage(file: File): Promise<string> {
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           URL.revokeObjectURL(objectUrl);
-          reject(new Error("Gagal menginisialisasi context canvas 2D."));
+          fileToBase64(file).then(resolve);
           return;
         }
+
         ctx.drawImage(img, 0, 0, width, height);
 
         // Hapus ObjectURL dari memori browser
@@ -71,13 +93,16 @@ export async function processAndCompressImage(file: File): Promise<string> {
         resolve(compressedBase64);
       } catch (err) {
         URL.revokeObjectURL(objectUrl);
-        reject(err);
+        console.warn("[Image] Gagal kompres Canvas, fallback ke Base64 langsung:", err);
+        fileToBase64(file).then(resolve);
       }
     };
 
     img.onerror = () => {
+      clearTimeout(fallbackTimer);
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("Gagal membaca gambar. Format file mungkin tidak didukung atau file corrupt."));
+      console.warn("[Image] Gagal memuat gambar untuk kompresi, fallback ke Base64 langsung.");
+      fileToBase64(file).then(resolve);
     };
 
     // 2. Pasang src SETELAH event handler di atas siap

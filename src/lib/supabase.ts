@@ -347,18 +347,26 @@ export async function invokeBluefoxProcessor(
     const videoUrls = mediaUrls.filter(u => typeof u === 'string' && (u.startsWith('data:video') || u.includes('.mp4') || u.includes('.webm') || u.includes('.mov')));
     const primaryVideoUrl = videoUrls.length > 0 ? videoUrls[0] : null;
 
+    const trimmedMsg = (message || '').trim() || (mediaUrls.length > 0 ? "Tolong jelaskan dan analisis gambar atau lampiran ini secara detail." : "Halo");
+
+    const cleanBase64 = primaryImageUrl && typeof primaryImageUrl === 'string' && primaryImageUrl.includes('base64,')
+      ? primaryImageUrl.split('base64,')[1]
+      : null;
+
     const requestBody: Record<string, any> = {
-      message: message.trim(),
-      prompt: message.trim(),
-      input: message.trim(),
-      query: message.trim(),
+      message: trimmedMsg,
+      prompt: trimmedMsg,
+      input: trimmedMsg,
+      query: trimmedMsg,
       conversation_id: cleanConvId,
       conversationId: cleanConvId,
       sessionId: cleanConvId,
       model: finalModel,
-      is_vision: Boolean(isVisionActive),
-      vision: Boolean(isVisionActive),
+      is_vision: Boolean(isVisionActive || mediaUrls.length > 0),
+      vision: Boolean(isVisionActive || mediaUrls.length > 0),
       image_url: primaryImageUrl,
+      image: primaryImageUrl,
+      imageUrl: primaryImageUrl,
       images: mediaUrls,
       media_urls: mediaUrls,
       video_url: primaryVideoUrl,
@@ -367,6 +375,11 @@ export async function invokeBluefoxProcessor(
       file_urls: mediaUrls,
       attachments: mediaUrls,
     };
+
+    if (cleanBase64) {
+      requestBody.image_base64 = cleanBase64;
+      requestBody.base64_image = cleanBase64;
+    }
 
     if (activeCustomApi) {
       requestBody.custom_api = {
@@ -388,11 +401,13 @@ export async function invokeBluefoxProcessor(
     const token = session?.access_token || supabaseKey;
     const baseEndpoint = (supabaseUrl || 'https://jjlanjshpyklqayjzxyy.supabase.co').replace(/\/+$/, '');
     
-    // Coba endpoint URL spesifik yang diberikan user
+    // Prioritaskan endpoint resmi yang ditentukan oleh pengguna
+    const targetUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
     const urlsToTry = [
+      targetUrl,
       `${baseEndpoint}/functions/v1/bluefox-processor-`,
       `${baseEndpoint}/functions/v1/bluefox-processor`
-    ];
+    ].filter((v, i, a) => a.indexOf(v) === i);
 
     let lastError: any = null;
 
@@ -403,13 +418,19 @@ export async function invokeBluefoxProcessor(
 
       try {
         console.log(`📡 Memanggil Edge Function di: ${fnUrl}`);
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        if (supabaseKey) {
+          headers['apikey'] = supabaseKey;
+        }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
         const res = await fetch(fnUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': supabaseKey,
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-          },
+          headers,
           body: JSON.stringify(requestBody),
           signal: abortSignal,
         });
