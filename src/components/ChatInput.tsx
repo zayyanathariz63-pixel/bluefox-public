@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLanguage } from '../lib/i18n';
 import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
+import { processAndCompressImage } from '../lib/imageCompressor';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
@@ -458,15 +459,10 @@ export function ChatInput({
           continue;
         }
       }
-      // 4. Foto / Gambar
+      // 4. Foto / Gambar (Otomatis dikompres jika 1MB - 100MB di bawah 2MB)
       else if (isImage) {
         try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
+          const dataUrl = await processAndCompressImage(file);
 
           newAttachments.push({
             id: fileId,
@@ -475,11 +471,11 @@ export function ChatInput({
             name: file.name,
             size: file.size,
           });
-        } catch (err) {
+        } catch (err: any) {
           setErrorModal({
             isOpen: true,
-            title: "Gagal Membaca Foto",
-            message: `Gagal membaca file gambar "${file.name}".`,
+            title: "Gagal Memproses Gambar",
+            message: err?.message || `Gagal membaca atau mengompres file gambar "${file.name}".`,
             fileName: file.name
           });
           continue;

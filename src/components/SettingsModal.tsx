@@ -9,6 +9,7 @@ import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { getModelDisplayName } from '../lib/supabase';
+import { processAndCompressImage } from '../lib/imageCompressor';
 import { 
   CustomApiKey, 
   CustomApiUsageStats, 
@@ -97,17 +98,17 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     }, 2500);
   };
 
-  const handlePicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        setProfilePic(result);
-        localStorage.setItem('tmpa_profile_pic', result);
+      try {
+        const compressedBase64 = await processAndCompressImage(file);
+        setProfilePic(compressedBase64);
+        localStorage.setItem('tmpa_profile_pic', compressedBase64);
         showToast(t.photoUpdated);
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        showToast(err?.message || "Gagal mengunggah foto profil.");
+      }
     }
   };
 
