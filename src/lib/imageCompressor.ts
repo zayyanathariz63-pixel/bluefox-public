@@ -1,8 +1,8 @@
 /**
  * Utility Kompresi Gambar di Frontend Website (JavaScript / TypeScript)
- * Memeriksa apakah ukuran file berada di rentang 1MB–100MB.
- * Jika file melebihi 1MB, browser akan otomatis mengompres ukurannya
- * hingga menjadi di bawah 2MB sebelum diubah ke format Base64/dikirim.
+ * Menggunakan URL.createObjectURL yang hemat memori (mencegah browser HP freeze),
+ * urutan event listener onload/onerror sebelum img.src,
+ * dimensi maksimal 1280px, dan kualitas JPEG 0.6.
  */
 
 export function fileToBase64(file: File): Promise<string> {
@@ -19,28 +19,29 @@ export async function processAndCompressImage(file: File): Promise<string> {
   const HUNDRED_MB = 100 * 1024 * 1024;
 
   if (file.size > HUNDRED_MB) {
-    throw new Error("Ukuran file melebihi batas maksimal 100MB.");
+    throw new Error("Ukuran file terlalu besar. Maksimal 100MB.");
   }
 
-  // Jika ukuran file di bawah 1MB, tidak perlu dikompres
+  // Jika file 1MB atau kurang, konversi langsung tanpa kompresi Canvas
   if (file.size <= ONE_MB) {
     return await fileToBase64(file);
   }
 
-  // Jika ukuran file antara 1MB - 100MB, kompres file di Canvas
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = (event.target?.result as string) || '';
-      img.onload = () => {
+  // Jika ukuran file 1MB - 100MB, kompresi menggunakan ObjectURL (Sangat Hemat RAM)
+  return new Promise<string>((resolve, reject) => {
+    // Gunakan Blob URL agar tidak memakan RAM browser
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+
+    // 1. Wajib pasang handler ONLOAD & ONERROR sebelum mengisi img.src
+    img.onload = () => {
+      try {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
 
-        // Resize rasio dimensi jika ukuran terlalu besar
-        const MAX_DIMENSION = 1920;
+        // Batasi dimensi maksimal 1280px agar proses cepat dan hasil di bawah 2MB
+        const MAX_DIMENSION = 1280;
         if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
           if (width > height) {
             height = Math.round((height * MAX_DIMENSION) / width);
@@ -56,17 +57,31 @@ export async function processAndCompressImage(file: File): Promise<string> {
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          URL.revokeObjectURL(objectUrl);
           reject(new Error("Gagal menginisialisasi context canvas 2D."));
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Kompres dengan kualitas 0.7 (menghasilkan file jauh di bawah 2MB)
-        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        // Hapus ObjectURL dari memori browser
+        URL.revokeObjectURL(objectUrl);
+
+        // Export gambar ke JPEG dengan kualitas 0.6
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         resolve(compressedBase64);
-      };
-      img.onerror = (error) => reject(error);
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
     };
-    reader.onerror = (error) => reject(error);
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Gagal membaca gambar. Format file mungkin tidak didukung atau file corrupt."));
+    };
+
+    // 2. Pasang src SETELAH event handler di atas siap
+    img.src = objectUrl;
   });
 }
+
