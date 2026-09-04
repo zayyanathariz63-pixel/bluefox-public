@@ -12,6 +12,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { IntegrationsPage } from './components/IntegrationsPage';
 import { MediaScreenViewer } from './components/MediaScreenViewer';
+import { QuotaExceededModal } from './components/QuotaExceededModal';
 import { useLanguage } from './lib/i18n';
 import { 
   supabase, 
@@ -73,7 +74,7 @@ export function redirectToSSO() {
   window.location.href = ssoUrl.toString();
 }
 
-export type SupportedModel = 'agnes-2.0-flash' | 'laguna-s-2.1' | 'tencent-hy3-free';
+export type SupportedModel = 'agnes-2.0-flash' | 'laguna-s-2.1' | 'longcat-2.0-free';
 
 export default function App() {
   const { lang, changeLanguage, t } = useLanguage();
@@ -238,12 +239,12 @@ export default function App() {
         h = 13; // Non vision: 13% per 5 jam
         w = 10; // Non vision: 10% weekly
       }
-    } else if (model === 'tencent-hy3-free' || model === 'gpt_oss') {
-      // bluefox standard
+    } else if (model === 'laguna-s-2.1' || model === 'tmpa_v1' || model === 'gpt_oss') {
+      // bluefox standard (laguna-s-2.1)
       h = 12; // 12% per 5 jam
       w = 9;  // 9% weekly
-    } else if (model === 'laguna-s-2.1' || model === 'mistral_nemotron') {
-      // bluefox Dilo
+    } else if (model === 'longcat-2.0-free' || model === 'dilo' || model === 'tencent-hy3-free' || model === 'mistral_nemotron') {
+      // bluefox Dilo (longcat-2.0-free)
       h = 8;  // 8% per 5 jam
       w = 6;  // 6% weekly
     } else {
@@ -280,6 +281,16 @@ export default function App() {
   const [errorState, setErrorState] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [reasoningMode, setReasoningMode] = useState<'standar' | 'penalaran'>('standar');
+  const [quotaModalInfo, setQuotaModalInfo] = useState<{
+    isOpen: boolean;
+    title?: string;
+    message?: string;
+    used5h?: number;
+    usedWeekly?: number;
+    isCustomApi?: boolean;
+  }>({
+    isOpen: false,
+  });
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -486,7 +497,7 @@ export default function App() {
               });
 
               if (verifyError) {
-                alert(`[Auth Error] Gagal memverifikasi sesi: ${verifyError.message}`);
+                console.error(`[Auth Error] Gagal memverifikasi sesi: ${verifyError.message}`);
                 throw verifyError;
               }
 
@@ -501,7 +512,7 @@ export default function App() {
               });
 
               if (sessionErr) {
-                alert(`[Auth Error] Gagal memasang sesi: ${sessionErr.message}`);
+                console.error(`[Auth Error] Gagal memasang sesi: ${sessionErr.message}`);
                 throw sessionErr;
               }
 
@@ -567,7 +578,7 @@ export default function App() {
             console.error("Gagal melakukan exchange tiket SSO di Bluefox:", ticketErr);
             sessionStorage.removeItem(ticketLockKey);
             isExchangingRef.current = false;
-            alert(`[Bluefox Login Gagal] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
+            setErrorState(`[Bluefox Login] ${ticketErr.message || 'Tiket SSO tidak valid'}`);
             setAppState('landing');
             return;
           } finally {
@@ -1406,7 +1417,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
     if (!activeUserId) {
       const { data: authData, error: authErr } = await supabase.auth.getUser();
       if (authErr || !authData?.user) {
-        alert("Silakan login terlebih dahulu!");
+        showToast("Silakan login terlebih dahulu untuk mengirim pesan.");
+        setAppState('login');
         return;
       }
       activeUserId = authData.user.id;
@@ -1417,7 +1429,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
     if (activeCustomApi) {
       const customLimitCheck = recordCustomApiRequest();
       if (!customLimitCheck.success) {
-        alert(customLimitCheck.error || "(custom API limit) Batas penggunaan tercapai!");
+        setQuotaModalInfo({
+          isOpen: true,
+          title: "Batas Custom API Tercapai",
+          message: customLimitCheck.error || "Batas penggunaan Custom API (10 req/menit atau 50 req/hari) telah tercapai.",
+          isCustomApi: true,
+          used5h: dbLimits.used5h,
+          usedWeekly: dbLimits.usedWeekly
+        });
         return;
       }
     }
@@ -1430,7 +1449,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
     // 4. Potong limit di Supabase via consume_ai_limit SEBELUM request AI diproses
     const limitRes = await consumeAiLimit(activeUserId, modelCode);
     if (!limitRes.success) {
-      alert(limitRes.message || "Gagal memproses limit!");
+      setQuotaModalInfo({
+        isOpen: true,
+        title: "Batas Kuota Penggunaan Tercapai",
+        message: limitRes.message || "Batas kuota 5 Jam atau Mingguan Anda telah habis (100%). Silakan tunggu periode reset otomatis atau klik tombol Reset Kuota (Dev) di bawah ini.",
+        used5h: limitRes.used_5h ?? dbLimits.used5h ?? 100,
+        usedWeekly: limitRes.used_weekly ?? dbLimits.usedWeekly ?? 100,
+        isCustomApi: false
+      });
       return; // Hentikan kirim pesan ke AI jika limit habis
     }
 
@@ -1949,7 +1975,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
             >
               <span>Model: <strong className="text-blue-600 dark:text-blue-400">
-                {selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'tencent-hy3-free' ? 'bluefox standard' : 'bluefox Dilo'}
+                {selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'laguna-s-2.1' ? 'bluefox standard' : 'bluefox Dilo'}
               </strong></span>
               {isVisionActive && (
                 <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
@@ -2433,37 +2459,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     </p>
                   </button>
 
-                  {/* bluefox standard (tencent-hy3-free) Choice */}
-                  <button 
-                    onClick={() => handleSelectModel('tencent-hy3-free')}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
-                      isVisionActive 
-                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'tencent-hy3-free'
-                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
-                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
-                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        <Cpu size={18} />
-                      </div>
-                      {isVisionActive && (
-                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                          <Lock size={11} /> Terkunci
-                        </span>
-                      )}
-                    </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
-                    </p>
-                  </button>
-
-                  {/* bluefox Dilo (laguna-s-2.1) Choice */}
+                  {/* bluefox standard (laguna-s-2.1) Choice */}
                   <button 
                     onClick={() => handleSelectModel('laguna-s-2.1')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
@@ -2478,6 +2474,36 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
                         selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
+                        <Cpu size={18} />
+                      </div>
+                      {isVisionActive && (
+                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                          <Lock size={11} /> Terkunci
+                        </span>
+                      )}
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
+                    </p>
+                  </button>
+
+                  {/* bluefox Dilo (longcat-2.0-free) Choice */}
+                  <button 
+                    onClick={() => handleSelectModel('longcat-2.0-free')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
+                      isVisionActive 
+                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
+                        : selectedModel === 'longcat-2.0-free'
+                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'longcat-2.0-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
                         <Layers size={18} />
                       </div>
                       {isVisionActive && (
@@ -2487,7 +2513,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       )}
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox Dilo</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by longcat-2.0-free</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.
                     </p>
@@ -2852,6 +2878,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       <MediaScreenViewer 
         media={fullscreenMedia} 
         onClose={handleCloseMediaScreen} 
+      />
+
+      <QuotaExceededModal
+        isOpen={quotaModalInfo.isOpen}
+        onClose={() => setQuotaModalInfo(prev => ({ ...prev, isOpen: false }))}
+        onReset={handleResetLimits}
+        title={quotaModalInfo.title}
+        message={quotaModalInfo.message}
+        used5h={quotaModalInfo.used5h}
+        usedWeekly={quotaModalInfo.usedWeekly}
+        isCustomApi={quotaModalInfo.isCustomApi}
       />
     </div>
       )}

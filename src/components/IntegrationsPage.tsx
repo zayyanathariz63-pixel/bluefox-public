@@ -204,7 +204,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
   async function handleOAuthConnect(providerId: string) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      alert("Silakan login terlebih dahulu.");
+      showToast("Silakan login terlebih dahulu.");
       return;
     }
 
@@ -274,7 +274,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
   // Handle proses Simpan API Key Manual
   async function handleSaveApiKey(providerId: string) {
     if (!apiKeyInput.trim()) {
-      alert("API Key tidak boleh kosong!");
+      showToast("API Key tidak boleh kosong!");
       return;
     }
 
@@ -282,7 +282,7 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        alert("Silakan login terlebih dahulu.");
+        showToast("Silakan login terlebih dahulu.");
         setIsSubmitting(false);
         return;
       }
@@ -295,15 +295,15 @@ export function IntegrationsPage({ onBack, isStandalone = true }: IntegrationsPa
       }, { onConflict: "user_id, provider" });
 
       if (error) {
-        alert("Gagal menyimpan API Key!");
+        showToast("Gagal menyimpan API Key!");
       } else {
-        alert("API Key berhasil disimpan!");
+        showToast("API Key berhasil disimpan!");
         setApiKeyInput("");
         setActiveModalProvider(null);
         fetchStatusIntegrasi();
       }
     } catch (e: any) {
-      alert("Terjadi kesalahan: " + (e.message || "Gagal"));
+      showToast("Terjadi kesalahan: " + (e.message || "Gagal"));
     } finally {
       setIsSubmitting(false);
     }

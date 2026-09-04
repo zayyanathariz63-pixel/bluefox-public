@@ -28,6 +28,7 @@ export function handleRedirectToAccount() {
 export function VerifyPage() {
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkSession() {
@@ -86,10 +87,10 @@ export function VerifyPage() {
         const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://bluefox.tmpa.my.id';
         window.location.href = `${currentOrigin}/`;
       } else {
-        alert('Gagal mengaktifkan sesi: ' + error.message);
+        setErrorMessage('Gagal mengaktifkan sesi: ' + error.message);
       }
     } catch (err: any) {
-      alert('Gagal mengaktifkan sesi: ' + (err?.message || String(err)));
+      setErrorMessage('Gagal mengaktifkan sesi: ' + (err?.message || String(err)));
     }
   };
 
@@ -133,9 +134,23 @@ export function VerifyPage() {
         </div>
 
         <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0' }}>Pilih Akun TMPA</h3>
-        <p style={{ color: '#9ca3af', marginBottom: '24px', fontSize: '14px', lineHeight: '1.5' }}>
+        <p style={{ color: '#9ca3af', marginBottom: '20px', fontSize: '14px', lineHeight: '1.5' }}>
           Sesi terdeteksi! Klik akun di bawah untuk masuk ke Bluefox Chat:
         </p>
+
+        {errorMessage && (
+          <div style={{
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            borderRadius: '12px',
+            padding: '12px',
+            marginBottom: '16px',
+            color: '#f87171',
+            fontSize: '13px'
+          }}>
+            {errorMessage}
+          </div>
+        )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {accounts.map((acc, index) => (

@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Upload, X, Image as ImageIcon, Video as VideoIcon, Eye, AlertTriangle, Clock, Film, Music, FileText } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Upload, X, Image as ImageIcon, Video as VideoIcon, Eye, AlertTriangle, Clock, Film, Music, FileText, Globe, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
@@ -29,6 +29,11 @@ interface CustomErrorModal {
   maxLimitInfo?: string;
 }
 
+interface DetectedDomain {
+  domain: string;
+  url: string;
+}
+
 export function ChatInput({ 
   onSend, 
   isLoading, 
@@ -49,6 +54,7 @@ export function ChatInput({
   const [attachedMediaList, setAttachedMediaList] = useState<MediaAttachment[]>([]);
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
   const [errorModal, setErrorModal] = useState<CustomErrorModal | null>(null);
+  const [domainConfirmTarget, setDomainConfirmTarget] = useState<DetectedDomain | null>(null);
 
   // Trigger Command (@) state
   const [isCommandModalOpen, setIsCommandModalOpen] = useState(false);
@@ -64,6 +70,58 @@ export function ChatInput({
   const isManuallyStoppedRef = useRef(false);
   const sessionFinalsRef = useRef<string>('');
   const sessionInterimsRef = useRef<string>('');
+
+  // Real-time domain detection from input text (Google AI Mode style)
+  const detectedDomains = useMemo<DetectedDomain[]>(() => {
+    if (!input || input.trim().length < 4) return [];
+    
+    // Ignore internal @ commands
+    if (input.startsWith('@') && !input.includes(' ')) return [];
+
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    const domainRegex = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:com|org|net|edu|gov|io|ai|me|co|app|dev|tech|site|online|xyz|info|biz|tv|cc|my\.id|ac\.id|go\.id|co\.id|sch\.id|or\.id|biz\.id|web\.id|id)\b(?:\/[^\s]*)?/gi;
+
+    const list: DetectedDomain[] = [];
+    const seen = new Set<string>();
+
+    let match;
+    // 1. Check full URLs with protocol
+    while ((match = urlRegex.exec(input)) !== null) {
+      try {
+        const full = match[0];
+        const parsed = new URL(full);
+        const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+        if (host && !seen.has(host)) {
+          seen.add(host);
+          list.push({
+            domain: host,
+            url: full
+          });
+        }
+      } catch {}
+    }
+
+    // 2. Check plain domain names
+    while ((match = domainRegex.exec(input)) !== null) {
+      const full = match[0];
+      const matchIndex = match.index;
+      // Skip email address parts
+      if (matchIndex > 0 && input[matchIndex - 1] === '@') continue;
+
+      const rawDomain = full.split('/')[0].toLowerCase();
+      const cleanHost = rawDomain.replace(/^www\./, '');
+      if (cleanHost && !seen.has(cleanHost)) {
+        seen.add(cleanHost);
+        const targetUrl = full.startsWith('http://') || full.startsWith('https://') ? full : `https://${full}`;
+        list.push({
+          domain: cleanHost,
+          url: targetUrl
+        });
+      }
+    }
+
+    return list.slice(0, 3); // Max 3 domains
+  }, [input]);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -656,6 +714,100 @@ export function ChatInput({
         )}
       </AnimatePresence>
 
+      {/* POPUP KONFIRMASI REDIRECT KE WEBSITE EKSTERNAL (DOMAIN DETECTION) */}
+      <AnimatePresence>
+        {domainConfirmTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 select-none">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDomainConfirmTarget(null)}
+              className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm"
+            />
+            
+            <motion.div
+              initial={{ opacity: 0, scale: 0.93, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.93, y: 16 }}
+              transition={{ type: "spring", damping: 26, stiffness: 330 }}
+              className="relative w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 sm:p-7 shadow-2xl z-10 text-slate-900 overflow-hidden"
+            >
+              <button
+                type="button"
+                onClick={() => setDomainConfirmTarget(null)}
+                className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Batal"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shrink-0 shadow-xs">
+                  <Globe size={24} />
+                </div>
+                <div className="flex-1 pr-6">
+                  <span className="text-[11px] font-bold text-blue-600 uppercase tracking-wider bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-block mb-1">
+                    Tautan Terdeteksi
+                  </span>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
+                    Kunjungi Website
+                  </h3>
+                </div>
+              </div>
+
+              {/* Exact user request wording: "apakah kamu mau ke website tersebut?" */}
+              <p className="text-sm text-slate-700 mb-4 leading-relaxed font-semibold">
+                Apakah kamu mau ke website tersebut?
+              </p>
+
+              {/* Target Website preview card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 mb-6 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                  <img 
+                    src={`https://www.google.com/s2/favicons?domain=${domainConfirmTarget.domain}&sz=64`} 
+                    alt="" 
+                    className="w-4 h-4 object-contain"
+                    onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                  />
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-xs font-bold text-slate-900 truncate">
+                    {domainConfirmTarget.domain}
+                  </span>
+                  <span className="text-[11px] text-blue-600 truncate font-mono">
+                    {domainConfirmTarget.url}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setDomainConfirmTarget(null)}
+                  className="w-1/2 sm:w-auto px-5 py-2.5 bg-white hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold rounded-xl border border-slate-200 transition-all shadow-xs cursor-pointer active:scale-95 text-center"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.open(domainConfirmTarget.url, '_blank', 'noopener,noreferrer');
+                    }
+                    setDomainConfirmTarget(null);
+                  }}
+                  className="w-1/2 sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold rounded-xl transition-all shadow-md shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer active:scale-95 text-center"
+                >
+                  <span>Redirect</span>
+                  <ExternalLink size={14} />
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <div className="relative" ref={popupRef}>
         {/* TRIGGER COMMAND (@) FLOATING AUTOCOMPLETE MODAL */}
         <TriggerCommandModal
@@ -865,6 +1017,49 @@ export function ChatInput({
                     </div>
                   );
                 })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* PREVIEW DOMAIN TERDETEKSI (GOOGLE AI SEARCH / AI MODE STYLE) */}
+        <AnimatePresence>
+          {detectedDomains.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              className="mb-2 p-2 bg-gradient-to-r from-blue-50/90 via-slate-50/90 to-cyan-50/90 border border-blue-200/80 rounded-2xl shadow-xs flex items-center justify-between gap-2 overflow-hidden backdrop-blur-sm"
+            >
+              <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto py-0.5 scrollbar-none">
+                {detectedDomains.map((item, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setDomainConfirmTarget(item)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-blue-50 border border-blue-200 text-slate-800 hover:text-blue-700 transition-all shadow-xs cursor-pointer group active:scale-95 shrink-0"
+                    title={`Klik untuk mengunjungi ${item.domain}`}
+                  >
+                    <div className="w-5 h-5 rounded-md bg-slate-100 flex items-center justify-center overflow-hidden shrink-0 border border-slate-200">
+                      <img 
+                        src={`https://www.google.com/s2/favicons?domain=${item.domain}&sz=32`} 
+                        alt="" 
+                        className="w-3.5 h-3.5 object-contain"
+                        onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+                      />
+                      <Globe size={13} className="text-blue-600 hidden group-hover:block" />
+                    </div>
+                    <span className="text-xs font-semibold tracking-tight truncate max-w-[150px] sm:max-w-[220px]">
+                      {item.domain}
+                    </span>
+                    <span className="text-[10px] text-blue-600 bg-blue-100/70 font-semibold px-1.5 py-0.5 rounded-md hidden sm:inline flex items-center gap-1">
+                      Kunjungi Web <ExternalLink size={10} className="inline ml-0.5" />
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="text-[10px] text-slate-500 font-medium shrink-0 hidden md:block pl-1 pr-1 font-mono">
+                Web Terdeteksi
               </div>
             </motion.div>
           )}

@@ -301,18 +301,19 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
 // ==========================================
 export const MODEL_MAPPING: Record<string, string> = {
-  bluefox_pro: "agnes-2.0-flash", // bluefox pro (Supports Vision)
-  bluefox_standard: "tencent-hy3-free", // bluefox standard
-  bluefox_dilo: "laguna-s-2.1", // bluefox Dilo
   tmpa_v2: "agnes-2.0-flash",
-  tmpa_v1: "tencent-hy3-free",
-  dilo: "laguna-s-2.1",
+  tmpa_v1: "laguna-s-2.1",
+  dilo: "longcat-2.0-free", // Gantikan tencent-hy3-free
+  bluefox_pro: "agnes-2.0-flash", // bluefox pro (Supports Vision)
+  bluefox_standard: "laguna-s-2.1", // bluefox standard
+  bluefox_dilo: "longcat-2.0-free", // bluefox Dilo
   "agnes-2.0-flash": "agnes-2.0-flash",
   "laguna-s-2.1": "laguna-s-2.1",
-  "tencent-hy3-free": "tencent-hy3-free",
+  "longcat-2.0-free": "longcat-2.0-free",
+  "tencent-hy3-free": "longcat-2.0-free", // backward compatibility
   qwen3_coder: "agnes-2.0-flash",
-  gpt_oss: "tencent-hy3-free",
-  mistral_nemotron: "laguna-s-2.1",
+  gpt_oss: "laguna-s-2.1",
+  mistral_nemotron: "longcat-2.0-free",
 };
 
 export async function invokeBluefoxProcessor(
@@ -572,10 +573,10 @@ export function getModelLimitCode(model: string, isVision?: boolean): AiModelCod
   if (model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'qwen3_coder') {
     return 'v2_non_vision';
   }
-  if (model === 'tencent-hy3-free' || model === 'tmpa_v1' || model === 'gpt_oss') {
+  if (model === 'laguna-s-2.1' || model === 'tmpa_v1' || model === 'gpt_oss') {
     return 'v1';
   }
-  if (model === 'laguna-s-2.1' || model === 'dilo' || model === 'mistral_nemotron') {
+  if (model === 'longcat-2.0-free' || model === 'dilo' || model === 'tencent-hy3-free' || model === 'mistral_nemotron') {
     return 'dilo';
   }
   return 'v1';
@@ -940,10 +941,10 @@ export function getModelDisplayName(modelId?: string): string {
   if (clean.includes('v2') || clean.includes('pro') || clean.includes('agnes') || clean.includes('qwen')) {
     return 'bluefox pro';
   }
-  if (clean.includes('v1') || clean.includes('standard') || clean.includes('tencent') || clean.includes('gpt')) {
+  if (clean.includes('v1') || clean.includes('standard') || clean.includes('laguna') || clean.includes('gpt')) {
     return 'bluefox standard';
   }
-  if (clean.includes('dilo') || clean.includes('laguna') || clean.includes('mistral') || clean.includes('nemotron')) {
+  if (clean.includes('dilo') || clean.includes('longcat') || clean.includes('tencent') || clean.includes('mistral') || clean.includes('nemotron')) {
     return 'bluefox Dilo';
   }
   return 'bluefox pro';

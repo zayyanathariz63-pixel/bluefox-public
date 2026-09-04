@@ -8,6 +8,7 @@ import {
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { useLanguage, Language } from '../lib/i18n';
+import { getModelDisplayName } from '../lib/supabase';
 import { 
   CustomApiKey, 
   CustomApiUsageStats, 
@@ -514,13 +515,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                               </div>
                             </div>
                             <div className="inline-flex items-center bg-slate-100 px-3 py-1 rounded-full text-xs font-semibold text-slate-700 capitalize">
-                              Model: {
-                                session.model === 'mistral_nemotron' || session.model === 'dilo' || session.model === 'laguna-s-2.1'
-                                  ? 'bluefox Dilo' 
-                                  : session.model === 'qwen3_coder' || session.model === 'tmpa_v2' || session.model === 'agnes-2.0-flash'
-                                  ? 'bluefox pro' 
-                                  : 'bluefox standard'
-                              }
+                              Model: {getModelDisplayName(session.model)}
                             </div>
                           </div>
                         ))}
