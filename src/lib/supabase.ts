@@ -428,12 +428,28 @@ export async function invokeBluefoxProcessor(
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const res = await fetch(fnUrl, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(requestBody),
-          signal: abortSignal,
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 80000);
+
+        const onExternalAbort = () => controller.abort();
+        if (abortSignal) {
+          abortSignal.addEventListener('abort', onExternalAbort, { once: true });
+        }
+
+        let res: Response;
+        try {
+          res = await fetch(fnUrl, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timeoutId);
+          if (abortSignal) {
+            abortSignal.removeEventListener('abort', onExternalAbort);
+          }
+        }
 
         if (!res.ok) {
           const errText = await res.text();

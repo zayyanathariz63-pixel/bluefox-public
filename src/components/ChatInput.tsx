@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLanguage } from '../lib/i18n';
 import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
-import { processAndCompressImage } from '../lib/imageCompressor';
+import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompressor';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
@@ -273,7 +273,8 @@ export function ChatInput({
 
     const heavy3DOrArchiveExts = ['.glb', '.gltf', '.obj', '.fbx', '.stl', '.blend', '.dae', '.3ds', '.max', '.step', '.iges', '.zip', '.rar', '.7z', '.iso', '.exe', '.dmg', '.bin', '.tar', '.gz'];
 
-    for (const file of fileArray) {
+    try {
+      for (const file of fileArray) {
       const lowerName = file.name.toLowerCase();
       const is3DOrArchive = heavy3DOrArchiveExts.some(ext => lowerName.endsWith(ext));
 
@@ -326,12 +327,8 @@ export function ChatInput({
             continue;
           }
 
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
+          const dataUrl = await prepareFilePayload(file);
+          if (!dataUrl) continue;
 
           newAttachments.push({
             id: fileId,
@@ -459,10 +456,11 @@ export function ChatInput({
           continue;
         }
       }
-      // 4. Foto / Gambar (Otomatis dikompres jika 1MB - 100MB di bawah 2MB)
+      // 4. Foto / Gambar (Jika <= 1MB langsung konversi, jika 1MB-100MB kompres Canvas)
       else if (isImage) {
         try {
-          const dataUrl = await processAndCompressImage(file);
+          const dataUrl = await prepareFilePayload(file);
+          if (!dataUrl) continue;
 
           newAttachments.push({
             id: fileId,
@@ -490,17 +488,25 @@ export function ChatInput({
       }
     }
 
-    if (newAttachments.length > 0) {
-      setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 5));
-      // Otomatis aktifkan mode Vision jika ada foto/video
-      const hasVisionMedia = newAttachments.some(a => a.type === 'image' || a.type === 'video');
-      if (hasVisionMedia && onAutoEnableVision) {
-        onAutoEnableVision();
+      if (newAttachments.length > 0) {
+        setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 5));
+        // Otomatis aktifkan mode Vision jika ada foto/video
+        const hasVisionMedia = newAttachments.some(a => a.type === 'image' || a.type === 'video');
+        if (hasVisionMedia && onAutoEnableVision) {
+          onAutoEnableVision();
+        }
       }
+    } catch (unexpectedErr: any) {
+      console.error("[FRONTEND CRASH ERROR]:", unexpectedErr);
+      setErrorModal({
+        isOpen: true,
+        title: "Kendala Pemrosesan File",
+        message: unexpectedErr?.message || "Terjadi kesalahan saat memproses lampiran file.",
+      });
+    } finally {
+      setIsProcessingMedia(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-
-    setIsProcessingMedia(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleRemoveSingleMedia = (indexToRemove: number) => {

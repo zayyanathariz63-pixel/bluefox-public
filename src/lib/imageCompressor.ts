@@ -1,11 +1,12 @@
 /**
- * Utility Kompresi Gambar di Frontend Website (JavaScript / TypeScript)
- * Aturan:
- * 1. File <= 2MB (di bawah 1-2MB): Langsung kirim TANPA KOMPRES (fileToBase64).
- * 2. File 2MB - 100MB: Kompres menggunakan ObjectURL & Canvas agar ukuran menjadi di bawah 2MB.
- * 3. File > 100MB: Ditolak dengan pesan batas maksimal 100MB.
+ * Utility Pemrosesan File di Frontend Website (JavaScript / TypeScript)
+ * Memisahkan penanganan file berdasarkan tipe MIME (file.type):
+ * 1. Gambar (image/*): Jika <= 1MB dikonversi langsung via fileToBase64, jika 1MB–100MB dikompres via Canvas (URL.createObjectURL).
+ * 2. Audio (MP3, WAV, dsb.) atau file non-gambar: Langsung dibaca ke Base64 via FileReader tanpa melalui Canvas gambar.
+ * 3. Batas ukuran maksimal file: 100MB.
  */
 
+// Konversi File ke Base64 Standar (Untuk MP3 / Audio / Gambar <= 1MB / Dokumen)
 export function fileToBase64(file: File | Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -21,47 +22,19 @@ export function fileToBase64(file: File | Blob): Promise<string> {
   });
 }
 
-export async function processAndCompressImage(file: File): Promise<string> {
-  const TWO_MB = 2 * 1024 * 1024; // 2MB
-  const HUNDRED_MB = 100 * 1024 * 1024; // 100MB
-
-  if (file.size > HUNDRED_MB) {
-    throw new Error("Ukuran file terlalu besar. Maksimal 100MB.");
-  }
-
-  // Jika ukuran file di bawah 1-2MB (<= 2MB), LANGSUNG KIRIM TANPA KOMPRES
-  if (file.size <= TWO_MB) {
-    console.log(`[Image] File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(2)}MB (<= 2MB): langsung dikonversi tanpa kompresi Canvas.`);
-    return await fileToBase64(file);
-  }
-
-  // Jika ukuran file antara 2MB - 100MB, kompresi menggunakan ObjectURL & Canvas (Sangat Hemat RAM)
-  console.log(`[Image] File "${file.name}" berukuran ${(file.size / (1024 * 1024)).toFixed(2)}MB (> 2MB): mengompresi gambar via Canvas...`);
-
-  return new Promise<string>((resolve) => {
-    // Timeout pelindung: jika pemrosesan Canvas macet > 5 detik, fallback ke file original agar request tetap terkirim
-    const fallbackTimer = setTimeout(async () => {
-      console.warn("[Image] Timeout proses kompresi, fallback langsung mengirim Base64 asli.");
-      try {
-        const fallback = await fileToBase64(file);
-        resolve(fallback);
-      } catch {
-        resolve('');
-      }
-    }, 5000);
-
+// Khusus kompresi file Gambar menggunakan ObjectURL & Canvas (Hemat RAM)
+export function compressImageFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
 
-    // 1. Wajib pasang handler ONLOAD & ONERROR sebelum mengisi img.src
+    // Pasang handler onload dan onerror sebelum mengisi img.src
     img.onload = () => {
-      clearTimeout(fallbackTimer);
       try {
         const canvas = document.createElement('canvas');
         let width = img.width;
         let height = img.height;
 
-        // Batasi dimensi maksimal 1280px agar proses cepat dan hasil di bawah 2MB
         const MAX_DIMENSION = 1280;
         if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
           if (width > height) {
@@ -79,34 +52,55 @@ export async function processAndCompressImage(file: File): Promise<string> {
         const ctx = canvas.getContext('2d');
         if (!ctx) {
           URL.revokeObjectURL(objectUrl);
-          fileToBase64(file).then(resolve);
+          fileToBase64(file).then(resolve).catch(reject);
           return;
         }
 
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Hapus ObjectURL dari memori browser
         URL.revokeObjectURL(objectUrl);
-
-        // Export gambar ke JPEG dengan kualitas 0.6
         const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
         resolve(compressedBase64);
       } catch (err) {
         URL.revokeObjectURL(objectUrl);
-        console.warn("[Image] Gagal kompres Canvas, fallback ke Base64 langsung:", err);
-        fileToBase64(file).then(resolve);
+        reject(err);
       }
     };
 
     img.onerror = () => {
-      clearTimeout(fallbackTimer);
       URL.revokeObjectURL(objectUrl);
-      console.warn("[Image] Gagal memuat gambar untuk kompresi, fallback ke Base64 langsung.");
-      fileToBase64(file).then(resolve);
+      reject(new Error("Format gambar tidak valid atau file rusak."));
     };
 
-    // 2. Pasang src SETELAH event handler di atas siap
     img.src = objectUrl;
   });
 }
+
+// Fungsi universal untuk memproses Gambar, MP3, dan dokumen lainnya
+export async function prepareFilePayload(file: File): Promise<string | null> {
+  if (!file) return null;
+
+  const ONE_MB = 1024 * 1024;
+  const HUNDRED_MB = 100 * 1024 * 1024;
+
+  if (file.size > HUNDRED_MB) {
+    throw new Error("Ukuran file melebihi batas maksimal 100MB.");
+  }
+
+  // 1. Jika tipe file adalah GAMBAR, jalankan kompresi Canvas jika > 1MB
+  if (file.type.startsWith('image/')) {
+    if (file.size <= ONE_MB) {
+      return await fileToBase64(file);
+    }
+    return await compressImageFile(file);
+  }
+
+  // 2. Jika tipe file adalah AUDIO (MP3, WAV, dsb) atau file lain
+  // BACA LANGSUNG TANPA KANVAS GAMBAR
+  return await fileToBase64(file);
+}
+
+// Alias untuk kompatibilitas fungsi sebelumnya
+export const processAndCompressImage = prepareFilePayload;
+
 

@@ -22,12 +22,12 @@ import {
   loadChatHistory,
   getValidUUID,
   hasValidConfig,
-  invokeBluefoxProcessor,
   consumeAiLimit,
   consumeSearchLimit,
   getUserLimits,
   resetUserLimits,
-  getModelLimitCode
+  getModelLimitCode,
+  supabaseKey
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -1412,127 +1412,110 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       return;
     }
 
-    // 1. Ambil UUID user yang sedang login secara dinamis
-    let activeUserId = user?.id;
-    if (!activeUserId) {
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !authData?.user) {
-        showToast("Silakan login terlebih dahulu untuk mengirim pesan.");
-        setAppState('login');
-        return;
-      }
-      activeUserId = authData.user.id;
-    }
-
-    // 2. Cek limit Custom API jika ada Custom API yang aktif (10 req/menit & 50 req/hari)
-    const activeCustomApi = getActiveCustomApi();
-    if (activeCustomApi) {
-      const customLimitCheck = recordCustomApiRequest();
-      if (!customLimitCheck.success) {
-        setQuotaModalInfo({
-          isOpen: true,
-          title: "Batas Custom API Tercapai",
-          message: customLimitCheck.error || "Batas penggunaan Custom API (10 req/menit atau 50 req/hari) telah tercapai.",
-          isCustomApi: true,
-          used5h: dbLimits.used5h,
-          usedWeekly: dbLimits.usedWeekly
-        });
-        return;
-      }
-    }
-
-    // 3. Tentukan model code ('v2_vision' | 'v2_non_vision' | 'v1' | 'dilo')
-    const isVisionNow = Boolean(isVisionActive || hasMedia);
-    const currentEffectiveModel = isVisionNow ? 'agnes-2.0-flash' : selectedModel;
-    const modelCode = getModelLimitCode(selectedModel, isVisionNow);
-
-    // 4. Potong limit di Supabase via consume_ai_limit SEBELUM request AI diproses
-    const limitRes = await consumeAiLimit(activeUserId, modelCode);
-    if (!limitRes.success) {
-      setQuotaModalInfo({
-        isOpen: true,
-        title: "Batas Kuota Penggunaan Tercapai",
-        message: limitRes.message || "Batas kuota 5 Jam atau Mingguan Anda telah habis (100%). Silakan tunggu periode reset otomatis atau klik tombol Reset Kuota (Dev) di bawah ini.",
-        used5h: limitRes.used_5h ?? dbLimits.used5h ?? 100,
-        usedWeekly: limitRes.used_weekly ?? dbLimits.usedWeekly ?? 100,
-        isCustomApi: false
-      });
-      return; // Hentikan kirim pesan ke AI jika limit habis
-    }
-
-    if (limitRes.used_5h !== undefined) {
-      setDbLimits({
-        used5h: limitRes.used_5h,
-        usedWeekly: limitRes.used_weekly,
-      });
-    }
-
-    console.log("Sisa limit 5h:", limitRes.remaining_5h);
-    console.log("Sisa limit weekly:", limitRes.remaining_weekly);
-
-    // 4. Update usage local state & Tampilkan pesan User di UI (Optimistic UI)
-    updateUsage(currentEffectiveModel, isVisionNow);
+    // 1. Tampilkan UI loading & bersihkan error state
     setIsLoading(true);
     setErrorState(null);
 
-    // =========================================================================
-    // ENRICH AI PROMPT UNTUK PERINTAH MODUL AI (@verifyai, @deep verify, @creative)
-    // =========================================================================
-    const baseMessages = overrideMessages ?? messages;
-    let effectiveAiPrompt = userText;
-
-    if (lowerText.startsWith('@verifyai')) {
-      const lastAiMsg = [...baseMessages].reverse().find(m => m.role === 'model');
-      const focusText = userText.replace(/^@verifyai\s*/i, '').trim();
-      effectiveAiPrompt = `[VERIFY-AI PROTOKOL KOREKSI & VALIDASI MANDIRI]\nMohon evaluasi ulang dan koreksi jawaban AI sebelumnya secara kritis dan komprehensif. Periksa kebenaran fakta, data numerik, rumus, logika inferensi, dan jika terdapat kesalahan atau hal yang kurang tepat, perbaiki secara transparan dan detail.\n\n${lastAiMsg ? `Konteks Jawaban AI Sebelumnya:\n"""\n${lastAiMsg.text}\n"""\n` : ''}${focusText ? `Fokus Evaluasi Khusus: ${focusText}` : 'Lakukan evaluasi menyeluruh dan berikan jawaban yang sudah dikoreksi.'}`;
-    } else if (lowerText.startsWith('@deep verify')) {
-      const query = userText.replace(/^@deep\s+verify\s*/i, '').trim();
-      effectiveAiPrompt = `[DEEP REASONING & VERIFICATION PROTOCOL]\nLakukan analisis mendalam dan pemikiran bertahap (step-by-step reasoning) yang terstruktur secara analitis, kritis, dan terverifikasi secara logis sebelum memberikan kesimpulan akhir.\n\nTopik/Pertanyaan:\n${query}`;
-    } else if (lowerText.startsWith('@creative')) {
-      const query = userText.replace(/^@creative\s*/i, '').trim();
-      effectiveAiPrompt = `[CREATIVE DYNAMIC STYLE PROTOCOL]\nAktifkan parameter kreasi ide eksploratif, variasi diksi yang kaya dan ekspresif, eksploratif, serta hasilkan ide-ide inovatif dan out-of-the-box.\n\nTopik/Instruksi:\n${query}`;
-    }
-
-    const activeMemories = getActiveMemories();
-    if (activeMemories.length > 0 && !lowerText.startsWith('@verifyai')) {
-      effectiveAiPrompt = `[KONTEKS MEMORI PENGGUNA YANG TERSIMPAN:\n${activeMemories.map(m => `- ${m}`).join('\n')}]\n\n${effectiveAiPrompt}`;
-    }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: userText,
-      media: media,
-    };
-
-    const updatedMessages = [...baseMessages, userMessage];
-    setMessages(updatedMessages);
-
-    let sessionId = getValidUUID(currentSessionId);
-    let currentSessions = [...chatSessions];
-
-    const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
-    if (sessionIdx === -1) {
-      const newSession = {
-        id: sessionId,
-        title: userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Lampiran Media'),
-        messages: updatedMessages,
-        updatedAt: Date.now(),
-        model: selectedModel
-      };
-      currentSessions = [newSession, ...currentSessions];
-    } else {
-      currentSessions[sessionIdx] = {
-        ...currentSessions[sessionIdx],
-        messages: updatedMessages,
-        updatedAt: Date.now()
-      };
-    }
-    
-    saveSessionsToLocal(currentSessions);
+    let timeoutId: any = null;
 
     try {
+      // Ambil UUID user yang sedang login secara dinamis
+      let activeUserId = user?.id;
+      if (!activeUserId) {
+        const { data: authData } = await supabase.auth.getUser();
+        activeUserId = authData?.user?.id;
+      }
+
+      // Cek limit Custom API jika ada Custom API yang aktif (10 req/menit & 50 req/hari)
+      const activeCustomApi = getActiveCustomApi();
+      if (activeCustomApi) {
+        const customLimitCheck = recordCustomApiRequest();
+        if (!customLimitCheck.success) {
+          setQuotaModalInfo({
+            isOpen: true,
+            title: "Batas Custom API Tercapai",
+            message: customLimitCheck.error || "Batas penggunaan Custom API (10 req/menit atau 50 req/hari) telah tercapai.",
+            isCustomApi: true,
+            used5h: dbLimits.used5h,
+            usedWeekly: dbLimits.usedWeekly
+          });
+          return;
+        }
+      }
+
+      // Tentukan model
+      const isVisionNow = Boolean(isVisionActive || hasMedia);
+      const currentEffectiveModel = isVisionNow ? 'agnes-2.0-flash' : selectedModel;
+
+      // =========================================================================
+      // [PEMBERSIHAN KODE FRONTEND - LANGSUNG KIRIM KE EDGE FUNCTION]:
+      // Panggilan limit ke tabel 'user_limits' dan RPC 'consume_ai_limit' dinonaktifkan
+      // agar proses pengiriman pesan langsung dan tidak terblokir oleh kendala RLS/DB.
+      // // const limitCheck = await supabase.from('user_limits').select('*');
+      // // const consume = await supabase.rpc('consume_ai_limit', { ... });
+      // // const reset = await supabase.rpc('reset_user_limits', { ... });
+      // =========================================================================
+
+      updateUsage(currentEffectiveModel, isVisionNow);
+
+      // =========================================================================
+      // ENRICH AI PROMPT UNTUK PERINTAH MODUL AI (@verifyai, @deep verify, @creative)
+      // =========================================================================
+      const baseMessages = overrideMessages ?? messages;
+      let effectiveAiPrompt = userText;
+
+      if (lowerText.startsWith('@verifyai')) {
+        const lastAiMsg = [...baseMessages].reverse().find(m => m.role === 'model');
+        const focusText = userText.replace(/^@verifyai\s*/i, '').trim();
+        effectiveAiPrompt = `[VERIFY-AI PROTOKOL KOREKSI & VALIDASI MANDIRI]\nMohon evaluasi ulang dan koreksi jawaban AI sebelumnya secara kritis dan komprehensif. Periksa kebenaran fakta, data numerik, rumus, logika inferensi, dan jika terdapat kesalahan atau hal yang kurang tepat, perbaiki secara transparan dan detail.\n\n${lastAiMsg ? `Konteks Jawaban AI Sebelumnya:\n"""\n${lastAiMsg.text}\n"""\n` : ''}${focusText ? `Fokus Evaluasi Khusus: ${focusText}` : 'Lakukan evaluasi menyeluruh dan berikan jawaban yang sudah dikoreksi.'}`;
+      } else if (lowerText.startsWith('@deep verify')) {
+        const query = userText.replace(/^@deep\s+verify\s*/i, '').trim();
+        effectiveAiPrompt = `[DEEP REASONING & VERIFICATION PROTOCOL]\nLakukan analisis mendalam dan pemikiran bertahap (step-by-step reasoning) yang terstruktur secara analitis, kritis, dan terverifikasi secara logis sebelum memberikan kesimpulan akhir.\n\nTopik/Pertanyaan:\n${query}`;
+      } else if (lowerText.startsWith('@creative')) {
+        const query = userText.replace(/^@creative\s*/i, '').trim();
+        effectiveAiPrompt = `[CREATIVE DYNAMIC STYLE PROTOCOL]\nAktifkan parameter kreasi ide eksploratif, variasi diksi yang kaya dan ekspresif, eksploratif, serta hasilkan ide-ide inovatif dan out-of-the-box.\n\nTopik/Instruksi:\n${query}`;
+      }
+
+      const activeMemories = getActiveMemories();
+      if (activeMemories.length > 0 && !lowerText.startsWith('@verifyai')) {
+        effectiveAiPrompt = `[KONTEKS MEMORI PENGGUNA YANG TERSIMPAN:\n${activeMemories.map(m => `- ${m}`).join('\n')}]\n\n${effectiveAiPrompt}`;
+      }
+
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        text: userText,
+        media: media,
+      };
+
+      const updatedMessages = [...baseMessages, userMessage];
+      setMessages(updatedMessages);
+
+      let sessionId = getValidUUID(currentSessionId);
+      let currentSessions = [...chatSessions];
+
+      const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
+      if (sessionIdx === -1) {
+        const newSession = {
+          id: sessionId,
+          title: userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Lampiran Media'),
+          messages: updatedMessages,
+          updatedAt: Date.now(),
+          model: selectedModel
+        };
+        currentSessions = [newSession, ...currentSessions];
+      } else {
+        currentSessions[sessionIdx] = {
+          ...currentSessions[sessionIdx],
+          messages: updatedMessages,
+          updatedAt: Date.now()
+        };
+      }
+      
+      saveSessionsToLocal(currentSessions);
+
       abortControllerRef.current = new AbortController();
+      timeoutId = setTimeout(() => abortControllerRef.current?.abort(), 80000);
       let aiReplyText = '';
       let effectiveConvId = currentSessionId || sessionId;
 
@@ -1550,11 +1533,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             signal: abortControllerRef.current?.signal,
           });
 
-          // Potong kuota limit pencarian
           const mode: SearchModeType = searchPayload.searchMode || 'standard';
-          if (activeUserId) {
-            consumeSearchLimit(activeUserId, mode).catch(() => {});
-          }
+          // Panggilan consumeSearchLimit dinonaktifkan sesuai pembersihan frontend
+          // if (activeUserId) {
+          //   consumeSearchLimit(activeUserId, mode).catch(() => {});
+          // }
           updateUsage(currentEffectiveModel, isVisionNow, mode);
 
           if (searchPayload.has_sources && searchPayload.sources.length > 0) {
@@ -1587,31 +1570,46 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       const promptToSend = effectiveAiPrompt.trim() || (mediaUrls.length > 0 ? "Tolong jelaskan dan analisis gambar atau lampiran ini secara detail." : "Halo");
 
-      // 1. Panggil Edge Function Bluefox Processor utama (https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-)
-      const edgeRes = await invokeBluefoxProcessor(
-        promptToSend,
-        currentSessionId || null,
-        currentEffectiveModel,
-        isVisionNow,
-        mediaUrls.length > 0 ? mediaUrls : null,
-        abortControllerRef.current.signal
-      );
+      const { data: { session } } = await supabase.auth.getSession();
+      const userSessionToken = session?.access_token || supabaseKey;
+
+      const response = await fetch("https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${userSessionToken}`
+        },
+        body: JSON.stringify({
+          message: promptToSend,
+          conversation_id: currentSessionId || null,
+          is_vision: isVisionNow,
+          image_url: mediaUrls.length > 0 ? mediaUrls[0] : null,
+          model: currentEffectiveModel
+        }),
+        signal: abortControllerRef.current.signal
+      });
 
       if (abortControllerRef.current?.signal.aborted) {
         throw new DOMException('Request aborted', 'AbortError');
       }
 
-      if (edgeRes.data && edgeRes.data.success !== false && (edgeRes.data.reply || edgeRes.data.text || edgeRes.data.response)) {
-        const fullReply = edgeRes.data.reply || edgeRes.data.text || edgeRes.data.response || '';
-        if (edgeRes.data.conversation_id) {
-          effectiveConvId = edgeRes.data.conversation_id;
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok || result.success === false) {
+        throw new Error(result.error || result.message || "Gagal memproses pesan dari Edge Function.");
+      }
+
+      if (result.reply || result.text || result.response) {
+        const fullReply = result.reply || result.text || result.response || '';
+        if (result.conversation_id) {
+          effectiveConvId = result.conversation_id;
           setCurrentSessionId(effectiveConvId);
         }
 
         // If edge response already returns sources, use them
-        if (edgeRes.data.sources && Array.isArray(edgeRes.data.sources)) {
-          attachedSources = edgeRes.data.sources;
-          attachedEngine = edgeRes.data.search_engine_used || attachedEngine || 'tavily';
+        if (result.sources && Array.isArray(result.sources)) {
+          attachedSources = result.sources;
+          attachedEngine = result.search_engine_used || attachedEngine || 'tavily';
         }
 
         // Tampilkan teks dengan efek ketikan (Typewriter Streaming) per kata seperti GPT / Gemini
@@ -1659,116 +1657,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             }
           }, intervalMs);
         });
-
-      } else {
-        // Fallback jika Edge Function mengalami kendala: coba server fallback /api/chat
-        console.warn("⚠️ Edge Function tidak memberikan balasan sukses, mencoba fallback internal /api/chat...", edgeRes.error);
-        const history = baseMessages.map(m => ({
-          role: m.role,
-          text: m.text
-        }));
-
-        const res = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            history, 
-            message: effectiveAiPrompt, 
-            model: currentEffectiveModel, 
-            customInstruction, 
-            reasoningMode 
-          }),
-          signal: abortControllerRef.current.signal
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          const errMsg = edgeRes.error || errData?.error || "Gagal menghubungi layanan AI server.";
-          throw new Error(errMsg);
-        }
-
-        if (res.body) {
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed || !trimmed.startsWith('data:')) continue;
-              const jsonStr = trimmed.replace(/^data:\s*/, '');
-              if (jsonStr === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(jsonStr);
-
-                if (parsed.type === 'search_sources' || (parsed.sources && parsed.sources.length > 0)) {
-                  attachedSources = parsed.sources;
-                  attachedEngine = parsed.search_engine_used || attachedEngine || 'tavily';
-                  setMessages(prev => {
-                    const next = [...prev];
-                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
-                    if (targetIdx !== -1) {
-                      next[targetIdx] = { 
-                        ...next[targetIdx], 
-                        has_sources: true, 
-                        search_engine_used: attachedEngine, 
-                        sources: attachedSources 
-                      };
-                    }
-                    return next;
-                  });
-                }
-
-                if (parsed.delta) {
-                  aiReplyText += parsed.delta;
-                  setMessages(prev => {
-                    const next = [...prev];
-                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
-                    if (targetIdx !== -1) {
-                      next[targetIdx] = { 
-                        ...next[targetIdx], 
-                        text: aiReplyText,
-                        has_sources: attachedSources.length > 0,
-                        search_engine_used: attachedEngine,
-                        sources: attachedSources.length > 0 ? attachedSources : undefined
-                      };
-                    }
-                    return next;
-                  });
-                } else if (parsed.done && parsed.fullText) {
-                  aiReplyText = parsed.fullText;
-                  if (parsed.sources && parsed.sources.length > 0) {
-                    attachedSources = parsed.sources;
-                    attachedEngine = parsed.search_engine_used || attachedEngine;
-                  }
-                  setMessages(prev => {
-                    const next = [...prev];
-                    const targetIdx = next.findIndex(m => m.id === aiMessageId);
-                    if (targetIdx !== -1) {
-                      next[targetIdx] = { 
-                        ...next[targetIdx], 
-                        text: aiReplyText,
-                        has_sources: attachedSources.length > 0,
-                        search_engine_used: attachedEngine,
-                        sources: attachedSources.length > 0 ? attachedSources : undefined
-                      };
-                    }
-                    return next;
-                  });
-                } else if (parsed.error) {
-                  throw new Error(parsed.error);
-                }
-              } catch {}
-            }
-          }
-        }
       }
 
       if (!aiReplyText.trim()) {
@@ -1813,27 +1701,32 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('Request stopped by user');
+        console.log('Request stopped by user or timeout reached');
         return;
       }
-      console.error("Catch Block Frontend Error:", err);
-      const errMsg = err?.message || "Terjadi kesalahan saat memuat balasan.";
+      console.error("[FRONTEND CRASH ERROR]:", err);
+      const errMsg = err?.message || "Gagal memproses pesan dari Edge Function.";
       setErrorState(errMsg);
+      showToast("Terjadi Kendala: " + errMsg);
 
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: `⚠️ ${errMsg}`,
+        text: `⚠️ Terjadi Kendala: ${errMsg}`,
       };
       setMessages(prev => {
         const filtered = prev.filter(m => m.text.trim() !== '');
         return [...filtered, errorMessage];
       });
     } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       if (typewriterIntervalRef.current) {
         clearInterval(typewriterIntervalRef.current);
         typewriterIntervalRef.current = null;
       }
+      // Matikan loading animasi (...) dalam kondisi apapun
       setIsLoading(false);
       abortControllerRef.current = null;
     }
