@@ -23,6 +23,9 @@ export interface Message {
   has_sources?: boolean;
   search_engine_used?: 'tavily' | 'duckduckgo' | string;
   sources?: SearchSource[];
+  thinking?: string;
+  isThinking?: boolean;
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
 }
 
 export interface Connector {

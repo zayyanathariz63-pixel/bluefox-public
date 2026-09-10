@@ -177,6 +177,9 @@ async function startServer() {
         model = "agnes-2.0-flash", 
         customInstruction = "", 
         reasoningMode = "", 
+        smartSelectLevel = "",
+        smart_select_level = "",
+        reasoning_effort = "",
         forceSearch = false,
         stream = true 
       } = req.body;
@@ -363,6 +366,24 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
         }
       }
 
+      // Hitung tingkat Smart Select / penalaran (none, low, medium, high):
+      const chosenLevel = (smartSelectLevel || smart_select_level || reasoning_effort || "").toLowerCase();
+      const isPenalaranActive = reasoningMode === "penalaran" || chosenLevel === "high";
+
+      const getReasoningEffort = (modelName: string): "none" | "high" | "medium" | "low" => {
+        if (chosenLevel === "none" || chosenLevel === "low" || chosenLevel === "medium" || chosenLevel === "high") {
+          return chosenLevel as "none" | "high" | "medium" | "low";
+        }
+        const clean = (modelName || "").toLowerCase();
+        if (clean.includes("agnes") || clean.includes("pro") || clean.includes("v2") || clean.includes("qwen")) {
+          return "high";
+        }
+        if (clean.includes("longcat") || clean.includes("dilo") || clean.includes("tencent") || clean.includes("nemotron")) {
+          return isPenalaranActive ? "medium" : "low";
+        }
+        return isPenalaranActive ? "high" : "medium";
+      };
+
       // 2. Fallback: Router Bynara / OpenRouter Streaming
       if (!successfullyGenerated && openRouterKey && openRouterKey !== "YOUR_OPENROUTER_API_KEY") {
         try {
@@ -370,7 +391,34 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
           for (const mId of modelsToTry) {
             if (abortController.signal.aborted) break;
             try {
-              console.log(`Trying stream on Router Bynara: ${mId}`);
+              const currentEffort = getReasoningEffort(mId);
+              const isThinkingEnabled = currentEffort !== "none";
+              console.log(`Trying stream on Router Bynara: ${mId} (Smart Select: ${currentEffort})`);
+
+              const routerPayload: any = {
+                model: mId,
+                messages: formattedMessages,
+                temperature: isCreative ? 0.95 : 0.7,
+                max_tokens: 3500,
+                stream: true,
+              };
+
+              if (isThinkingEnabled) {
+                routerPayload.reasoning_effort = currentEffort;
+                routerPayload.reasoning = {
+                  effort: currentEffort
+                };
+                routerPayload.thinking = {
+                  type: "enabled",
+                  effort: currentEffort
+                };
+              } else {
+                routerPayload.reasoning_effort = "none";
+                routerPayload.thinking = {
+                  type: "disabled"
+                };
+              }
+
               const response = await fetch("https://router.bynara.id/v1/chat/completions", {
                 method: "POST",
                 headers: {
@@ -379,13 +427,7 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
                   "HTTP-Referer": "https://ai.studio/build",
                   "X-Title": "tmpa chat"
                 },
-                body: JSON.stringify({
-                  model: mId,
-                  messages: formattedMessages,
-                  temperature: isCreative ? 0.95 : 0.7,
-                  max_tokens: 3000,
-                  stream: true
-                }),
+                body: JSON.stringify(routerPayload),
                 signal: abortController.signal
               });
 
@@ -393,6 +435,7 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = "";
+                let isInsideThinkingTag = false;
 
                 while (true) {
                   const { done, value } = await reader.read();
@@ -410,12 +453,38 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
                     try {
                       const json = JSON.parse(dataStr);
                       const delta = json.choices?.[0]?.delta?.content || "";
+                      const reasoningDelta = json.choices?.[0]?.delta?.reasoning_content 
+                        || json.choices?.[0]?.delta?.reasoning 
+                        || json.choices?.[0]?.delta?.thought 
+                        || "";
+
+                      if (reasoningDelta) {
+                        if (!isInsideThinkingTag) {
+                          isInsideThinkingTag = true;
+                          accumulatedText += "<think>";
+                          sendChunk("<think>");
+                        }
+                        accumulatedText += reasoningDelta;
+                        sendChunk(reasoningDelta);
+                      }
+
                       if (delta) {
+                        if (isInsideThinkingTag) {
+                          isInsideThinkingTag = false;
+                          accumulatedText += "</think>\n\n";
+                          sendChunk("</think>\n\n");
+                        }
                         accumulatedText += delta;
                         sendChunk(delta);
                       }
                     } catch {}
                   }
+                }
+
+                if (isInsideThinkingTag) {
+                  isInsideThinkingTag = false;
+                  accumulatedText += "</think>\n\n";
+                  sendChunk("</think>\n\n");
                 }
 
                 if (accumulatedText.trim().length > 0) {

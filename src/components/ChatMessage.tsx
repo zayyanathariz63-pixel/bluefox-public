@@ -8,6 +8,8 @@ import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 import { SourcesBottomSheet } from './SourcesBottomSheet';
 import { useLanguage } from '../lib/i18n';
+import { ThinkingBlock } from './ThinkingBlock';
+import { parseThinking } from '../lib/reasoning';
 
 interface ChatMessageProps {
   message: Message;
@@ -85,6 +87,8 @@ export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: Chat
 
   const hasWebSources = !isUser && Boolean(message.sources && message.sources.length > 0);
   const isTavily = message.search_engine_used === 'tavily';
+
+  const { thinking, content, isThinkingComplete } = parseThinking(message.text, message.thinking);
 
   const handleSave = () => {
     if (editValue.trim() !== '' && onEdit) {
@@ -289,17 +293,36 @@ export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: Chat
               </div>
             ) : (
               <div className="flex flex-col items-start w-full">
-                <div className="markdown-body text-[15px] text-slate-900 w-full leading-relaxed">
-                  <ReactMarkdown 
-                    remarkPlugins={[remarkGfm, remarkBreaks]}
-                    components={{
-                      code: CodeBlock,
-                      blockquote: CustomBlockquote
-                    }}
-                  >
-                    {message.text}
-                  </ReactMarkdown>
-                </div>
+                {/* Blok Penalaran / Thinking */}
+                {thinking ? (
+                  <ThinkingBlock
+                    thinking={thinking}
+                    isThinkingComplete={isThinkingComplete}
+                    reasoningEffort={message.reasoningEffort}
+                  />
+                ) : null}
+
+                {/* Konten Utama Pesan AI */}
+                {content ? (
+                  <div className="markdown-body text-[15px] text-slate-900 w-full leading-relaxed">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      components={{
+                        code: CodeBlock,
+                        blockquote: CustomBlockquote
+                      }}
+                    >
+                      {content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  !isThinkingComplete && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 py-1 font-medium">
+                      <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping" />
+                      <span>Menyusun jawaban...</span>
+                    </div>
+                  )
+                )}
 
                 {/* Tombol Lihat Sumber di Chat Bubble */}
                 {hasWebSources && (

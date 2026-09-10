@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -33,6 +33,13 @@ import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
 import { executeDualEngineSearch, detectSearchIntent, SearchModeType } from './lib/search';
+import { 
+  getReasoningEffort, 
+  getSmartSelectEffort, 
+  SmartSelectLevel, 
+  SMART_SELECT_CONFIG, 
+  SMART_SELECT_STEPS 
+} from './lib/reasoning';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -280,7 +287,9 @@ export default function App() {
 
   const [errorState, setErrorState] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [reasoningMode, setReasoningMode] = useState<'standar' | 'penalaran'>('standar');
+  const [smartSelectLevel, setSmartSelectLevel] = useState<SmartSelectLevel>('auto');
+  const [isSmartSelectOpen, setIsSmartSelectOpen] = useState(false);
+  const reasoningMode: 'standar' | 'penalaran' = smartSelectLevel === 'high' ? 'penalaran' : 'standar';
   const [quotaModalInfo, setQuotaModalInfo] = useState<{
     isOpen: boolean;
     title?: string;
@@ -325,7 +334,8 @@ export default function App() {
     setShowActionToast(lang === 'id' ? 'Limit AI direset ke 0% (Dev Mode)' : 'AI limits reset to 0% (Dev Mode)');
     setTimeout(() => setShowActionToast(null), 3000);
   };
-  const [isReasoningSelectorOpen, setIsReasoningSelectorOpen] = useState(false);
+  const isReasoningSelectorOpen = isSmartSelectOpen;
+  const setIsReasoningSelectorOpen = setIsSmartSelectOpen;
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -1553,11 +1563,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // Setup placeholder message for real-time streaming typewriter display
+      const currentReasoningEffort = getSmartSelectEffort(currentEffectiveModel, smartSelectLevel);
+
       const aiMessageId = (Date.now() + 1).toString();
       const initialAiMessage: Message = {
         id: aiMessageId,
         role: 'model',
         text: '',
+        reasoningEffort: currentReasoningEffort,
         has_sources: attachedSources.length > 0,
         search_engine_used: attachedEngine,
         sources: attachedSources.length > 0 ? attachedSources : undefined,
@@ -1584,7 +1597,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           conversation_id: currentSessionId || null,
           is_vision: isVisionNow,
           image_url: mediaUrls.length > 0 ? mediaUrls[0] : null,
-          model: currentEffectiveModel
+          model: currentEffectiveModel,
+          reasoning_effort: currentReasoningEffort,
+          smart_select_level: smartSelectLevel,
+          smartSelectLevel: smartSelectLevel,
+          reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          reasoning: {
+            effort: currentReasoningEffort
+          },
+          thinking: {
+            type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
+            effort: currentReasoningEffort
+          }
         }),
         signal: abortControllerRef.current.signal
       });
@@ -1599,8 +1623,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         throw new Error(result.error || result.message || "Gagal memproses pesan dari Edge Function.");
       }
 
-      if (result.reply || result.text || result.response) {
-        const fullReply = result.reply || result.text || result.response || '';
+      if (result.reply || result.text || result.response || result.message_text) {
+        let fullReply = result.reply || result.text || result.response || result.message_text || '';
+        const rawThinking = result.thinking || result.reasoning || result.reasoning_content || result.thought || '';
+        if (rawThinking && !fullReply.includes('<think>')) {
+          fullReply = `<think>${rawThinking}</think>\n\n${fullReply}`;
+        }
         if (result.conversation_id) {
           effectiveConvId = result.conversation_id;
           setCurrentSessionId(effectiveConvId);
@@ -1642,6 +1670,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 next[targetIdx] = { 
                   ...next[targetIdx], 
                   text: currentTyped,
+                  reasoningEffort: currentReasoningEffort,
                   has_sources: attachedSources.length > 0,
                   search_engine_used: attachedEngine,
                   sources: attachedSources.length > 0 ? attachedSources : undefined
@@ -1668,6 +1697,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             next[targetIdx] = { 
               ...next[targetIdx], 
               text: aiReplyText,
+              reasoningEffort: currentReasoningEffort,
               has_sources: attachedSources.length > 0,
               search_engine_used: attachedEngine,
               sources: attachedSources.length > 0 ? attachedSources : undefined
@@ -1684,6 +1714,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         id: aiMessageId,
         role: 'model' as const,
         text: aiReplyText,
+        reasoningEffort: currentReasoningEffort,
         has_sources: attachedSources.length > 0,
         search_engine_used: attachedEngine,
         sources: attachedSources.length > 0 ? attachedSources : undefined,
@@ -1864,21 +1895,35 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           </div>
 
           {/* Model Selector Trigger */}
-          <div className="flex items-center gap-2">
-            <div 
-              onClick={() => setIsModelSelectorOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
-            >
-              <span>Model: <strong className="text-blue-600 dark:text-blue-400">
-                {selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'laguna-s-2.1' ? 'bluefox standard' : 'bluefox Dilo'}
-              </strong></span>
-              {isVisionActive && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
-                  <Eye size={10} /> Vision
-                </span>
-              )}
-              <ChevronDown size={14} className="text-slate-400 shrink-0" />
-            </div>
+          <div className="flex items-center">
+            {(() => {
+              const modelDisplayName = selectedModel === 'agnes-2.0-flash' 
+                ? 'bluefox pro' 
+                : selectedModel === 'laguna-s-2.1' 
+                ? 'bluefox standard' 
+                : 'bluefox Dilo';
+              const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
+              const effortLabel = currentEffort.charAt(0).toUpperCase() + currentEffort.slice(1);
+
+              return (
+                <div 
+                  onClick={() => setIsModelSelectorOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
+                  title="Pilih Model AI & Smart Select"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <strong className="text-blue-600 dark:text-blue-400 font-bold">{modelDisplayName}</strong>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">({effortLabel})</span>
+                  </span>
+                  {isVisionActive && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
+                      <Eye size={10} /> Vision
+                    </span>
+                  )}
+                  <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                </div>
+              );
+            })()}
           </div>
 
           <div className="relative shrink-0">
@@ -2297,12 +2342,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     <button 
                       onClick={() => {
                         setIsModelSelectorOpen(false);
-                        setIsReasoningSelectorOpen(true);
+                        setIsSmartSelectOpen(true);
                       }}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5"
+                      className="text-xs font-semibold text-purple-700 hover:text-purple-800 bg-purple-50 border border-purple-200 hover:bg-purple-100 px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5"
+                      title="Atur tingkat penalaran Smart Select"
                     >
-                      <Brain size={14} />
-                      Penalaran
+                      <SlidersHorizontal size={14} />
+                      Smart Select: {getSmartSelectEffort(selectedModel, smartSelectLevel).toUpperCase()}
                     </button>
                     <button 
                       onClick={() => setIsModelSelectorOpen(false)}
@@ -2341,16 +2387,31 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       }`}>
                         <Bot size={18} />
                       </div>
-                      {isVisionActive && (
-                        <span className="text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Eye size={10} /> Vision Aktif
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const effort = getSmartSelectEffort('agnes-2.0-flash', smartSelectLevel);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
+                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
+                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}>
+                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
+                            </span>
+                          );
+                        })()}
+                        {isVisionActive && (
+                          <span className="text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Eye size={10} /> Vision Aktif
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox pro</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.0-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model AI cerdas multimodal berkecepatan tinggi dengan kapabilitas analisis visual komprehensif, coding, dan penalaran mutakhir.
+                      Model AI cerdas multimodal berkecepatan tinggi dengan kapabilitas analisis visual komprehensif, coding, dan Smart Select hingga tingkat High.
                     </p>
                   </button>
 
@@ -2371,16 +2432,31 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       }`}>
                         <Cpu size={18} />
                       </div>
-                      {isVisionActive && (
-                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                          <Lock size={11} /> Terkunci
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const effort = getSmartSelectEffort('laguna-s-2.1', smartSelectLevel);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
+                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
+                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}>
+                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
+                            </span>
+                          );
+                        })()}
+                        {isVisionActive && (
+                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            <Lock size={11} /> Terkunci
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model open-source modular generasi baru yang sangat optimal, super cepat, efisien, dan andal untuk percakapan sehari-hari.
+                      Model open-source modular generasi baru. Smart Select bawaan Medium dan dapat dinaikkan atau ditarik hingga High.
                     </p>
                   </button>
 
@@ -2401,16 +2477,31 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       }`}>
                         <Layers size={18} />
                       </div>
-                      {isVisionActive && (
-                        <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                          <Lock size={11} /> Terkunci
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const effort = getSmartSelectEffort('longcat-2.0-free', smartSelectLevel);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
+                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
+                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}>
+                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
+                            </span>
+                          );
+                        })()}
+                        {isVisionActive && (
+                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            <Lock size={11} /> Terkunci
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox Dilo</h4>
                     <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by longcat-2.0-free</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Teman ngobrol serba guna Platform TMPA. Sangat ramah, empati, santai, dan enak diajak bicara untuk menemani keseharian Anda.
+                      Teman ngobrol ramah dan santai dengan Smart Select hemat (Low). Dapat ditarik fleksibel dari None hingga High.
                     </p>
                   </button>
                 </div>
@@ -2537,14 +2628,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       </AnimatePresence>
 
       <AnimatePresence>
-        {isReasoningSelectorOpen && (
+        {isSmartSelectOpen && (
           <div className="fixed inset-0 z-30 flex flex-col justify-end">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className="absolute inset-0 bg-black/40 backdrop-blur-xs" 
-              onClick={() => setIsReasoningSelectorOpen(false)}
+              onClick={() => setIsSmartSelectOpen(false)}
             />
             
             <motion.div
@@ -2552,66 +2643,333 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="relative w-full max-h-[75vh] md:max-h-[55vh] bg-white border-t border-slate-200 shadow-2xl z-40 overflow-y-auto rounded-t-3xl text-slate-900"
+              className="relative w-full max-h-[85vh] md:max-h-[72vh] bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shadow-2xl z-40 overflow-y-auto rounded-t-3xl text-slate-900 dark:text-slate-100"
             >
               <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-8">
-                <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
-                  <div>
-                    <h3 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">Pilih Mode Penalaran</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Atur seberapa pintar AI dalam berpikir sebelum merespons</p>
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-purple-100 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center border border-purple-200 dark:border-purple-800">
+                      <SlidersHorizontal size={20} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">Smart Select</h3>
+                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                          {smartSelectLevel === 'auto' ? 'Mode Auto' : `Level ${smartSelectLevel.toUpperCase()}`}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Tarik slider dari None hingga High untuk mengatur kedalaman proses berpikir AI</p>
+                    </div>
                   </div>
-                  <button 
-                    onClick={() => setIsReasoningSelectorOpen(false)}
-                    className="text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-all cursor-pointer"
-                  >
-                    Tutup
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => {
+                        setIsSmartSelectOpen(false);
+                        setIsModelSelectorOpen(true);
+                      }}
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-3 py-1.5 rounded-full transition-all cursor-pointer"
+                    >
+                      Pilih Model
+                    </button>
+                    <button 
+                      onClick={() => setIsSmartSelectOpen(false)}
+                      className="text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700 px-3.5 py-1.5 rounded-full transition-all cursor-pointer"
+                    >
+                      Tutup
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="flex flex-col gap-3 md:gap-4">
+
+                {/* Interactive Drag/Pull Range Slider (None -> Low -> Medium -> High) */}
+                {(() => {
+                  const STEPS: Array<'none' | 'low' | 'medium' | 'high'> = ['none', 'low', 'medium', 'high'];
+                  const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
+                  const activeStepIndex = smartSelectLevel === 'auto' 
+                    ? (currentEffort === 'none' ? 0 : currentEffort === 'low' ? 1 : currentEffort === 'medium' ? 2 : 3)
+                    : (smartSelectLevel === 'none' ? 0 : smartSelectLevel === 'low' ? 1 : smartSelectLevel === 'medium' ? 2 : 3);
+
+                  const progressPercentage = (activeStepIndex / 3) * 100;
+                  const activeColorClass = activeStepIndex === 3 
+                    ? 'from-blue-600 via-indigo-600 to-purple-600' 
+                    : activeStepIndex === 2 
+                    ? 'from-blue-500 to-indigo-600' 
+                    : activeStepIndex === 1 
+                    ? 'from-sky-400 to-blue-500' 
+                    : 'from-slate-400 to-slate-500';
+
+                  return (
+                    <div className="mb-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <Sliders size={13} className="text-purple-600 dark:text-purple-400" />
+                          Tarik Kontrol Smart Select:
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSmartSelectLevel('auto')}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition-all cursor-pointer border ${
+                              smartSelectLevel === 'auto'
+                                ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-100'
+                            }`}
+                            title="Kembali ke setelan otomatis bawaan tiap model"
+                          >
+                            Auto Mode {smartSelectLevel === 'auto' ? '(Aktif)' : ''}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Slider Track with Custom Progress Bar */}
+                      <div className="relative pt-6 pb-2 px-1">
+                        {/* Background Track */}
+                        <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative">
+                          <div 
+                            className={`h-full bg-gradient-to-r ${activeColorClass} transition-all duration-300 rounded-full`}
+                            style={{ width: `${progressPercentage}%` }}
+                          />
+                        </div>
+
+                        {/* Native Range Input overlay for dragging */}
+                        <input
+                          type="range"
+                          min="0"
+                          max="3"
+                          step="1"
+                          value={activeStepIndex}
+                          onChange={(e) => {
+                            const newIdx = parseInt(e.target.value, 10);
+                            const nextLevel = STEPS[newIdx] || 'medium';
+                            setSmartSelectLevel(nextLevel);
+                          }}
+                          className="absolute top-5 left-0 w-full h-5 opacity-0 cursor-pointer z-20"
+                          aria-label="Tarik tingkat Smart Select"
+                        />
+
+                        {/* Step Markers & Clickable Stops */}
+                        <div className="relative flex justify-between mt-3 text-xs">
+                          {STEPS.map((stepKey, idx) => {
+                            const isCurrent = activeStepIndex === idx;
+                            const isPassed = activeStepIndex >= idx;
+                            return (
+                              <button
+                                key={stepKey}
+                                type="button"
+                                onClick={() => setSmartSelectLevel(stepKey)}
+                                className={`flex flex-col items-center group cursor-pointer transition-all ${
+                                  isCurrent ? 'scale-105 font-bold' : 'opacity-70 hover:opacity-100'
+                                }`}
+                              >
+                                <span className={`w-3.5 h-3.5 rounded-full mb-1 border-2 transition-all flex items-center justify-center ${
+                                  isCurrent 
+                                    ? 'bg-purple-600 border-white ring-2 ring-purple-400 scale-125' 
+                                    : isPassed 
+                                    ? 'bg-blue-600 border-white' 
+                                    : 'bg-slate-300 dark:bg-slate-600 border-white dark:border-slate-800'
+                                }`} />
+                                <span className={`text-[11px] uppercase font-bold ${
+                                  isCurrent 
+                                    ? 'text-purple-700 dark:text-purple-300' 
+                                    : 'text-slate-600 dark:text-slate-400'
+                                }`}>
+                                  {stepKey}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Current Status Banner */}
+                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span>Target model aktif ({selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'laguna-s-2.1' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
+                          <strong className="text-purple-700 dark:text-purple-300 uppercase font-bold">
+                            Smart Select: {currentEffort}
+                          </strong>
+                        </div>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          Geser pin atau klik salah satu kartu di bawah
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 4 Cards: None -> Low -> Medium -> High */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+                  {/* Step 1: None */}
                   <button 
-                    onClick={() => {
-                      setReasoningMode('standar');
-                      setIsReasoningSelectorOpen(false);
-                    }}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
-                      reasoningMode === 'standar' 
-                        ? 'bg-blue-50 border-2 border-blue-600 shadow-sm' 
-                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    type="button"
+                    onClick={() => setSmartSelectLevel('none')}
+                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                      smartSelectLevel === 'none' 
+                        ? 'bg-slate-100/90 dark:bg-slate-800 border-2 border-slate-600 dark:border-slate-400 shadow-sm' 
+                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <div className="flex items-center gap-3 mb-2">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'standar' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                         <Zap size={16} />
-                       </div>
-                       <h4 className="font-bold text-slate-900 text-sm md:text-base">Standar</h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'none' ? 'bg-slate-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          <Zap size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">None</h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                              0% Thinking
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Tanpa penalaran / respon instan</span>
+                        </div>
+                      </div>
+                      {smartSelectLevel === 'none' && (
+                        <div className="w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center">
+                          <Check size={12} className="stroke-[3]" />
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed pl-11">
-                      Merespons dengan cepat dan langsung berdasarkan pengetahuan bawaan.
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                      AI langsung menjawab teks seketika tanpa meluangkan waktu penalaran latar belakang. Paling cepat untuk pertanyaan singkat dan to-the-point.
                     </p>
                   </button>
 
+                  {/* Step 2: Low */}
                   <button 
-                    onClick={() => {
-                      setReasoningMode('penalaran');
-                      setIsReasoningSelectorOpen(false);
-                    }}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer ${
-                      reasoningMode === 'penalaran' 
-                        ? 'bg-blue-50 border-2 border-blue-600 shadow-sm' 
-                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    type="button"
+                    onClick={() => setSmartSelectLevel('low')}
+                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                      smartSelectLevel === 'low' 
+                        ? 'bg-sky-50/90 dark:bg-sky-950/60 border-2 border-sky-600 shadow-sm' 
+                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <div className="flex items-center gap-3 mb-2">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center ${reasoningMode === 'penalaran' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                         <Brain size={16} />
-                       </div>
-                       <h4 className="font-bold text-slate-900 text-sm md:text-base">Penalaran</h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'low' ? 'bg-sky-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          <Sparkles size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Low</h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300">
+                              33% Thinking
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-sky-600 dark:text-sky-400 font-medium">Penalaran ringan & hemat</span>
+                        </div>
+                      </div>
+                      {smartSelectLevel === 'low' && (
+                        <div className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center">
+                          <Check size={12} className="stroke-[3]" />
+                        </div>
+                      )}
                     </div>
-                    <p className="text-xs text-slate-500 leading-relaxed pl-11">
-                      AI wajib memahami konteks, berpikir keras, dan mencari solusi terlebih dahulu sebelum memberikan jawaban terbaik.
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                      Proses berpikir singkat untuk menyelaraskan konteks percakapan. Tingkat bawaan default untuk model <strong>bluefox Dilo</strong>.
                     </p>
                   </button>
+
+                  {/* Step 3: Medium */}
+                  <button 
+                    type="button"
+                    onClick={() => setSmartSelectLevel('medium')}
+                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                      smartSelectLevel === 'medium' 
+                        ? 'bg-blue-50/90 dark:bg-blue-950/60 border-2 border-blue-600 shadow-sm' 
+                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'medium' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          <Cpu size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Medium</h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                              66% Thinking
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Penalaran seimbang & terstruktur</span>
+                        </div>
+                      </div>
+                      {smartSelectLevel === 'medium' && (
+                        <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                          <Check size={12} className="stroke-[3]" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                      Analisis logika dan pemecahan langkah berimbang. Sangat cocok untuk diskusi mendalam, penulisan, dan riset umum. Bawaan <strong>bluefox standard</strong>.
+                    </p>
+                  </button>
+
+                  {/* Step 4: High */}
+                  <button 
+                    type="button"
+                    onClick={() => setSmartSelectLevel('high')}
+                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                      smartSelectLevel === 'high' 
+                        ? 'bg-purple-50/90 dark:bg-purple-950/60 border-2 border-purple-600 shadow-sm' 
+                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'high' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                          <Brain size={18} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">High</h4>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 animate-pulse">
+                              100% Paling Tinggi
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold">Daya pemikiran tertinggi</span>
+                        </div>
+                      </div>
+                      {smartSelectLevel === 'high' && (
+                        <div className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center">
+                          <Check size={12} className="stroke-[3]" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                      Daya pikir paling mendalam dan menyeluruh untuk coding rumit, matematika, logika ilmiah, serta visual kompleks. Bawaan <strong>bluefox pro</strong>.
+                    </p>
+                  </button>
+                </div>
+
+                {/* Auto Mode Breakdown Explainer */}
+                <div className="mt-5 p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Ringkasan Level Berpikir per Model:
+                    </span>
+                    {smartSelectLevel !== 'auto' && (
+                      <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
+                        *Ditentukan manual ({smartSelectLevel.toUpperCase()})
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
+                      Bluefox Pro: <strong>{getSmartSelectEffort('agnes-2.0-flash', smartSelectLevel).toUpperCase()}</strong>
+                    </span>
+                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                      Bluefox Standard: <strong>{getSmartSelectEffort('laguna-s-2.1', smartSelectLevel).toUpperCase()}</strong>
+                    </span>
+                    <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse" />
+                      Bluefox Dilo: <strong>{getSmartSelectEffort('longcat-2.0-free', smartSelectLevel).toUpperCase()}</strong>
+                    </span>
+                  </div>
                 </div>
               </div>
             </motion.div>
