@@ -422,6 +422,16 @@ export function ChatInput({
               textContent = `[File: ${file.name}]`;
             }
 
+            if (!textContent || textContent.trim().length === 0) {
+              setErrorModal({
+                isOpen: true,
+                title: "Berkas Teks Kosong",
+                message: `Berkas "${file.name}" tidak memiliki isi teks untuk dibaca (0 karakter). Harap unggah berkas yang berisi teks.`,
+                fileName: file.name
+              });
+              continue;
+            }
+
             if (textContent && textContent.length > 50000) {
               setErrorModal({
                 isOpen: true,

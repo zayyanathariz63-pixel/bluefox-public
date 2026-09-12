@@ -381,6 +381,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isUserStoppedRef = useRef(false);
   const typewriterIntervalRef = useRef<any>(null);
   const isExchangingRef = useRef(false);
 
@@ -1076,6 +1077,7 @@ export default function App() {
   };
 
   const stopGeneration = () => {
+    isUserStoppedRef.current = true;
     if (typewriterIntervalRef.current) {
       clearInterval(typewriterIntervalRef.current);
       typewriterIntervalRef.current = null;
@@ -1093,8 +1095,10 @@ export default function App() {
     imageUrl?: string | null, 
     media?: MediaAttachment | MediaAttachment[]
   ) => {
+    isUserStoppedRef.current = false;
     const userText = text.trim();
-    const hasMedia = Boolean(media && (Array.isArray(media) ? media.length > 0 : true));
+    const mediaList: MediaAttachment[] = Array.isArray(media) ? media : (media ? [media] : []);
+    const hasMedia = mediaList.length > 0;
     if ((!userText && !imageUrl && !hasMedia) || isLoading) return;
 
     // =========================================================================
@@ -1463,8 +1467,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
       }
 
-      // Tentukan model
-      const isVisionNow = Boolean(isVisionActive || hasMedia);
+      // Filter HANYA gambar nyata (WebP, PNG, GIF, JPG/JPEG) untuk pemrosesan vision
+      const imageAttachments = mediaList.filter(m => 
+        m.type === 'image' || 
+        (m.url && m.url.startsWith('data:image/'))
+      );
+      const onlyImageUrl = imageAttachments.length > 0 ? imageAttachments[0].url : (imageUrl || null);
+      const hasRealImage = Boolean(onlyImageUrl);
+
+      // Vision mode HANYA aktif jika dinyalakan manual ATAU ada lampiran gambar nyata
+      // Dokumen, berkas teks (TXT/MD), PDF, JSON, YAML, kode program BUKAN vision
+      const isVisionNow = Boolean(isVisionActive || hasRealImage);
       const currentEffectiveModel = isVisionNow 
         ? 'deepseek-v4.1-flash-free' 
         : (selectedModel === 'agnes-2.0-flash' ? 'deepseek-v4.1-flash-free' : selectedModel);
@@ -1589,19 +1602,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
-      const mediaUrls = Array.isArray(media)
-        ? media.map(m => m.url)
-        : (media ? [media.url] : (imageUrl ? [imageUrl] : []));
-
-      // Ambil teks dari lampiran file multi-format (kode, dokumen, spreadsheet, dsb.)
-      const mediaList = Array.isArray(media) ? media : (media ? [media] : []);
+      // Ekstrak teks dari lampiran file multi-format (TXT, MD, JSON, YAML, PDF, kode sumber)
       const docTexts = mediaList
         .filter(m => m.textContent && m.textContent.trim().length > 0)
-        .map(m => `\n\n--- [Isi File Lampiran: ${m.name}] ---\n${m.textContent}\n--- [Akhir Lampiran: ${m.name}] ---`)
+        .map(m => `\n\n--- [Isi Berkas Lampiran: ${m.name}${m.pageCount ? ` (${m.pageCount} Halaman)` : ''}] ---\n${m.textContent}\n--- [Akhir Berkas: ${m.name}] ---`)
         .join('\n');
 
-      const combinedPromptWithDocs = docTexts ? `${effectiveAiPrompt}${docTexts}` : effectiveAiPrompt;
-      const promptToSend = combinedPromptWithDocs.trim() || (mediaUrls.length > 0 ? "Tolong jelaskan dan analisis gambar atau lampiran ini secara detail." : "Halo");
+      let promptToSend = effectiveAiPrompt;
+      if (docTexts) {
+        if (effectiveAiPrompt.trim()) {
+          promptToSend = `${effectiveAiPrompt}\n\n${docTexts}`;
+        } else {
+          const fileNames = mediaList.map(m => m.name).join(', ');
+          promptToSend = `Berikut adalah berkas lampiran (${fileNames}) yang saya unggah:\n${docTexts}\n\nTolong baca, telaah, dan berikan analisis atau ringkasan lengkap dari isi berkas di atas.`;
+        }
+      } else if (!promptToSend.trim() && onlyImageUrl) {
+        promptToSend = "Tolong jelaskan dan analisis gambar ini secara detail.";
+      } else if (!promptToSend.trim()) {
+        promptToSend = "Halo";
+      }
 
       const { data: { session } } = await supabase.auth.getSession();
       const userSessionToken = session?.access_token || supabaseKey;
@@ -1616,7 +1635,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           message: promptToSend,
           conversation_id: currentSessionId || null,
           is_vision: isVisionNow,
-          image_url: mediaUrls.length > 0 ? mediaUrls[0] : null,
+          image_url: onlyImageUrl, // HANYA gambar nyata atau null (TIDAK PERNAH mengirim data:text/plain!)
           model: currentEffectiveModel,
           reasoning_effort: currentReasoningEffort,
           smart_select_level: smartSelectLevel,
@@ -1637,10 +1656,72 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         throw new DOMException('Request aborted', 'AbortError');
       }
 
-      const result = await response.json().catch(() => ({}));
+      let result: any = {};
+      try {
+        const textResp = await response.text();
+        try {
+          result = JSON.parse(textResp);
+        } catch {
+          result = { rawText: textResp };
+        }
+      } catch {
+        result = {};
+      }
 
       if (!response.ok || result.success === false) {
-        throw new Error(result.error || result.message || "Gagal memproses pesan dari Edge Function.");
+        const status = response.status;
+        const rawError = String(result.error || result.message || result.rawText || '').trim();
+
+        let errorCategory = 'Server Pemrosesan AI';
+        let friendlyReason = '';
+        let suggestion = '';
+
+        if (status === 413 || /payload|too large|request entity|size/i.test(rawError)) {
+          errorCategory = 'Ukuran Permintaan Terlalu Besar (Payload Too Large)';
+          friendlyReason = 'Isi teks berkas atau prompt yang dikirimkan melebihi kapasitas transmisi server.';
+          suggestion = 'Kurangi isi teks berkas lampiran atau unggah potongan teks yang lebih ringkas.';
+        } else if (status === 429 || /rate limit|quota|exceeded|too many/i.test(rawError)) {
+          errorCategory = 'Batas Permintaan Tercapai (Rate Limit)';
+          friendlyReason = 'Frekuensi penggunaan model AI sementara telah mencapai batas kuota server.';
+          suggestion = 'Mohon tunggu 1 hingga 2 menit sebelum mencoba mengirimkan pertanyaan kembali.';
+        } else if (status === 401 || status === 403 || /jwt|unauthorized|auth|permission/i.test(rawError)) {
+          errorCategory = 'Sesi Akun Kedaluwarsa';
+          friendlyReason = 'Sesi autentikasi akun Anda telah kedaluwarsa atau tidak valid.';
+          suggestion = 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali ke akun Anda.';
+        } else if (status === 504 || status === 502 || /timeout|gateway/i.test(rawError)) {
+          errorCategory = 'Waktu Pemrosesan Habis (Gateway Timeout)';
+          friendlyReason = 'Server AI membutuhkan waktu pemrosesan lebih lama dari batas respons jaringan.';
+          suggestion = 'Gunakan berkas dengan teks yang lebih ringkas atau tanyakan hal yang lebih terfokus.';
+        } else if (/vision|image|unsupported|mime/i.test(rawError)) {
+          errorCategory = 'Kendala Format Media';
+          friendlyReason = 'Server AI tidak dapat mengenali atau memproses berkas media yang dilampirkan.';
+          suggestion = 'Pastikan gambar berformat WebP, PNG, atau GIF, dan dokumen berupa teks (TXT, MD, JSON, YAML) atau PDF yang valid.';
+        } else if (status >= 500) {
+          errorCategory = `Kendala Server Internal (${status})`;
+          friendlyReason = rawError || 'Server pemrosesan AI (Edge Function) mengalami kendala internal sementara.';
+          suggestion = 'Tunggu beberapa detik dan coba kirimkan kembali pertanyaan Anda.';
+        } else {
+          errorCategory = `Kendala Pemrosesan (${status || 'Error'})`;
+          friendlyReason = rawError || 'Gagal menerima respons yang valid dari server AI.';
+          suggestion = 'Periksa koneksi internet Anda atau coba ajukan kembali pertanyaan.';
+        }
+
+        const formattedError = [
+          `### ⚠️ ${errorCategory}`,
+          '',
+          friendlyReason,
+          '',
+          '| Parameter | Detail Keterangan |',
+          '| :--- | :--- |',
+          `| **Status HTTP** | \`${status || 'Error'}\` |`,
+          `| **Detail Teknis** | \`${(rawError || 'Tidak ada detail teknis tambahan').slice(0, 200)}\` |`,
+          mediaList.length > 0 ? `| **Berkas Terkait** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
+          '',
+          '> **💡 Saran Solusi:**',
+          `> ${suggestion}`
+        ].filter(Boolean).join('\n');
+
+        throw new Error(formattedError);
       }
 
       if (result.reply || result.text || result.response || result.message_text) {
@@ -1752,18 +1833,63 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.log('Request stopped by user or timeout reached');
+        if (isUserStoppedRef.current) {
+          console.log('Request stopped by user');
+          return;
+        }
+
+        // Penanganan waktu tunggu timeout 80 detik
+        const timeoutMsg = [
+          '### ⚠️ Waktu Tunggu Pemrosesan Habis (Timeout 80 Detik)',
+          '',
+          'Server AI membutuhkan waktu lebih dari 80 detik untuk memproses permintaan ini sehingga koneksi dihentikan otomatis.',
+          '',
+          '| Parameter | Keterangan |',
+          '| :--- | :--- |',
+          '| **Batas Waktu** | 80 Detik |',
+          mediaList.length > 0 ? `| **Berkas Lampiran** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
+          '',
+          '> **💡 Saran Solusi:**',
+          '> - Jika berkas teks atau PDF cukup panjang, coba tanyakan bagian spesifik atau ringkas isi berkas.',
+          '> - Coba kirimkan kembali pertanyaan dengan model AI alternatif.'
+        ].filter(Boolean).join('\n');
+
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: timeoutMsg,
+        };
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.text.trim() !== '');
+          return [...filtered, errorMessage];
+        });
+        showToast("Waktu tunggu permintaan habis (Timeout)");
         return;
       }
+
       console.error("[FRONTEND CRASH ERROR]:", err);
-      const errMsg = err?.message || "Gagal memproses pesan dari Edge Function.";
-      setErrorState(errMsg);
-      showToast("Terjadi Kendala: " + errMsg);
+      const rawErrMsg = String(err?.message || "Gagal memproses pesan dari Edge Function.").trim();
+      const isAlreadyFormatted = rawErrMsg.includes('### ⚠️') || rawErrMsg.includes('| :--- |');
+
+      const fullDisplay = isAlreadyFormatted ? rawErrMsg : [
+        '### ⚠️ Kendala Komunikasi Server',
+        '',
+        rawErrMsg.includes('Failed to fetch') 
+          ? 'Gagal menghubungi server AI. Kemungkinan koneksi internet Anda terputus atau server tidak dapat dijangkau.'
+          : rawErrMsg,
+        '',
+        mediaList.length > 0 ? `| Parameter | Keterangan |\n| :--- |\n| **Berkas Terkait** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |\n` : '',
+        '> **💡 Saran Solusi:**',
+        '> Periksa koneksi internet Anda atau muat ulang halaman jika masalah terus berlanjut.'
+      ].filter(Boolean).join('\n');
+
+      setErrorState(rawErrMsg);
+      showToast("Terjadi kendala pemrosesan");
 
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: `⚠️ Terjadi Kendala: ${errMsg}`,
+        text: fullDisplay,
       };
       setMessages(prev => {
         const filtered = prev.filter(m => m.text.trim() !== '');
