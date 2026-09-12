@@ -93,6 +93,8 @@ export const translations = {
     personalizationDesc: "Atur instruksi kustom Anda dan lihat aplikasi terhubung",
     customApi: "Custom API",
     customApiDesc: "Kelola hingga 10 API kustom (Limit: 10 req/menit & 50 req/hari)",
+    deleteData: "Delete",
+    deleteDataDesc: "Hapus semua media, semua sesi chat, atau hapus akun pengguna",
     connectedApps: "Aplikasi / Web Terhubung",
     connectedAppsDesc: "Gunakan produk kami secara lancar dan terintegrasi",
 
@@ -240,6 +242,8 @@ export const translations = {
     personalizationDesc: "Configure custom system instructions and connected apps",
     customApi: "Custom API",
     customApiDesc: "Manage up to 10 custom APIs (Limit: 10 req/min & 50 req/day)",
+    deleteData: "Delete",
+    deleteDataDesc: "Clear all media, delete all chat sessions, or delete user account",
     connectedApps: "Connected Apps & Websites",
     connectedAppsDesc: "Seamlessly integrate and link platform services",
 

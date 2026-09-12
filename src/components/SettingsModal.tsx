@@ -3,13 +3,21 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
   Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check,
-  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink, RotateCcw
+  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink, RotateCcw,
+  HardDrive, AlertTriangle
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { getModelDisplayName } from '../lib/supabase';
 import { processAndCompressImage } from '../lib/imageCompressor';
+import { 
+  getStorageUsageStats, 
+  clearAllStoredMedia, 
+  clearAllChatSessions, 
+  deleteUserAccount,
+  StorageUsageStats 
+} from '../lib/storageManager';
 import { 
   CustomApiKey, 
   CustomApiUsageStats, 
@@ -36,16 +44,42 @@ interface SettingsModalProps {
   hourlyUsage: number;
   weeklyUsage: number;
   resetUsage: () => void;
+  onClearAllMedia?: () => void;
+  onClearAllSessions?: () => void;
+  onDeleteAccount?: () => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete';
 
-export function SettingsModal({ isOpen, onClose, customInstruction, setCustomInstruction, chatSessions, hourlyUsage, weeklyUsage, resetUsage }: SettingsModalProps) {
+export function SettingsModal({ 
+  isOpen, 
+  onClose, 
+  customInstruction, 
+  setCustomInstruction, 
+  chatSessions, 
+  hourlyUsage, 
+  weeklyUsage, 
+  resetUsage,
+  onClearAllMedia,
+  onClearAllSessions,
+  onDeleteAccount
+}: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Storage & Delete states
+  const [storageStats, setStorageStats] = useState<StorageUsageStats>(() => getStorageUsageStats());
+  const [cooldownTarget, setCooldownTarget] = useState<'media' | 'sessions' | 'account' | null>(null);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+  const cooldownTimerRef = useRef<any>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    type: 'media' | 'sessions' | 'account' | null;
+  }>({ isOpen: false, type: null });
+  const [isExecutingDelete, setIsExecutingDelete] = useState(false);
 
   // Custom API states
   const [customApis, setCustomApis] = useState<CustomApiKey[]>(() => getCustomApis());
@@ -81,15 +115,109 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
     window.addEventListener('tmpa_custom_apis_updated', refreshApis);
     window.addEventListener('tmpa_custom_api_usage_updated', refreshUsage);
 
+    const refreshStorage = () => {
+      setStorageStats(getStorageUsageStats());
+    };
+    window.addEventListener('tmpa_media_cleared', refreshStorage);
+    window.addEventListener('tmpa_sessions_cleared', refreshStorage);
+    window.addEventListener('tmpa_storage_auto_purged', refreshStorage);
+
     // Interval to refresh minute/daily rate limit timer
     const interval = setInterval(refreshUsage, 5000);
 
     return () => {
       window.removeEventListener('tmpa_custom_apis_updated', refreshApis);
       window.removeEventListener('tmpa_custom_api_usage_updated', refreshUsage);
+      window.removeEventListener('tmpa_media_cleared', refreshStorage);
+      window.removeEventListener('tmpa_sessions_cleared', refreshStorage);
+      window.removeEventListener('tmpa_storage_auto_purged', refreshStorage);
       clearInterval(interval);
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+      }
     };
   }, []);
+
+  const handleActionClick = (target: 'media' | 'sessions' | 'account') => {
+    // Jika user klik lagi saat cooldown aktif, langsung buka popup konfirmasi
+    if (cooldownTarget === target && cooldownSeconds > 0) {
+      if (cooldownTimerRef.current) {
+        clearInterval(cooldownTimerRef.current);
+        cooldownTimerRef.current = null;
+      }
+      setCooldownTarget(null);
+      setCooldownSeconds(0);
+      setConfirmModal({
+        isOpen: true,
+        type: target,
+      });
+      return;
+    }
+
+    // Klik pertama: mulai cooldown 5 detik
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+    }
+    setCooldownTarget(target);
+    setCooldownSeconds(5);
+
+    cooldownTimerRef.current = setInterval(() => {
+      setCooldownSeconds((prev) => {
+        if (prev <= 1) {
+          if (cooldownTimerRef.current) {
+            clearInterval(cooldownTimerRef.current);
+            cooldownTimerRef.current = null;
+          }
+          setCooldownTarget(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleCancelModal = () => {
+    setConfirmModal({ isOpen: false, type: null });
+    if (cooldownTimerRef.current) {
+      clearInterval(cooldownTimerRef.current);
+      cooldownTimerRef.current = null;
+    }
+    setCooldownTarget(null);
+    setCooldownSeconds(0);
+  };
+
+  const handleExecuteDelete = async () => {
+    if (!confirmModal.type) return;
+    setIsExecutingDelete(true);
+    try {
+      if (confirmModal.type === 'media') {
+        const res = clearAllStoredMedia();
+        setStorageStats(getStorageUsageStats());
+        onClearAllMedia?.();
+        showToast(lang === 'id' 
+          ? `Semua media dibersihkan (${res.bytesFreedKb} KB dibebaskan)` 
+          : `All media cleared (${res.bytesFreedKb} KB freed)`);
+      } else if (confirmModal.type === 'sessions') {
+        clearAllChatSessions();
+        setStorageStats(getStorageUsageStats());
+        onClearAllSessions?.();
+        showToast(lang === 'id' ? "Semua sesi chat berhasil dihapus" : "All chat sessions deleted");
+      } else if (confirmModal.type === 'account') {
+        await deleteUserAccount();
+        setStorageStats(getStorageUsageStats());
+        onDeleteAccount?.();
+        showToast(lang === 'id' ? "Akun berhasil dihapus. Mengalihkan..." : "Account deleted. Redirecting...");
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1200);
+      }
+    } catch (err: any) {
+      showToast(err?.message || "Gagal melakukan penghapusan data");
+    } finally {
+      setIsExecutingDelete(false);
+      setConfirmModal({ isOpen: false, type: null });
+    }
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -321,6 +449,30 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     <p className="text-sm text-slate-500 mt-0.5">{t.languageDesc}</p>
                   </div>
                 </button>
+
+                {/* 7. Delete (Interactive) */}
+                <button
+                  onClick={() => {
+                    setCurrentView('delete');
+                    setStorageStats(getStorageUsageStats());
+                  }}
+                  className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-rose-200 hover:bg-rose-50/50 active:bg-rose-100/60 transition-all group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-rose-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-rose-50">
+                    <Trash2 size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-rose-600 transition-colors">
+                        Delete
+                      </h3>
+                      <span className="text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-full font-mono">
+                        {lang === 'id' ? 'Media, Chat & Akun' : 'Media, Chat & Account'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">{t.deleteDataDesc}</p>
+                  </div>
+                </button>
               </div>
             </div>
           )}
@@ -350,6 +502,7 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                   {currentView === 'personalization' && t.personalization}
                   {currentView === 'custom_api' && t.customApi}
                   {currentView === 'language' && t.language}
+                  {currentView === 'delete' && 'Delete'}
                 </span>
               </div>
 
@@ -1155,6 +1308,229 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
                     </div>
                   </div>
                 )}
+
+                {/* View 7: DELETE / PENGHAPUSAN DATA & AKUN */}
+                {currentView === 'delete' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div>
+                      <h4 className="text-xl font-bold text-slate-900">
+                        {lang === 'id' ? 'Pengaturan Penghapusan & Penyimpanan' : 'Deletion & Storage Management'}
+                      </h4>
+                      <p className="text-sm text-slate-500 mt-1">
+                        {lang === 'id'
+                          ? 'Kelola memori browser, hapus lampiran media, bersihkan seluruh riwayat chat, atau hapus akun pengguna.'
+                          : 'Manage browser storage capacity, clear media attachments, delete chat history, or delete your user account.'}
+                      </p>
+                    </div>
+
+                    {/* Storage Health & Stats Card */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-2 bg-slate-100 text-slate-700 rounded-xl">
+                            <HardDrive size={18} />
+                          </div>
+                          <div>
+                            <h5 className="text-sm font-bold text-slate-900">
+                              {lang === 'id' ? 'Penyimpanan Lokal Browser' : 'Browser Local Storage'}
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              {lang === 'id' ? 'Kapasitas memori browser untuk data chat & file' : 'Browser memory quota for chat data & files'}
+                            </p>
+                          </div>
+                        </div>
+                        <span className={cn(
+                          "text-xs font-mono font-semibold px-2.5 py-1 rounded-full border",
+                          storageStats.percentageUsed > 80
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : storageStats.percentageUsed > 50
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        )}>
+                          {storageStats.totalMb} MB / {storageStats.estimatedMaxMb} MB ({storageStats.percentageUsed}%)
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200/60">
+                        <div 
+                          className={cn(
+                            "h-full rounded-full transition-all duration-500",
+                            storageStats.percentageUsed > 80
+                              ? "bg-rose-500"
+                              : storageStats.percentageUsed > 50
+                              ? "bg-amber-500"
+                              : "bg-blue-600"
+                          )}
+                          style={{ width: `${Math.max(4, storageStats.percentageUsed)}%` }}
+                        />
+                      </div>
+
+                      {/* Metrics breakdown */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1 text-xs">
+                        <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl">
+                          <div className="text-slate-400 font-medium">{lang === 'id' ? 'Media Tersimpan' : 'Stored Media'}</div>
+                          <div className="text-sm font-bold text-slate-800 mt-0.5">{storageStats.mediaCount} {lang === 'id' ? 'file' : 'files'}</div>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl">
+                          <div className="text-slate-400 font-medium">{lang === 'id' ? 'Sesi Obrolan' : 'Chat Sessions'}</div>
+                          <div className="text-sm font-bold text-slate-800 mt-0.5">{storageStats.sessionCount} {lang === 'id' ? 'sesi' : 'sessions'}</div>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1 bg-slate-50 border border-slate-200/60 p-2.5 rounded-xl">
+                          <div className="text-slate-400 font-medium">{lang === 'id' ? 'Total Memori' : 'Total Space'}</div>
+                          <div className="text-sm font-bold text-slate-800 mt-0.5">{storageStats.totalKb} KB</div>
+                        </div>
+                      </div>
+
+                      {/* Auto-cleanup notification notice */}
+                      <div className="bg-blue-50/70 border border-blue-200/60 rounded-xl p-3 flex items-start gap-2.5 text-xs text-blue-800">
+                        <Shield size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
+                        <span>
+                          {lang === 'id'
+                            ? 'Sistem otomatis mengamankan obrolan: Jika penyimpanan penuh (Quota Exceeded), file media otomatis dibersihkan agar riwayat teks obrolan Anda tetap aman dan tidak crash.'
+                            : 'Automatic storage safeguard: If storage quota is full, media attachments are automatically cleared to keep your chat history intact and responsive.'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Section: 3 Delete Options */}
+                    <div className="space-y-3 pt-2">
+                      <h5 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">
+                        {lang === 'id' ? 'Pilihan Penghapusan Data' : 'Data Deletion Options'}
+                      </h5>
+
+                      {/* 1. Hapus Semua Media */}
+                      <div className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-5 shadow-xs transition-all space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3.5">
+                            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex-shrink-0 mt-0.5">
+                              <Camera size={20} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h6 className="text-[15px] font-bold text-slate-900">
+                                  {lang === 'id' ? '1. Hapus Semua Media' : '1. Delete All Media'}
+                                </h6>
+                                <span className="text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.2 rounded-full font-mono">
+                                  {storageStats.mediaCount} Media
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                {lang === 'id'
+                                  ? 'Membersihkan seluruh file gambar, dokumen, dan cache tmpa_media_* dari memori lokal. Riwayat teks obrolan tetap aman tersimpan.'
+                                  : 'Clears all images, documents, and cached media from browser storage. Chat text history remains safe.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            onClick={() => handleActionClick('media')}
+                            className={cn(
+                              "px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-xs",
+                              cooldownTarget === 'media' && cooldownSeconds > 0
+                                ? "bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200 animate-pulse ring-2 ring-amber-300"
+                                : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 active:scale-98"
+                            )}
+                          >
+                            <Trash2 size={14} />
+                            {cooldownTarget === 'media' && cooldownSeconds > 0
+                              ? (lang === 'id' ? `Klik Lagi untuk Konfirmasi (${cooldownSeconds}s)` : `Click Again to Confirm (${cooldownSeconds}s)`)
+                              : (lang === 'id' ? 'Hapus Semua Media' : 'Delete All Media')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 2. Hapus Semua Sesi Chat */}
+                      <div className="bg-white border border-slate-200 hover:border-slate-300 rounded-2xl p-5 shadow-xs transition-all space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3.5">
+                            <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl border border-rose-100 flex-shrink-0 mt-0.5">
+                              <RotateCcw size={20} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h6 className="text-[15px] font-bold text-slate-900">
+                                  {lang === 'id' ? '2. Hapus Semua Sesi Chat' : '2. Delete All Chat Sessions'}
+                                </h6>
+                                <span className="text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.2 rounded-full font-mono">
+                                  {storageStats.sessionCount} {lang === 'id' ? 'Sesi' : 'Sessions'}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                {lang === 'id'
+                                  ? 'Menghapus seluruh riwayat percakapan dan seluruh sesi chat yang tersimpan di perangkat ini. Obrolan akan kembali bersih seperti baru.'
+                                  : 'Permanently removes all conversation history and chat sessions stored in this browser.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            onClick={() => handleActionClick('sessions')}
+                            className={cn(
+                              "px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-xs",
+                              cooldownTarget === 'sessions' && cooldownSeconds > 0
+                                ? "bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200 animate-pulse ring-2 ring-amber-300"
+                              : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 active:scale-98"
+                            )}
+                          >
+                            <Trash2 size={14} />
+                            {cooldownTarget === 'sessions' && cooldownSeconds > 0
+                              ? (lang === 'id' ? `Klik Lagi untuk Konfirmasi (${cooldownSeconds}s)` : `Click Again to Confirm (${cooldownSeconds}s)`)
+                              : (lang === 'id' ? 'Hapus Semua Sesi Chat' : 'Delete All Chat Sessions')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3. Hapus Akun */}
+                      <div className="bg-white border border-rose-200/80 hover:border-rose-300 rounded-2xl p-5 shadow-xs transition-all space-y-3 bg-gradient-to-b from-white to-rose-50/20">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3.5">
+                            <div className="p-2.5 bg-rose-100 text-rose-700 rounded-xl border border-rose-200 flex-shrink-0 mt-0.5">
+                              <AlertCircle size={20} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h6 className="text-[15px] font-bold text-rose-950">
+                                  {lang === 'id' ? '3. Hapus Akun' : '3. Delete Account'}
+                                </h6>
+                                <span className="text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200 px-2 py-0.2 rounded-full font-mono">
+                                  Permanen
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                {lang === 'id'
+                                  ? 'Mengeluarkan akun Anda, menghapus foto profil, preferensi, riwayat chat, media, dan seluruh data pengguna dari perangkat ini.'
+                                  : 'Sign out and delete your profile picture, custom instructions, chat history, media, and all local user data from this device.'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            onClick={() => handleActionClick('account')}
+                            className={cn(
+                              "px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-xs",
+                              cooldownTarget === 'account' && cooldownSeconds > 0
+                                ? "bg-amber-500 hover:bg-amber-600 text-white shadow-md shadow-amber-200 animate-pulse ring-2 ring-amber-300"
+                                : "bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-200 active:scale-98"
+                            )}
+                          >
+                            <Trash2 size={14} />
+                            {cooldownTarget === 'account' && cooldownSeconds > 0
+                              ? (lang === 'id' ? `Klik Lagi untuk Konfirmasi (${cooldownSeconds}s)` : `Click Again to Confirm (${cooldownSeconds}s)`)
+                              : (lang === 'id' ? 'Hapus Akun' : 'Delete Account')}
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1279,6 +1655,64 @@ export function SettingsModal({ isOpen, onClose, customInstruction, setCustomIns
               </div>
             </div>
           )}
+
+          {/* Confirmation Popup Modal with 'Batalkan' & 'Hapus' */}
+          <AnimatePresence>
+        {confirmModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.92, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.92, y: 15 }}
+              className="bg-white rounded-3xl border border-slate-200 shadow-2xl max-w-md w-full p-6 text-left space-y-4"
+            >
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-rose-100 text-rose-600 rounded-2xl flex-shrink-0">
+                  <AlertTriangle size={24} />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-lg font-bold text-slate-900">
+                    {confirmModal.type === 'media' && (lang === 'id' ? 'Konfirmasi Hapus Semua Media' : 'Confirm Clear All Media')}
+                    {confirmModal.type === 'sessions' && (lang === 'id' ? 'Konfirmasi Hapus Sesi Chat' : 'Confirm Clear Chat Sessions')}
+                    {confirmModal.type === 'account' && (lang === 'id' ? 'Konfirmasi Hapus Akun' : 'Confirm Delete Account')}
+                  </h4>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    {confirmModal.type === 'media' && (lang === 'id'
+                      ? 'Apakah Anda yakin ingin menghapus seluruh lampiran gambar, dokumen, dan file media yang tersimpan di memori browser? Teks pesan obrolan tetap aman.'
+                      : 'Are you sure you want to clear all media attachments from local memory? Your text messages will be retained.')}
+                    {confirmModal.type === 'sessions' && (lang === 'id'
+                      ? 'Apakah Anda yakin ingin menghapus seluruh riwayat percakapan dan sesi chat? Tindakan ini permanen dan tidak dapat dibatalkan.'
+                      : 'Are you sure you want to delete all chat sessions and conversation history? This action is permanent and cannot be undone.')}
+                    {confirmModal.type === 'account' && (lang === 'id'
+                      ? 'Apakah Anda yakin ingin menghapus akun? Anda akan dikeluarkan dan seluruh data pengguna, profil, dan riwayat akan dibersihkan dari perangkat ini.'
+                      : 'Are you sure you want to delete your account? You will be signed out and all profile information and chat data will be removed from this device.')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={handleCancelModal}
+                  disabled={isExecutingDelete}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 active:bg-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  {lang === 'id' ? 'Batalkan' : 'Cancel'}
+                </button>
+                <button
+                  onClick={handleExecuteDelete}
+                  disabled={isExecutingDelete}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold shadow-md shadow-rose-200 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Trash2 size={14} />
+                  {isExecutingDelete 
+                    ? (lang === 'id' ? 'Menghapus...' : 'Deleting...') 
+                    : (lang === 'id' ? 'Hapus' : 'Delete')}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
           {/* Subtle Clean Interactive Toast Box */}
           <AnimatePresence>

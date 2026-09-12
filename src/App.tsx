@@ -40,6 +40,7 @@ import {
   SMART_SELECT_CONFIG, 
   SMART_SELECT_STEPS 
 } from './lib/reasoning';
+import { safeSaveSessionsToLocal, autoPurgeMediaIfStorageFull } from './lib/storageManager';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -943,7 +944,7 @@ export default function App() {
   const saveSessionsToLocal = (sessions: ChatSession[]) => {
     const sorted = sortSessions(sessions);
     setChatSessions(sorted);
-    localStorage.setItem('tmpa_chat_sessions', JSON.stringify(sorted));
+    safeSaveSessionsToLocal(sorted);
   };
 
   const handleTogglePinChat = (session: ChatSession) => {
@@ -1019,7 +1020,13 @@ export default function App() {
     const resolvedMedia: MediaAttachment = { ...mediaItem, id: mediaId };
     try {
       localStorage.setItem(`tmpa_media_${mediaId}`, JSON.stringify(resolvedMedia));
-    } catch {}
+    } catch {
+      // Jika penyimpanan penuh, langsung bersihkan media lama untuk memberi ruang
+      autoPurgeMediaIfStorageFull();
+      try {
+        localStorage.setItem(`tmpa_media_${mediaId}`, JSON.stringify(resolvedMedia));
+      } catch {}
+    }
     if (typeof window !== 'undefined') {
       window.history.pushState({ screenId: mediaId }, '', `/screen-${mediaId}`);
     }
@@ -1032,6 +1039,45 @@ export default function App() {
       window.history.pushState(null, '', '/');
     }
   };
+
+  // Event listener untuk sinkronisasi pembersihan storage secara global
+  useEffect(() => {
+    const handleMediaCleared = () => {
+      // Bersihkan base64 url dari state aktif agar hemat memori
+      setMessages(prev => prev.map(m => {
+        let updatedMedia = m.media;
+        if (updatedMedia) {
+          if (Array.isArray(updatedMedia)) {
+            updatedMedia = updatedMedia.map(item => item.url?.startsWith('data:') ? { ...item, url: '' } : item);
+          } else if (updatedMedia.url?.startsWith('data:')) {
+            updatedMedia = { ...updatedMedia, url: '' };
+          }
+        }
+        return { ...m, media: updatedMedia };
+      }));
+    };
+
+    const handleSessionsCleared = () => {
+      setChatSessions([]);
+      setMessages([]);
+      setCurrentSessionId(null);
+    };
+
+    const handleAutoPurged = () => {
+      setShowActionToast(t.used ? 'Memori penuh: Media otomatis dibersihkan' : 'Storage full: Media auto-cleared');
+      setTimeout(() => setShowActionToast(null), 3000);
+    };
+
+    window.addEventListener('tmpa_media_cleared', handleMediaCleared);
+    window.addEventListener('tmpa_sessions_cleared', handleSessionsCleared);
+    window.addEventListener('tmpa_storage_auto_purged', handleAutoPurged);
+
+    return () => {
+      window.removeEventListener('tmpa_media_cleared', handleMediaCleared);
+      window.removeEventListener('tmpa_sessions_cleared', handleSessionsCleared);
+      window.removeEventListener('tmpa_storage_auto_purged', handleAutoPurged);
+    };
+  }, [t]);
 
   // Deteksi rute URL /screen-:id secara langsung (saat dibuka / direfresh)
   useEffect(() => {
@@ -3258,6 +3304,34 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         hourlyUsage={usage.hourly}
         weeklyUsage={usage.weekly}
         resetUsage={handleResetLimits}
+        onClearAllMedia={() => {
+          setChatSessions(prev => prev.map(s => ({
+            ...s,
+            messages: s.messages.map(m => ({
+              ...m,
+              media: Array.isArray(m.media) 
+                ? m.media.map(item => ({ ...item, url: '' })) 
+                : (m.media ? { ...m.media, url: '' } : undefined)
+            }))
+          })));
+          setMessages(prev => prev.map(m => ({
+            ...m,
+            media: Array.isArray(m.media) 
+              ? m.media.map(item => ({ ...item, url: '' })) 
+              : (m.media ? { ...m.media, url: '' } : undefined)
+          })));
+        }}
+        onClearAllSessions={() => {
+          setChatSessions([]);
+          setMessages([]);
+          setCurrentSessionId(null);
+        }}
+        onDeleteAccount={() => {
+          setUser(null);
+          setChatSessions([]);
+          setMessages([]);
+          setCurrentSessionId(null);
+        }}
       />
 
       <ConnectorsModal
