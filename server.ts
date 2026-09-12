@@ -174,7 +174,7 @@ async function startServer() {
       const { 
         history = [], 
         message = "", 
-        model = "agnes-2.0-flash", 
+        model = "deepseek-v4.1-flash-free", 
         customInstruction = "", 
         reasoningMode = "", 
         smartSelectLevel = "",
@@ -189,18 +189,23 @@ async function startServer() {
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
 
       const modelMapping: { [key: string]: string } = {
-        agnes_2_0_flash: "agnes-2.0-flash",
-        laguna_s_2_1: "laguna-s-2.1",
-        tencent_hy3_free: "tencent-hy3-free",
-        "agnes-2.0-flash": "agnes-2.0-flash",
+        "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
+        "deepseek_v4_1_flash_free": "deepseek-v4.1-flash-free",
+        "bluefox_pro": "deepseek-v4.1-flash-free",
+        "agnes_2_0_flash": "deepseek-v4.1-flash-free",
+        "agnes-2.0-flash": "deepseek-v4.1-flash-free",
+        "laguna_s_2_1": "laguna-s-2.1",
         "laguna-s-2.1": "laguna-s-2.1",
-        "tencent-hy3-free": "tencent-hy3-free",
-        qwen3_coder: "agnes-2.0-flash",
-        gpt_oss: "tencent-hy3-free",
-        mistral_nemotron: "laguna-s-2.1"
+        "longcat-2.0-free": "longcat-2.0-free",
+        "tencent_hy3_free": "longcat-2.0-free",
+        "tencent-hy3-free": "longcat-2.0-free",
+        "qwen3_coder": "deepseek-v4.1-flash-free",
+        "tmpa_v2": "deepseek-v4.1-flash-free",
+        "gpt_oss": "laguna-s-2.1",
+        "mistral_nemotron": "longcat-2.0-free"
       };
 
-      const requestedModelId = modelMapping[model] || "agnes-2.0-flash";
+      const requestedModelId = modelMapping[model] || "deepseek-v4.1-flash-free";
 
       // =========================================================================
       // 2.2 DUAL-ENGINE FALLBACK WEB SEARCH (TAVILY -> DUCKDUCKGO)
@@ -375,7 +380,7 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
           return chosenLevel as "none" | "high" | "medium" | "low";
         }
         const clean = (modelName || "").toLowerCase();
-        if (clean.includes("agnes") || clean.includes("pro") || clean.includes("v2") || clean.includes("qwen")) {
+        if (clean.includes("deepseek") || clean.includes("agnes") || clean.includes("pro") || clean.includes("v2") || clean.includes("qwen")) {
           return "high";
         }
         if (clean.includes("longcat") || clean.includes("dilo") || clean.includes("tencent") || clean.includes("nemotron")) {
@@ -387,7 +392,7 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
       // 2. Fallback: Router Bynara / OpenRouter Streaming
       if (!successfullyGenerated && openRouterKey && openRouterKey !== "YOUR_OPENROUTER_API_KEY") {
         try {
-          const modelsToTry = [requestedModelId, "agnes-2.0-flash", "laguna-s-2.1", "tencent-hy3-free"];
+          const modelsToTry = [requestedModelId, "deepseek-v4.1-flash-free", "laguna-s-2.1", "longcat-2.0-free", "agnes-2.0-flash"];
           for (const mId of modelsToTry) {
             if (abortController.signal.aborted) break;
             try {

@@ -301,17 +301,18 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
 // ==========================================
 export const MODEL_MAPPING: Record<string, string> = {
-  tmpa_v2: "agnes-2.0-flash",
+  tmpa_v2: "deepseek-v4.1-flash-free",
   tmpa_v1: "laguna-s-2.1",
   dilo: "longcat-2.0-free", // Gantikan tencent-hy3-free
-  bluefox_pro: "agnes-2.0-flash", // bluefox pro (Supports Vision)
+  bluefox_pro: "deepseek-v4.1-flash-free", // bluefox pro (DeepSeek v4.1 Flash Free)
   bluefox_standard: "laguna-s-2.1", // bluefox standard
   bluefox_dilo: "longcat-2.0-free", // bluefox Dilo
-  "agnes-2.0-flash": "agnes-2.0-flash",
+  "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
+  "agnes-2.0-flash": "deepseek-v4.1-flash-free",
   "laguna-s-2.1": "laguna-s-2.1",
   "longcat-2.0-free": "longcat-2.0-free",
   "tencent-hy3-free": "longcat-2.0-free", // backward compatibility
-  qwen3_coder: "agnes-2.0-flash",
+  qwen3_coder: "deepseek-v4.1-flash-free",
   gpt_oss: "laguna-s-2.1",
   mistral_nemotron: "longcat-2.0-free",
 };
@@ -607,7 +608,7 @@ export type AiModelCode = 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo';
 
 export function getModelLimitCode(model: string, isVision?: boolean): AiModelCode {
   if (isVision) return 'v2_vision';
-  if (model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'qwen3_coder') {
+  if (model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'qwen3_coder') {
     return 'v2_non_vision';
   }
   if (model === 'laguna-s-2.1' || model === 'tmpa_v1' || model === 'gpt_oss') {

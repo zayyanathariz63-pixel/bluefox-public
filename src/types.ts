@@ -6,6 +6,7 @@ export interface MediaAttachment {
   size?: number;
   duration?: number;
   textContent?: string;
+  pageCount?: number;
 }
 
 export interface SearchSource {

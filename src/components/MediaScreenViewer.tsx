@@ -239,13 +239,22 @@ export function MediaScreenViewer({ media, onClose }: MediaScreenViewerProps) {
           {(media.type === 'document' || media.type === 'file') && (
             <div className="w-full max-w-3xl max-h-[80vh] bg-white border border-slate-200 rounded-3xl shadow-xl flex flex-col overflow-hidden text-slate-900">
               <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileText size={16} className="text-blue-600" />
-                  <span className="text-xs font-bold text-slate-900">{media.name}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${media.name.toLowerCase().endsWith('.pdf') ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <FileText size={15} />
+                  </div>
+                  <span className="text-xs font-bold text-slate-900 truncate">{media.name}</span>
                 </div>
-                <span className="text-[11px] text-slate-500 font-mono">
-                  {media.textContent ? `${media.textContent.length.toLocaleString()} karakter` : ''}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {media.pageCount && (
+                    <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                      {media.pageCount} Halaman
+                    </span>
+                  )}
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {media.textContent ? `${media.textContent.length.toLocaleString()} karakter` : ''}
+                  </span>
+                </div>
               </div>
               <div className="p-6 overflow-y-auto font-mono text-xs text-slate-800 leading-relaxed max-h-[65vh] whitespace-pre-wrap selection:bg-blue-100 bg-slate-50/40">
                 {media.textContent || "Pratinjau isi dokumen tidak dapat dimuat langsung sebagai teks."}

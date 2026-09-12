@@ -219,13 +219,20 @@ export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: Chat
 
                     {isDoc && (
                       <div className="p-3 bg-slate-50 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                          item.name.toLowerCase().endsWith('.pdf') ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                        )}>
                           <FileText size={18} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-slate-800 truncate">{item.name || 'Dokumen'}</p>
                           <p className="text-[10px] text-slate-500 font-mono">
-                            {item.textContent ? `${item.textContent.length} karakter` : `${item.size ? (item.size/1024).toFixed(0) + ' KB' : 'Teks'}`}
+                            {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
+                              ? `PDF • ${item.pageCount} Halaman`
+                              : item.textContent 
+                              ? `${item.textContent.length.toLocaleString()} karakter` 
+                              : `${item.size ? (item.size/1024).toFixed(0) + ' KB' : 'Teks'}`}
                           </p>
                         </div>
                         <div className="p-1 text-slate-400 group-hover:text-blue-600">

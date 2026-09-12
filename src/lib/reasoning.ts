@@ -61,7 +61,7 @@ export const SMART_SELECT_CONFIG: Record<'none' | 'low' | 'medium' | 'high', Sma
  * Smart Select - Mengatur level penalaran/thinking AI dari 'none' sampai 'high'
  * Nilai yang dapat ditarik: none (0) -> low (1) -> medium (2) -> high (3)
  * Jika mode 'auto', sistem menarik otomatis sesuai model:
- * 1. Bluefox pro (agnes-2.0-flash) -> 'high'
+ * 1. Bluefox pro (deepseek-v4.1-flash-free) -> 'high'
  * 2. Bluefox standar (laguna-s-2.1) -> 'medium'
  * 3. Bluefox dilo (longcat-2.0-free) -> 'low'
  */
@@ -75,7 +75,7 @@ export function getSmartSelectEffort(
 
   // Jika mode Auto:
   const clean = (modelId || '').toLowerCase();
-  if (clean.includes('agnes') || clean.includes('pro') || clean.includes('v2') || clean.includes('qwen')) {
+  if (clean.includes('deepseek') || clean.includes('agnes') || clean.includes('pro') || clean.includes('v2') || clean.includes('qwen')) {
     return 'high';
   }
   if (clean.includes('longcat') || clean.includes('dilo') || clean.includes('tencent') || clean.includes('nemotron')) {

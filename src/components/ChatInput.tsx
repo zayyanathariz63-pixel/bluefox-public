@@ -7,6 +7,7 @@ import { useLanguage } from '../lib/i18n';
 import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
 import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompressor';
+import { extractTextFromPdf } from '../lib/pdfReader';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
@@ -249,7 +250,9 @@ export function ChatInput({
     }
   };
 
-  // Handle Multi-file upload dengan validasi maksimal 5 file, video 1 mnt, audio 2 mnt, dan teks 10.000 karakter
+  // Handle Multi-file upload dengan validasi format spesifik:
+  // Diizinkan: Webp, PNG, Gift (GIF), TXT, MD, JSON, YML, YAML, PDF (ekstraksi teks via pdfjs), dan semua kode program
+  // Ditolak: Semua format lainnya termasuk MP4 dan MP3
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -261,7 +264,7 @@ export function ChatInput({
       setErrorModal({
         isOpen: true,
         title: "Batas Maksimal 5 File Terlampaui",
-        message: "Anda hanya dapat mengunggah maksimal 5 file (foto, video, audio, atau dokumen) secara bersamaan.",
+        message: "Anda hanya dapat mengunggah maksimal 5 file (gambar, PDF, atau dokumen/kode) secara bersamaan.",
         maxLimitInfo: `Saat ini: ${attachedMediaList.length} terunggah, mencoba menambah: ${fileArray.length} file.`
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -271,233 +274,225 @@ export function ChatInput({
     setIsProcessingMedia(true);
     const newAttachments: MediaAttachment[] = [];
 
-    const heavy3DOrArchiveExts = ['.glb', '.gltf', '.obj', '.fbx', '.stl', '.blend', '.dae', '.3ds', '.max', '.step', '.iges', '.zip', '.rar', '.7z', '.iso', '.exe', '.dmg', '.bin', '.tar', '.gz'];
+    // Format Gambar yang diizinkan (WebP, PNG, GIF/Gift, JPEG/JPG)
+    const allowedImageExts = ['.webp', '.png', '.gif', '.jpeg', '.jpg'];
+    const isImageFile = (file: File, lower: string) => {
+      if (allowedImageExts.some(ext => lower.endsWith(ext))) return true;
+      if (file.type === 'image/webp' || file.type === 'image/png' || file.type === 'image/gif' || file.type === 'image/jpeg') return true;
+      return false;
+    };
+
+    // Format PDF (Membutuhkan library pemroses / pembaca)
+    const isPdfFile = (file: File, lower: string) => {
+      return lower.endsWith('.pdf') || file.type === 'application/pdf';
+    };
+
+    // Format Data & Teks spesifik (txt, MD, Json, Yml, Yaml)
+    const allowedDataAndTextExts = ['.txt', '.md', '.markdown', '.json', '.yml', '.yaml'];
+
+    // Semua format file kode program yang didukung untuk dibaca
+    const allowedCodeExts = [
+      // Web / Frontend / JS / TS
+      '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte',
+      // Python & Jupyter
+      '.py', '.pyw', '.ipynb',
+      // Web styles & markup
+      '.html', '.htm', '.css', '.scss', '.sass', '.less',
+      // C / C++ / C#
+      '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.cs',
+      // Java / Kotlin / Scala / JVM
+      '.java', '.kt', '.kts', '.scala', '.groovy', '.clj',
+      // Systems & Backend
+      '.go', '.rs', '.php', '.rb',
+      // Mobile
+      '.swift', '.dart',
+      // Shell / CLI / Scripts
+      '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
+      // Database & API
+      '.sql', '.sqlite', '.prisma', '.graphql', '.gql',
+      // Data formats & Configs kode
+      '.toml', '.ini', '.env', '.xml', '.csv', '.tsv', '.log', '.diff', '.patch', '.conf', '.cfg',
+      // Bahasa Pemrograman Lainnya
+      '.r', '.lua', '.pl', '.perl', '.sol', '.proto', '.asm', '.s', '.zig', '.nim', '.ex', '.exs', '.erl', '.hs', '.v', '.sv'
+    ];
+
+    const isCodeOrTextFile = (file: File, lower: string) => {
+      if (allowedDataAndTextExts.some(ext => lower.endsWith(ext))) return true;
+      if (allowedCodeExts.some(ext => lower.endsWith(ext))) return true;
+      if (file.type === 'text/plain' || file.type === 'application/json' || file.type === 'text/markdown') return true;
+      return false;
+    };
 
     try {
       for (const file of fileArray) {
-      const lowerName = file.name.toLowerCase();
-      const is3DOrArchive = heavy3DOrArchiveExts.some(ext => lowerName.endsWith(ext));
+        const lowerName = file.name.toLowerCase();
+        const fileId = `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-      if (is3DOrArchive) {
-        setErrorModal({
-          isOpen: true,
-          title: "Format File Tidak Didukung",
-          message: `Format file 3D dan arsip (${file.name}) tidak didukung. Harap unggah foto, video, audio, atau dokumen teks.`,
-          fileName: file.name
-        });
-        continue;
-      }
+        // Cek eksplisit jika pengguna mencoba mengunggah MP4, MP3, atau file audio/video lainnya
+        const isVideoAttempt = file.type.startsWith('video/') || ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.3gp'].some(ext => lowerName.endsWith(ext));
+        const isAudioAttempt = file.type.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.aac', '.flac', '.wma', '.opus', '.aiff'].some(ext => lowerName.endsWith(ext));
 
-      const isImage = file.type.startsWith('image/');
-      const isVideo = file.type.startsWith('video/');
-      const isAudio = file.type.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.aac', '.flac'].some(ext => lowerName.endsWith(ext));
-      const isTextOrDoc = file.type.startsWith('text/') || ['.txt', '.csv', '.json', '.md', '.html', '.css', '.js', '.ts', '.tsx', '.py', '.java', '.c', '.cpp', '.xml', '.yaml', '.yml', '.sql', '.log', '.pdf', '.docx', '.doc'].some(ext => lowerName.endsWith(ext));
-
-      const fileId = `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      // 1. Audio check: maksimal 2 menit (120 detik)
-      if (isAudio) {
-        try {
-          const duration = await new Promise<number>((resolve, reject) => {
-            const audio = document.createElement('audio');
-            audio.preload = 'metadata';
-            const objectUrl = URL.createObjectURL(file);
-            
-            audio.onloadedmetadata = () => {
-              URL.revokeObjectURL(objectUrl);
-              resolve(audio.duration);
-            };
-            
-            audio.onerror = () => {
-              URL.revokeObjectURL(objectUrl);
-              reject(new Error("Gagal membaca durasi audio."));
-            };
-            
-            audio.src = objectUrl;
-          });
-
-          if (duration > 120) {
-            setErrorModal({
-              isOpen: true,
-              title: "Durasi Audio Melebihi Batas (Maks. 2 Menit)",
-              message: `File audio "${file.name}" berdurasi ${Math.round(duration)} detik. Sistem membatasi durasi audio maksimal 2 menit (120 detik).`,
-              fileName: file.name,
-              durationInfo: `Durasi audio: ${Math.round(duration)} detik • Batas: 120 detik`
-            });
-            continue;
-          }
-
-          const dataUrl = await prepareFilePayload(file);
-          if (!dataUrl) continue;
-
-          newAttachments.push({
-            id: fileId,
-            url: dataUrl,
-            type: 'audio',
-            name: file.name,
-            size: file.size,
-            duration: duration,
-          });
-        } catch (err: any) {
+        if (isVideoAttempt || isAudioAttempt) {
           setErrorModal({
             isOpen: true,
-            title: "Gagal Membaca File Audio",
-            message: `Gagal memproses metadata file audio "${file.name}". Pastikan format audio didukung oleh browser Anda.`,
+            title: "Format Video/Audio Ditolak",
+            message: `File "${file.name}" tidak diizinkan. Sesuai kebijakan format, file audio (MP3, dll) dan video (MP4, dll) ditolak.\n\nFormat yang diizinkan:\n• Gambar: WebP, PNG, GIF\n• Dokumen & Teks: PDF (ekstraksi teks), TXT, MD\n• Data: JSON, YAML, YML\n• Kode Program: Semua file kode pemrograman`,
             fileName: file.name
           });
           continue;
         }
-      } 
-      // 2. Video check: maksimal 1 menit (60 detik)
-      else if (isVideo) {
-        try {
-          const duration = await new Promise<number>((resolve, reject) => {
-            const video = document.createElement('video');
-            video.preload = 'metadata';
-            const objectUrl = URL.createObjectURL(file);
-            
-            video.onloadedmetadata = () => {
-              URL.revokeObjectURL(objectUrl);
-              resolve(video.duration);
-            };
-            
-            video.onerror = () => {
-              URL.revokeObjectURL(objectUrl);
-              reject(new Error("Gagal membaca metadata video."));
-            };
-            
-            video.src = objectUrl;
-          });
 
-          if (duration > 60) {
-            setErrorModal({
-              isOpen: true,
-              title: "Durasi Video Melebihi Batas (Maks. 1 Menit)",
-              message: `Video "${file.name}" berdurasi lebih dari 1 menit. Sistem membatasi durasi video maksimal 60 detik untuk pemrosesan AI Vision.`,
-              fileName: file.name,
-              durationInfo: `Durasi video: ${Math.round(duration)} detik • Maksimal: 60 detik`
-            });
-            continue; // Tolak video ini
-          }
+        const isImage = isImageFile(file, lowerName);
+        const isPdf = isPdfFile(file, lowerName);
+        const isCodeOrText = isCodeOrTextFile(file, lowerName);
 
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-
-          newAttachments.push({
-            id: fileId,
-            url: dataUrl,
-            type: 'video',
-            name: file.name,
-            size: file.size,
-            duration: duration,
-          });
-        } catch (err: any) {
+        // Jika bukan gambar, bukan PDF, dan bukan file kode/teks yang diizinkan -> TOLAK
+        if (!isImage && !isPdf && !isCodeOrText) {
           setErrorModal({
             isOpen: true,
-            title: "Gagal Membaca Video",
-            message: `Gagal memproses metadata video "${file.name}". Pastikan format video didukung oleh browser Anda.`,
+            title: "Format File Tidak Didukung",
+            message: `File "${file.name}" ditolak. Format yang diizinkan:\n• Gambar: WebP, PNG, GIF\n• Dokumen: PDF (bisa dibaca), TXT, MD\n• Data: JSON, YAML, YML\n• Kode: Semua format file kode program (.js, .ts, .py, .java, .cpp, .html, .css, .sql, dll)\n\nFile lain termasuk video (MP4) dan audio (MP3) ditolak.`,
             fileName: file.name
           });
           continue;
         }
-      } 
-      // 3. Document & Text file check: maksimal 10.000 karakter
-      else if (isTextOrDoc) {
-        try {
-          let textContent = '';
+
+        // 1. Pemrosesan PDF (Menggunakan library pdfjs-dist untuk mengekstrak isi teks agar dapat dibaca AI)
+        if (isPdf) {
           try {
-            textContent = await new Promise<string>((resolve, reject) => {
+            let extracted = { text: '', numPages: 1 };
+            try {
+              extracted = await extractTextFromPdf(file);
+            } catch (pdfErr: any) {
+              console.warn("Gagal mengekstrak teks PDF dengan pdfjs-dist:", pdfErr);
+              extracted = { text: `[Dokumen PDF: ${file.name}]`, numPages: 1 };
+            }
+
+            const { text: pdfText, numPages } = extracted;
+
+            if (pdfText && pdfText.length > 60000) {
+              setErrorModal({
+                isOpen: true,
+                title: "Isi Dokumen PDF Terlalu Panjang",
+                message: `File PDF "${file.name}" (${numPages} halaman) memiliki ${pdfText.length.toLocaleString()} karakter (melebihi batas 60.000 karakter). Harap gunakan dokumen PDF yang lebih ringkas.`,
+                fileName: file.name,
+                maxLimitInfo: `Total karakter: ${pdfText.length.toLocaleString()} • Batas: 60.000 karakter`
+              });
+              continue;
+            }
+
+            const dataUrl = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
               reader.onload = () => resolve(reader.result as string);
               reader.onerror = reject;
-              reader.readAsText(file);
+              reader.readAsDataURL(file);
             });
-          } catch {
-            textContent = `[File Dokumen: ${file.name}]`;
-          }
 
-          if (textContent && textContent.length > 10000) {
+            newAttachments.push({
+              id: fileId,
+              url: dataUrl,
+              type: 'document',
+              name: file.name,
+              size: file.size,
+              textContent: pdfText || `[Isi PDF: ${file.name} (${numPages} halaman)]`,
+              pageCount: numPages,
+            });
+          } catch (err: any) {
             setErrorModal({
               isOpen: true,
-              title: "Isi File Terlalu Panjang (Maks. 10.000 Huruf)",
-              message: `File "${file.name}" memiliki ${textContent.length.toLocaleString()} karakter (melebihi batas maksimal 10.000 karakter). Harap gunakan dokumen dengan teks yang lebih ringkas.`,
-              fileName: file.name,
-              maxLimitInfo: `Total karakter: ${textContent.length.toLocaleString()} • Batas: 10.000 karakter`
+              title: "Gagal Membaca File PDF",
+              message: `File PDF "${file.name}" tidak dapat dibaca. Pastikan file valid dan tidak dikunci sandi.`,
+              fileName: file.name
             });
             continue;
           }
+        }
+        // 2. Pemrosesan File Kode & Teks (TXT, MD, JSON, YML, YAML, dan semua kode pemrograman)
+        else if (isCodeOrText) {
+          try {
+            let textContent = '';
+            try {
+              textContent = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsText(file);
+              });
+            } catch {
+              textContent = `[File: ${file.name}]`;
+            }
 
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
+            if (textContent && textContent.length > 50000) {
+              setErrorModal({
+                isOpen: true,
+                title: "Isi File Terlalu Panjang (Maks. 50.000 Karakter)",
+                message: `File "${file.name}" memiliki ${textContent.length.toLocaleString()} karakter (melebihi batas 50.000 karakter). Harap unggah kode atau teks yang lebih ringkas.`,
+                fileName: file.name,
+                maxLimitInfo: `Total karakter: ${textContent.length.toLocaleString()} • Batas: 50.000 karakter`
+              });
+              continue;
+            }
 
-          newAttachments.push({
-            id: fileId,
-            url: dataUrl,
-            type: 'document',
-            name: file.name,
-            size: file.size,
-            textContent: textContent,
-          });
-        } catch (err: any) {
-          setErrorModal({
-            isOpen: true,
-            title: "Gagal Membaca Dokumen",
-            message: `Gagal membaca isi file "${file.name}".`,
-            fileName: file.name
-          });
-          continue;
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
+
+            newAttachments.push({
+              id: fileId,
+              url: dataUrl,
+              type: 'document',
+              name: file.name,
+              size: file.size,
+              textContent: textContent,
+            });
+          } catch (err: any) {
+            setErrorModal({
+              isOpen: true,
+              title: "Gagal Membaca Berkas",
+              message: `Gagal membaca isi berkas "${file.name}".`,
+              fileName: file.name
+            });
+            continue;
+          }
+        }
+        // 3. Pemrosesan Gambar (WebP, PNG, GIF, JPEG)
+        else if (isImage) {
+          try {
+            const dataUrl = await prepareFilePayload(file);
+            if (!dataUrl) continue;
+
+            newAttachments.push({
+              id: fileId,
+              url: dataUrl,
+              type: 'image',
+              name: file.name,
+              size: file.size,
+            });
+          } catch (err: any) {
+            setErrorModal({
+              isOpen: true,
+              title: "Gagal Memproses Gambar",
+              message: err?.message || `Gagal membaca file gambar "${file.name}".`,
+              fileName: file.name
+            });
+            continue;
+          }
         }
       }
-      // 4. Foto / Gambar (Jika <= 1MB langsung konversi, jika 1MB-100MB kompres Canvas)
-      else if (isImage) {
-        try {
-          const dataUrl = await prepareFilePayload(file);
-          if (!dataUrl) continue;
-
-          newAttachments.push({
-            id: fileId,
-            url: dataUrl,
-            type: 'image',
-            name: file.name,
-            size: file.size,
-          });
-        } catch (err: any) {
-          setErrorModal({
-            isOpen: true,
-            title: "Gagal Memproses Gambar",
-            message: err?.message || `Gagal membaca atau mengompres file gambar "${file.name}".`,
-            fileName: file.name
-          });
-          continue;
-        }
-      } else {
-        setErrorModal({
-          isOpen: true,
-          title: "Format File Tidak Didukung",
-          message: `File "${file.name}" tidak didukung. Harap pilih foto, video, audio, atau dokumen teks.`,
-          fileName: file.name
-        });
-      }
-    }
 
       if (newAttachments.length > 0) {
         setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 5));
-        // Otomatis aktifkan mode Vision jika ada foto/video
-        const hasVisionMedia = newAttachments.some(a => a.type === 'image' || a.type === 'video');
+        // Otomatis aktifkan mode Vision jika ada gambar terunggah
+        const hasVisionMedia = newAttachments.some(a => a.type === 'image');
         if (hasVisionMedia && onAutoEnableVision) {
           onAutoEnableVision();
         }
       }
     } catch (unexpectedErr: any) {
-      console.error("[FRONTEND CRASH ERROR]:", unexpectedErr);
+      console.error("[FRONTEND FILE PROCESS ERROR]:", unexpectedErr);
       setErrorModal({
         isOpen: true,
         title: "Kendala Pemrosesan File",
@@ -640,12 +635,12 @@ export function ChatInput({
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6 pt-1 select-none relative">
-      {/* Hidden file input untuk multi-upload foto, video, audio, dan dokumen */}
+      {/* Hidden file input untuk format yang diizinkan (WebP, PNG, GIF, PDF, TXT, MD, JSON, YML, YAML, Kode Program) */}
       <input 
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,video/*,audio/*,.txt,.pdf,.docx,.doc,.csv,.json,.md,.html,.css,.js,.ts,.tsx,.py,.java,.c,.cpp,.xml,.yaml,.yml,.sql,.log,text/*,application/pdf,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        accept=".webp,.png,.gif,.jpg,.jpeg,image/webp,image/png,image/gif,image/jpeg,.pdf,application/pdf,.txt,.md,.markdown,.json,.yml,.yaml,.js,.jsx,.ts,.tsx,.py,.ipynb,.html,.css,.scss,.java,.kt,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sh,.bash,.zsh,.sql,.vue,.svelte,.xml,.toml,.ini,.env,.graphql,.proto,.sol,.dart,.swift,.lua,.r"
         onChange={handleFileChange}
         className="hidden"
       />
@@ -856,12 +851,12 @@ export function ChatInput({
                         Pilih File dari Perangkat
                       </div>
                       <div className="text-[10px] text-slate-500 truncate">
-                        Foto, Video, Audio, Dokumen
+                        PDF, WebP, PNG, GIF, TXT, MD, JSON, YAML, Kode
                       </div>
                     </div>
                   </div>
                   <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-full shrink-0">
-                    Multi-Format
+                    File Pilihan
                   </span>
                 </button>
               </div>
@@ -997,13 +992,13 @@ export function ChatInput({
                           {item.name}
                         </span>
                         <span className="text-[10px] text-slate-500 truncate">
-                          {isVid && item.duration !== undefined
-                            ? `Video • ${Math.round(item.duration)}s`
-                            : isAud && item.duration !== undefined
-                            ? `Audio • ${Math.round(item.duration)}s`
+                          {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
+                            ? `PDF • ${item.pageCount} Halaman`
                             : isDoc && item.textContent
-                            ? `Dokumen • ${item.textContent.length} k`
-                            : `File • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
+                            ? `${item.name.split('.').pop()?.toUpperCase() || 'Dokumen'} • ${item.textContent.length.toLocaleString()} k`
+                            : isImg
+                            ? `Gambar • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
+                            : `Berkas • ${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`
                           }
                         </span>
                       </div>
