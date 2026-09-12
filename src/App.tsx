@@ -1682,6 +1682,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           conversation_id: currentSessionId || null,
           is_vision: isVisionNow,
           image_url: onlyImageUrl, // HANYA gambar nyata atau null (TIDAK PERNAH mengirim data:text/plain!)
+          image: onlyImageUrl,
+          imageUrl: onlyImageUrl,
+          images: onlyImageUrl ? [onlyImageUrl] : [],
+          image_base64: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
+          base64_image: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
           model: currentEffectiveModel,
           reasoning_effort: currentReasoningEffort,
           smart_select_level: smartSelectLevel,
@@ -1714,9 +1719,73 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         result = {};
       }
 
-      if (!response.ok || result.success === false) {
+      // Ekstraksi jawaban teks universal dari berbagai format respons AI
+      // (OpenAI choices[0].message.content, Router Bynara, Supabase Edge, nested data, Gemini candidates, dan SSE rawText)
+      let extractedReply = '';
+
+      if (typeof result?.reply === 'string' && result.reply.trim()) {
+        extractedReply = result.reply;
+      } else if (typeof result?.text === 'string' && result.text.trim()) {
+        extractedReply = result.text;
+      } else if (typeof result?.response === 'string' && result.response.trim()) {
+        extractedReply = result.response;
+      } else if (typeof result?.message_text === 'string' && result.message_text.trim()) {
+        extractedReply = result.message_text;
+      } else if (result?.choices?.[0]?.message?.content) {
+        extractedReply = result.choices[0].message.content;
+      } else if (result?.choices?.[0]?.text) {
+        extractedReply = result.choices[0].text;
+      } else if (result?.choices?.[0]?.delta?.content) {
+        extractedReply = result.choices[0].delta.content;
+      } else if (result?.data?.reply) {
+        extractedReply = result.data.reply;
+      } else if (result?.data?.choices?.[0]?.message?.content) {
+        extractedReply = result.data.choices[0].message.content;
+      } else if (result?.data?.content) {
+        extractedReply = result.data.content;
+      } else if (result?.data?.text) {
+        extractedReply = result.data.text;
+      } else if (typeof result?.message === 'string' && result.message.trim() && result.success !== false && !result.error) {
+        extractedReply = result.message;
+      } else if (result?.message?.content && typeof result.message.content === 'string') {
+        extractedReply = result.message.content;
+      } else if (typeof result?.content === 'string' && result.content.trim()) {
+        extractedReply = result.content;
+      } else if (typeof result?.output === 'string' && result.output.trim()) {
+        extractedReply = result.output;
+      } else if (typeof result?.result === 'string' && result.result.trim()) {
+        extractedReply = result.result;
+      } else if (typeof result?.answer === 'string' && result.answer.trim()) {
+        extractedReply = result.answer;
+      } else if (result?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        extractedReply = result.candidates[0].content.parts[0].text;
+      } else if (typeof result?.rawText === 'string' && result.rawText.trim()) {
+        const raw = result.rawText;
+        const sseMatches = raw.match(/data:\s*(\{.*\})/g);
+        if (sseMatches && sseMatches.length > 0) {
+          let combinedStream = '';
+          for (const m of sseMatches) {
+            try {
+              const parsed = JSON.parse(m.replace(/^data:\s*/, ''));
+              const delta = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || parsed.delta || parsed.reply || '';
+              combinedStream += delta;
+            } catch {}
+          }
+          if (combinedStream.trim()) {
+            extractedReply = combinedStream;
+          }
+        }
+        if (!extractedReply && !raw.startsWith('{') && raw.length > 5) {
+          extractedReply = raw;
+        }
+      }
+
+      const hasValidText = Boolean(extractedReply && extractedReply.trim().length > 0);
+      const isExplicitError = !response.ok || result.success === false || (result.error && !hasValidText);
+
+      if (isExplicitError) {
         const status = response.status;
-        const rawError = String(result.error || result.message || result.rawText || '').trim();
+        const rawError = String(result.error || (result.success === false && result.message) || result.rawText || '').trim();
 
         let errorCategory = 'Server Pemrosesan AI';
         let friendlyReason = '';
@@ -1770,8 +1839,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         throw new Error(formattedError);
       }
 
-      if (result.reply || result.text || result.response || result.message_text) {
-        let fullReply = result.reply || result.text || result.response || result.message_text || '';
+      if (hasValidText) {
+        let fullReply = extractedReply;
         const rawThinking = result.thinking || result.reasoning || result.reasoning_content || result.thought || '';
         if (rawThinking && !fullReply.includes('<think>')) {
           fullReply = `<think>${rawThinking}</think>\n\n${fullReply}`;
