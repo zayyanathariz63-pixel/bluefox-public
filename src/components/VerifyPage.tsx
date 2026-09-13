@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { supabaseKey } from '../lib/supabase';
 
 // Di Bluefox (/verify atau tombol Login)
 export function handleRedirectToAccount() {
@@ -46,7 +47,13 @@ export function VerifyPage() {
 
       try {
         const res = await fetch(
-          `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/swift-endpoint?device_id=${deviceId}`
+          `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/swift-endpoint?device_id=${deviceId}`,
+          {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`
+            }
+          }
         );
 
         const data = await res.json();

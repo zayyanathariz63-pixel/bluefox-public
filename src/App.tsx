@@ -1687,7 +1687,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${userSessionToken}`
+          "Authorization": `Bearer ${userSessionToken}`,
+          "apikey": supabaseKey
         },
         body: JSON.stringify({
           message: promptToSend,
