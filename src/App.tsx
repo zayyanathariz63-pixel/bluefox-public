@@ -32,7 +32,7 @@ import {
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
-import { executeDualEngineSearch, detectSearchIntent, SearchModeType } from './lib/search';
+import { executeDualEngineSearch, detectSearchIntent, SearchModeType, BLUEFOX_SYSTEM_PROMPT } from './lib/search';
 import { 
   getReasoningEffort, 
   getSmartSelectEffort, 
@@ -82,7 +82,7 @@ export function redirectToSSO() {
   window.location.href = ssoUrl.toString();
 }
 
-export type SupportedModel = 'deepseek-v4.1-flash-free' | 'laguna-s-2.1' | 'longcat-2.0-free' | 'agnes-2.0-flash';
+export type SupportedModel = 'agnes-2.5-flash' | 'tencent-hy3-free' | 'laguna-s-2.1';
 
 export default function App() {
   const { lang, changeLanguage, t } = useLanguage();
@@ -138,10 +138,21 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<SupportedModel>(() => {
     try {
       const saved = localStorage.getItem('tmpa_selected_model');
-      if (saved === 'agnes-2.0-flash' || saved === 'bluefox_pro') return 'deepseek-v4.1-flash-free';
-      if (saved && (saved === 'laguna-s-2.1' || saved === 'longcat-2.0-free' || saved === 'deepseek-v4.1-flash-free')) return saved as SupportedModel;
+      if (saved === 'agnes-2.5-flash' || saved === 'tencent-hy3-free' || saved === 'laguna-s-2.1') {
+        return saved as SupportedModel;
+      }
+      // Migrasi model lama ke lineup baru:
+      if (saved === 'agnes-2.0-flash' || saved === 'bluefox_pro' || saved === 'deepseek-v4.1-flash-free') {
+        return 'agnes-2.5-flash';
+      }
+      if (saved === 'bluefox_standard' || saved === 'tmpa_v1') {
+        return 'tencent-hy3-free';
+      }
+      if (saved === 'bluefox_dilo' || saved === 'longcat-2.0-free' || saved === 'dilo') {
+        return 'laguna-s-2.1';
+      }
     } catch {}
-    return 'deepseek-v4.1-flash-free';
+    return 'agnes-2.5-flash';
   });
   const [isVisionActive, setIsVisionActive] = useState<boolean>(() => {
     try {
@@ -176,7 +187,7 @@ export default function App() {
 
   const handleEnableVision = () => {
     setIsVisionActive(true);
-    setSelectedModel('deepseek-v4.1-flash-free');
+    setSelectedModel('agnes-2.5-flash');
     try {
       localStorage.setItem('tmpa_vision_active', 'true');
     } catch {}
@@ -192,8 +203,8 @@ export default function App() {
   };
 
   const handleSelectModel = (modelId: SupportedModel) => {
-    if (isVisionActive && modelId !== 'deepseek-v4.1-flash-free' && modelId !== 'agnes-2.0-flash') {
-      setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Bluefox Pro (deepseek-v4.1-flash-free). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
+    if (isVisionActive && modelId !== 'agnes-2.5-flash') {
+      setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Bluefox Pro (agnes-2.5-flash). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
       setTimeout(() => setVisionLockedNotice(null), 4000);
       return;
     }
@@ -249,7 +260,7 @@ export default function App() {
     searchMode?: 'standard' | 'advanced' | 'map_standard' | 'map_advanced'
   ) => {
     let h = 0, w = 0;
-    if (model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'qwen3_coder') {
+    if (model === 'agnes-2.5-flash' || model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'bluefox_pro' || model === 'qwen3_coder') {
       if (isVision) {
         h = 19; // Vision: 19% per 5 jam
         w = 14; // Vision: 14% weekly
@@ -257,12 +268,12 @@ export default function App() {
         h = 13; // Non vision: 13% per 5 jam
         w = 10; // Non vision: 10% weekly
       }
-    } else if (model === 'laguna-s-2.1' || model === 'tmpa_v1' || model === 'gpt_oss') {
-      // bluefox standard (laguna-s-2.1)
+    } else if (model === 'tencent-hy3-free' || model === 'bluefox_standard' || model === 'tmpa_v1' || model === 'gpt_oss') {
+      // bluefox standard (tencent-hy3-free)
       h = 12; // 12% per 5 jam
       w = 9;  // 9% weekly
-    } else if (model === 'longcat-2.0-free' || model === 'dilo' || model === 'tencent-hy3-free' || model === 'mistral_nemotron') {
-      // bluefox Dilo (longcat-2.0-free)
+    } else if (model === 'laguna-s-2.1' || model === 'bluefox_dilo' || model === 'dilo' || model === 'longcat-2.0-free' || model === 'mistral_nemotron') {
+      // bluefox Dilo (laguna-s-2.1)
       h = 8;  // 8% per 5 jam
       w = 6;  // 6% weekly
     } else {
@@ -1524,9 +1535,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // Vision mode HANYA aktif jika dinyalakan manual ATAU ada lampiran gambar nyata
       // Dokumen, berkas teks (TXT/MD), PDF, JSON, YAML, kode program BUKAN vision
       const isVisionNow = Boolean(isVisionActive || hasRealImage);
+      // Vision terkunci ke Bluefox Pro (agnes-2.5-flash) tanpa fallback
       const currentEffectiveModel = isVisionNow 
-        ? 'deepseek-v4.1-flash-free' 
-        : (selectedModel === 'agnes-2.0-flash' ? 'deepseek-v4.1-flash-free' : selectedModel);
+        ? 'agnes-2.5-flash' 
+        : selectedModel;
 
       // =========================================================================
       // [PEMBERSIHAN KODE FRONTEND - LANGSUNG KIRIM KE EDGE FUNCTION]:
@@ -1698,7 +1710,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           thinking: {
             type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
             effort: currentReasoningEffort
-          }
+          },
+          system_prompt: BLUEFOX_SYSTEM_PROMPT,
+          systemPrompt: BLUEFOX_SYSTEM_PROMPT
         }),
         signal: abortControllerRef.current.signal
       });
@@ -1787,24 +1801,36 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         const status = response.status;
         const rawError = String(result.error || (result.success === false && result.message) || result.rawText || '').trim();
 
-        let errorCategory = 'Server Pemrosesan AI';
+        let errorCategory = `Status Server AI (HTTP ${status || 'Error'})`;
         let friendlyReason = '';
         let suggestion = '';
 
-        if (status === 413 || /payload|too large|request entity|size/i.test(rawError)) {
-          errorCategory = 'Ukuran Permintaan Terlalu Besar (Payload Too Large)';
-          friendlyReason = 'Isi teks berkas atau prompt yang dikirimkan melebihi kapasitas transmisi server.';
+        if (status === 400 || /bad request|invalid request/i.test(rawError)) {
+          errorCategory = 'Permintaan Tidak Valid (HTTP 400 Bad Request)';
+          friendlyReason = rawError || 'Parameter atau struktur data payload yang dikirimkan ke server tidak sesuai dengan format yang diharapkan.';
+          suggestion = 'Periksa kelengkapan pesan atau format berkas lampiran yang diunggah.';
+        } else if (status === 404 || /not found/i.test(rawError)) {
+          errorCategory = 'Endpoint Tidak Ditemukan (HTTP 404 Not Found)';
+          friendlyReason = rawError || 'Endpoint fungsi server pemrosesan tidak dapat diakses atau rute belum terdaftar.';
+          suggestion = 'Pastikan URL fungsi Edge Supabase tepat dan aktif.';
+        } else if (status === 413 || /payload|too large|request entity|size/i.test(rawError)) {
+          errorCategory = 'Ukuran Permintaan Terlalu Besar (HTTP 413 Payload Too Large)';
+          friendlyReason = 'Isi teks berkas atau prompt yang dikirimkan melebihi batas kapasitas transmisi server.';
           suggestion = 'Kurangi isi teks berkas lampiran atau unggah potongan teks yang lebih ringkas.';
         } else if (status === 429 || /rate limit|quota|exceeded|too many/i.test(rawError)) {
-          errorCategory = 'Batas Permintaan Tercapai (Rate Limit)';
+          errorCategory = 'Batas Permintaan Tercapai (HTTP 429 Rate Limit)';
           friendlyReason = 'Frekuensi penggunaan model AI sementara telah mencapai batas kuota server.';
           suggestion = 'Mohon tunggu 1 hingga 2 menit sebelum mencoba mengirimkan pertanyaan kembali.';
         } else if (status === 401 || status === 403 || /jwt|unauthorized|auth|permission/i.test(rawError)) {
-          errorCategory = 'Sesi Akun Kedaluwarsa';
-          friendlyReason = 'Sesi autentikasi akun Anda telah kedaluwarsa atau tidak valid.';
+          errorCategory = `Sesi Akun Kedaluwarsa (HTTP ${status})`;
+          friendlyReason = 'Sesi autentikasi akun Anda telah kedaluwarsa atau otorisasi tidak valid.';
           suggestion = 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali ke akun Anda.';
-        } else if (status === 504 || status === 502 || /timeout|gateway/i.test(rawError)) {
-          errorCategory = 'Waktu Pemrosesan Habis (Gateway Timeout)';
+        } else if (status === 502 || /bad gateway/i.test(rawError)) {
+          errorCategory = 'Gerbang Bermasalah (HTTP 502 Bad Gateway)';
+          friendlyReason = rawError || 'Server perantara (Edge/Gateway) menerima respons tidak valid dari model AI upstream.';
+          suggestion = 'Tunggu beberapa saat atau gunakan model alternatif.';
+        } else if (status === 504 || /timeout|gateway/i.test(rawError)) {
+          errorCategory = 'Waktu Pemrosesan Habis (HTTP 504 Gateway Timeout)';
           friendlyReason = 'Server AI membutuhkan waktu pemrosesan lebih lama dari batas respons jaringan.';
           suggestion = 'Gunakan berkas dengan teks yang lebih ringkas atau tanyakan hal yang lebih terfokus.';
         } else if (/vision|image|unsupported|mime/i.test(rawError)) {
@@ -1812,11 +1838,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           friendlyReason = 'Server AI tidak dapat mengenali atau memproses berkas media yang dilampirkan.';
           suggestion = 'Pastikan gambar berformat WebP, PNG, atau GIF, dan dokumen berupa teks (TXT, MD, JSON, YAML) atau PDF yang valid.';
         } else if (status >= 500) {
-          errorCategory = `Kendala Server Internal (${status})`;
-          friendlyReason = rawError || 'Server pemrosesan AI (Edge Function) mengalami kendala internal sementara.';
+          errorCategory = `Kendala Server Internal (HTTP ${status})`;
+          friendlyReason = rawError || 'Server pemrosesan AI mengalami kendala internal sementara.';
           suggestion = 'Tunggu beberapa detik dan coba kirimkan kembali pertanyaan Anda.';
         } else {
-          errorCategory = `Kendala Pemrosesan (${status || 'Error'})`;
+          errorCategory = `Kendala Pemrosesan (HTTP ${status || 'Error'})`;
           friendlyReason = rawError || 'Gagal menerima respons yang valid dari server AI.';
           suggestion = 'Periksa koneksi internet Anda atau coba ajukan kembali pertanyaan.';
         }
@@ -2158,9 +2184,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           {/* Model Selector Trigger */}
           <div className="flex items-center">
             {(() => {
-              const modelDisplayName = (selectedModel === 'deepseek-v4.1-flash-free' || selectedModel === 'agnes-2.0-flash')
+              const modelDisplayName = selectedModel === 'agnes-2.5-flash'
                 ? 'bluefox pro' 
-                : selectedModel === 'laguna-s-2.1' 
+                : selectedModel === 'tencent-hy3-free' 
                 ? 'bluefox standard' 
                 : 'bluefox Dilo';
               const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
@@ -2633,24 +2659,24 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                  {/* Bluefox Pro (deepseek-v4.1-flash-free) Choice */}
+                  {/* Bluefox Pro (agnes-2.5-flash) Choice */}
                   <button 
-                    onClick={() => handleSelectModel('deepseek-v4.1-flash-free')}
+                    onClick={() => handleSelectModel('agnes-2.5-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
-                      selectedModel === 'deepseek-v4.1-flash-free' || selectedModel === 'agnes-2.0-flash'
+                      selectedModel === 'agnes-2.5-flash'
                         ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm' 
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'deepseek-v4.1-flash-free' || selectedModel === 'agnes-2.0-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        selectedModel === 'agnes-2.5-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Bot size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(() => {
-                          const effort = getSmartSelectEffort('deepseek-v4.1-flash-free', smartSelectLevel);
+                          const effort = getSmartSelectEffort('agnes-2.5-flash', smartSelectLevel);
                           return (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                               effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
@@ -2670,13 +2696,58 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       </div>
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox pro</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by deepseek-v4.1-flash-free</span>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.5-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model penalaran tingkat tinggi DeepSeek v4.1 Flash Free dengan pemahaman kode tingkat tinggi, analisis logika superior, pemrosesan multi-format file yang luas, dan Smart Select hingga tingkat High.
+                      Model penalaran tingkat tinggi Agnes 2.5 Flash dengan pemahaman kode, analisis visual multimodal terpadu, pemrosesan dokumen, dan Smart Select hingga tingkat High.
                     </p>
                   </button>
 
-                  {/* bluefox standard (laguna-s-2.1) Choice */}
+                  {/* bluefox standard (tencent-hy3-free) Choice */}
+                  <button 
+                    onClick={() => handleSelectModel('tencent-hy3-free')}
+                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
+                      isVisionActive 
+                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
+                        : selectedModel === 'tencent-hy3-free'
+                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
+                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
+                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
+                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        <Cpu size={18} />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {(() => {
+                          const effort = getSmartSelectEffort('tencent-hy3-free', smartSelectLevel);
+                          return (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
+                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
+                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
+                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                            }`}>
+                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
+                            </span>
+                          );
+                        })()}
+                        {isVisionActive && (
+                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
+                            <Lock size={11} /> Terkunci
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
+                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                      Model pengolah teks & pemrograman cepat dan tangguh. Smart Select bawaan Medium dan dapat diatur fleksibel hingga High.
+                    </p>
+                  </button>
+
+                  {/* bluefox Dilo (laguna-s-2.1) Choice */}
                   <button 
                     onClick={() => handleSelectModel('laguna-s-2.1')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
@@ -2691,7 +2762,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
                         selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
-                        <Cpu size={18} />
+                        <Layers size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(() => {
@@ -2714,53 +2785,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         )}
                       </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
-                    <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model open-source modular generasi baru. Smart Select bawaan Medium dan dapat dinaikkan atau ditarik hingga High.
-                    </p>
-                  </button>
-
-                  {/* bluefox Dilo (longcat-2.0-free) Choice */}
-                  <button 
-                    onClick={() => handleSelectModel('longcat-2.0-free')}
-                    className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
-                      isVisionActive 
-                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'longcat-2.0-free'
-                          ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
-                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-3.5 md:mb-4">
-                      <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'longcat-2.0-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                      }`}>
-                        <Layers size={18} />
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        {(() => {
-                          const effort = getSmartSelectEffort('longcat-2.0-free', smartSelectLevel);
-                          return (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
-                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
-                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
-                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
-                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                            }`}>
-                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
-                            </span>
-                          );
-                        })()}
-                        {isVisionActive && (
-                          <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
-                            <Lock size={11} /> Terkunci
-                          </span>
-                        )}
-                      </div>
-                    </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox Dilo</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by longcat-2.0-free</span>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
                       Teman ngobrol ramah dan santai dengan Smart Select hemat (Low). Dapat ditarik fleksibel dari None hingga High.
                     </p>
@@ -2831,7 +2857,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                               </span>
                             )}
                           </h4>
-                          <span className="text-[10px] text-cyan-600 font-mono font-medium">model: deepseek-v4.1-flash-free</span>
+                          <span className="text-[10px] text-cyan-600 font-mono font-medium">model: agnes-2.5-flash (tanpa fallback)</span>
                         </div>
                       </div>
                       {isVisionActive && (
@@ -2841,7 +2867,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       )}
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed pl-12">
-                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-700">Bluefox Pro (deepseek-v4.1-flash-free)</strong> sehingga model tidak dapat diubah selama mode Vision menyala.
+                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-700">Bluefox Pro (agnes-2.5-flash)</strong> tanpa fallback karena pemrosesan gambar & visual didukung oleh model Agnes 2.5 Flash.
                     </p>
                   </button>
 
@@ -3045,7 +3071,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       {/* Current Status Banner */}
                       <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 flex-wrap gap-2">
                         <div className="flex items-center gap-1.5">
-                          <span>Target model aktif ({selectedModel === 'deepseek-v4.1-flash-free' || selectedModel === 'agnes-2.0-flash' ? 'bluefox pro' : selectedModel === 'laguna-s-2.1' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
+                          <span>Target model aktif ({selectedModel === 'agnes-2.5-flash' ? 'bluefox pro' : selectedModel === 'tencent-hy3-free' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
                           <strong className="text-purple-700 dark:text-purple-300 uppercase font-bold">
                             Smart Select: {currentEffort}
                           </strong>
@@ -3220,15 +3246,15 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
-                      Bluefox Pro: <strong>{getSmartSelectEffort('deepseek-v4.1-flash-free', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Pro: <strong>{getSmartSelectEffort('agnes-2.5-flash', smartSelectLevel).toUpperCase()}</strong>
                     </span>
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                      Bluefox Standard: <strong>{getSmartSelectEffort('laguna-s-2.1', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Standard: <strong>{getSmartSelectEffort('tencent-hy3-free', smartSelectLevel).toUpperCase()}</strong>
                     </span>
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse" />
-                      Bluefox Dilo: <strong>{getSmartSelectEffort('longcat-2.0-free', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Dilo: <strong>{getSmartSelectEffort('laguna-s-2.1', smartSelectLevel).toUpperCase()}</strong>
                     </span>
                   </div>
                 </div>

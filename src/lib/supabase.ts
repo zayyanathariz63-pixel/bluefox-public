@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { getActiveCustomApi } from './customApi';
 import { SUPABASE_CONFIG, getEnvAny } from './env';
+import { BLUEFOX_SYSTEM_PROMPT } from './search';
 
 export const supabaseUrl: string = SUPABASE_CONFIG.url;
 export const supabaseKey: string = SUPABASE_CONFIG.anonKey;
@@ -301,20 +302,22 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 // URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor
 // ==========================================
 export const MODEL_MAPPING: Record<string, string> = {
-  tmpa_v2: "deepseek-v4.1-flash-free",
-  tmpa_v1: "laguna-s-2.1",
-  dilo: "longcat-2.0-free", // Gantikan tencent-hy3-free
-  bluefox_pro: "deepseek-v4.1-flash-free", // bluefox pro (DeepSeek v4.1 Flash Free)
-  bluefox_standard: "laguna-s-2.1", // bluefox standard
-  bluefox_dilo: "longcat-2.0-free", // bluefox Dilo
-  "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
-  "agnes-2.0-flash": "deepseek-v4.1-flash-free",
+  tmpa_v2: "agnes-2.5-flash",
+  tmpa_v1: "tencent-hy3-free",
+  dilo: "laguna-s-2.1",
+  bluefox_pro: "agnes-2.5-flash", // bluefox pro -> agnes-2.5-flash (vision locked, no fallback)
+  bluefox_standard: "tencent-hy3-free", // bluefox standard -> tencent-hy3-free
+  bluefox_dilo: "laguna-s-2.1", // bluefox Dilo -> laguna-s-2.1
+  "agnes-2.5-flash": "agnes-2.5-flash",
+  "tencent-hy3-free": "tencent-hy3-free",
   "laguna-s-2.1": "laguna-s-2.1",
-  "longcat-2.0-free": "longcat-2.0-free",
-  "tencent-hy3-free": "longcat-2.0-free", // backward compatibility
-  qwen3_coder: "deepseek-v4.1-flash-free",
-  gpt_oss: "laguna-s-2.1",
-  mistral_nemotron: "longcat-2.0-free",
+  // Backward compatibility mappings:
+  "deepseek-v4.1-flash-free": "agnes-2.5-flash",
+  "agnes-2.0-flash": "agnes-2.5-flash",
+  "longcat-2.0-free": "laguna-s-2.1",
+  qwen3_coder: "agnes-2.5-flash",
+  gpt_oss: "tencent-hy3-free",
+  mistral_nemotron: "laguna-s-2.1",
 };
 
 export async function invokeBluefoxProcessor(
@@ -333,15 +336,15 @@ export async function invokeBluefoxProcessor(
 
     // Determinasi model:
     // 1. Jika ada Custom API aktif -> Gunakan Model ID dari Custom API
-    // 2. Jika Vision Aktif -> Kunci paksa ke 'agnes-2.0-flash'
+    // 2. Jika Vision Aktif -> Kunci paksa ke 'agnes-2.5-flash' (tanpa fallback vision)
     // 3. Jika Vision Matikan -> Gunakan model pilihan user
     const activeCustomApi = getActiveCustomApi();
-    const selectedKey = model || 'tmpa_v2';
+    const selectedKey = model || 'bluefox_pro';
     const finalModel = activeCustomApi
       ? activeCustomApi.model
       : isVisionActive 
-        ? MODEL_MAPPING.tmpa_v2 
-        : (MODEL_MAPPING[selectedKey] || selectedKey || MODEL_MAPPING.tmpa_v2);
+        ? 'agnes-2.5-flash' 
+        : (MODEL_MAPPING[selectedKey] || selectedKey || 'agnes-2.5-flash');
 
     const primaryImageUrl = Array.isArray(imageUrl) ? (imageUrl[0] || null) : (imageUrl || null);
     const mediaUrls = Array.isArray(imageUrl) ? imageUrl : (imageUrl ? [imageUrl] : []);
@@ -375,6 +378,8 @@ export async function invokeBluefoxProcessor(
       media: mediaUrls,
       file_urls: mediaUrls,
       attachments: mediaUrls,
+      system_prompt: BLUEFOX_SYSTEM_PROMPT,
+      systemPrompt: BLUEFOX_SYSTEM_PROMPT,
     };
 
     if (cleanBase64) {
@@ -607,13 +612,13 @@ export type AiModelCode = 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo';
 
 export function getModelLimitCode(model: string, isVision?: boolean): AiModelCode {
   if (isVision) return 'v2_vision';
-  if (model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'qwen3_coder') {
+  if (model === 'agnes-2.5-flash' || model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'tmpa_v2' || model === 'bluefox_pro' || model === 'qwen3_coder') {
     return 'v2_non_vision';
   }
-  if (model === 'laguna-s-2.1' || model === 'tmpa_v1' || model === 'gpt_oss') {
+  if (model === 'tencent-hy3-free' || model === 'bluefox_standard' || model === 'tmpa_v1' || model === 'gpt_oss') {
     return 'v1';
   }
-  if (model === 'longcat-2.0-free' || model === 'dilo' || model === 'tencent-hy3-free' || model === 'mistral_nemotron') {
+  if (model === 'laguna-s-2.1' || model === 'bluefox_dilo' || model === 'dilo' || model === 'longcat-2.0-free' || model === 'mistral_nemotron') {
     return 'dilo';
   }
   return 'v1';
@@ -975,13 +980,13 @@ export async function consumeSearchLimit(
 export function getModelDisplayName(modelId?: string): string {
   if (!modelId) return 'bluefox pro';
   const clean = modelId.toLowerCase();
-  if (clean.includes('v2') || clean.includes('pro') || clean.includes('agnes') || clean.includes('qwen')) {
+  if (clean.includes('pro') || clean.includes('agnes') || clean.includes('deepseek') || clean.includes('v2') || clean.includes('qwen')) {
     return 'bluefox pro';
   }
-  if (clean.includes('v1') || clean.includes('standard') || clean.includes('laguna') || clean.includes('gpt')) {
+  if (clean.includes('tencent') || clean.includes('standard') || clean.includes('standar') || clean.includes('v1') || clean.includes('gpt')) {
     return 'bluefox standard';
   }
-  if (clean.includes('dilo') || clean.includes('longcat') || clean.includes('tencent') || clean.includes('mistral') || clean.includes('nemotron')) {
+  if (clean.includes('laguna') || clean.includes('dilo') || clean.includes('longcat') || clean.includes('nemotron')) {
     return 'bluefox Dilo';
   }
   return 'bluefox pro';

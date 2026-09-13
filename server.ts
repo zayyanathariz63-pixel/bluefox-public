@@ -174,13 +174,18 @@ async function startServer() {
       const { 
         history = [], 
         message = "", 
-        model = "deepseek-v4.1-flash-free", 
+        model = "agnes-2.5-flash", 
         customInstruction = "", 
         reasoningMode = "", 
         smartSelectLevel = "",
         smart_select_level = "",
         reasoning_effort = "",
         forceSearch = false,
+        isVision = false,
+        is_vision = false,
+        vision = false,
+        imageUrl = null,
+        image_url = null,
         stream = true 
       } = req.body;
 
@@ -189,23 +194,31 @@ async function startServer() {
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
 
       const modelMapping: { [key: string]: string } = {
-        "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
-        "deepseek_v4_1_flash_free": "deepseek-v4.1-flash-free",
-        "bluefox_pro": "deepseek-v4.1-flash-free",
-        "agnes_2_0_flash": "deepseek-v4.1-flash-free",
-        "agnes-2.0-flash": "deepseek-v4.1-flash-free",
-        "laguna_s_2_1": "laguna-s-2.1",
+        "agnes-2.5-flash": "agnes-2.5-flash",
+        "agnes_2_5_flash": "agnes-2.5-flash",
+        "bluefox_pro": "agnes-2.5-flash",
+        "tencent-hy3-free": "tencent-hy3-free",
+        "tencent_hy3_free": "tencent-hy3-free",
+        "bluefox_standard": "tencent-hy3-free",
+        "bluefox_standar": "tencent-hy3-free",
         "laguna-s-2.1": "laguna-s-2.1",
-        "longcat-2.0-free": "longcat-2.0-free",
-        "tencent_hy3_free": "longcat-2.0-free",
-        "tencent-hy3-free": "longcat-2.0-free",
-        "qwen3_coder": "deepseek-v4.1-flash-free",
-        "tmpa_v2": "deepseek-v4.1-flash-free",
-        "gpt_oss": "laguna-s-2.1",
-        "mistral_nemotron": "longcat-2.0-free"
+        "laguna_s_2_1": "laguna-s-2.1",
+        "bluefox_dilo": "laguna-s-2.1",
+        // Backward compatibility
+        "deepseek-v4.1-flash-free": "agnes-2.5-flash",
+        "deepseek_v4_1_flash_free": "agnes-2.5-flash",
+        "agnes-2.0-flash": "agnes-2.5-flash",
+        "agnes_2_0_flash": "agnes-2.5-flash",
+        "longcat-2.0-free": "laguna-s-2.1",
+        "qwen3_coder": "agnes-2.5-flash",
+        "tmpa_v2": "agnes-2.5-flash",
+        "tmpa_v1": "tencent-hy3-free",
+        "dilo": "laguna-s-2.1",
+        "gpt_oss": "tencent-hy3-free",
+        "mistral_nemotron": "laguna-s-2.1"
       };
 
-      const requestedModelId = modelMapping[model] || "deepseek-v4.1-flash-free";
+      const requestedModelId = modelMapping[model] || "agnes-2.5-flash";
 
       // =========================================================================
       // 2.2 DUAL-ENGINE FALLBACK WEB SEARCH (TAVILY -> DUCKDUCKGO)
@@ -380,11 +393,14 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
           return chosenLevel as "none" | "high" | "medium" | "low";
         }
         const clean = (modelName || "").toLowerCase();
-        if (clean.includes("deepseek") || clean.includes("agnes") || clean.includes("pro") || clean.includes("v2") || clean.includes("qwen")) {
+        if (clean.includes("agnes") || clean.includes("pro") || clean.includes("deepseek") || clean.includes("v2") || clean.includes("qwen")) {
           return "high";
         }
-        if (clean.includes("longcat") || clean.includes("dilo") || clean.includes("tencent") || clean.includes("nemotron")) {
+        if (clean.includes("laguna") || clean.includes("dilo") || clean.includes("longcat") || clean.includes("nemotron")) {
           return isPenalaranActive ? "medium" : "low";
+        }
+        if (clean.includes("tencent") || clean.includes("standard") || clean.includes("standar")) {
+          return isPenalaranActive ? "high" : "medium";
         }
         return isPenalaranActive ? "high" : "medium";
       };
@@ -392,7 +408,12 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
       // 2. Fallback: Router Bynara / OpenRouter Streaming
       if (!successfullyGenerated && openRouterKey && openRouterKey !== "YOUR_OPENROUTER_API_KEY") {
         try {
-          const modelsToTry = [requestedModelId, "deepseek-v4.1-flash-free", "laguna-s-2.1", "longcat-2.0-free", "agnes-2.0-flash"];
+          const isVisionRequest = Boolean(isVision || is_vision || vision || imageUrl || image_url);
+          // Vision tidak ada fallback karena hanya agnes-2.5-flash yang mendukung vision
+          const modelsToTry = isVisionRequest
+            ? ["agnes-2.5-flash"]
+            : [requestedModelId, "agnes-2.5-flash", "tencent-hy3-free", "laguna-s-2.1"].filter((v, i, a) => a.indexOf(v) === i);
+
           for (const mId of modelsToTry) {
             if (abortController.signal.aborted) break;
             try {
