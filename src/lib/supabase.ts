@@ -297,8 +297,8 @@ export async function createConversation(title: string = 'Chat Baru', customId?:
 }
 
 // ==========================================
-// E. Panggil Edge Function 'bluefox-processor-'
-// URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
+// E. Panggil Edge Function 'bluefox-processor'
+// URL: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor
 // ==========================================
 export const MODEL_MAPPING: Record<string, string> = {
   tmpa_v2: "deepseek-v4.1-flash-free",
@@ -396,17 +396,16 @@ export async function invokeBluefoxProcessor(
       requestBody.api_key = activeCustomApi.apiKey;
     }
 
-    console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor-':", requestBody);
+    console.log("📤 [Supabase Edge Function] Mengirim request ke 'bluefox-processor':", requestBody);
 
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token || supabaseKey;
     const baseEndpoint = (supabaseUrl || 'https://jjlanjshpyklqayjzxyy.supabase.co').replace(/\/+$/, '');
     
     // Prioritaskan endpoint resmi yang ditentukan oleh pengguna
-    const targetUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
+    const targetUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor';
     const urlsToTry = [
       targetUrl,
-      `${baseEndpoint}/functions/v1/bluefox-processor-`,
       `${baseEndpoint}/functions/v1/bluefox-processor`
     ].filter((v, i, a) => a.indexOf(v) === i);
 
@@ -551,7 +550,7 @@ export async function invokeBluefoxProcessor(
     try {
       if (abortSignal?.aborted) throw new DOMException('Request aborted', 'AbortError');
 
-      const { data, error } = await supabase.functions.invoke('bluefox-processor-', {
+      const { data, error } = await supabase.functions.invoke('bluefox-processor', {
         body: requestBody,
       });
 

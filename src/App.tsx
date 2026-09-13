@@ -1671,7 +1671,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const { data: { session } } = await supabase.auth.getSession();
       const userSessionToken = session?.access_token || supabaseKey;
 
-      const response = await fetch("https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-", {
+      const response = await fetch("https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
