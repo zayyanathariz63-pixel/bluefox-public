@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { ArrowRight, Shield, Zap, Sparkles, Search, Brain } from 'lucide-react';
+import { ArrowRight, Shield, Zap, Sparkles, Search } from 'lucide-react';
 
 const LOGO_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png';
 

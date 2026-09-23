@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '../supabaseClient';
-import { supabaseKey } from '../lib/supabase';
+import { supabase, supabaseKey } from '../lib/supabase';
 
 // Di Bluefox (/verify atau tombol Login)
 export function handleRedirectToAccount() {

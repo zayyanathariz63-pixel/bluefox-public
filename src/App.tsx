@@ -22,11 +22,8 @@ import {
   loadChatHistory,
   getValidUUID,
   hasValidConfig,
-  consumeAiLimit,
-  consumeSearchLimit,
   getUserLimits,
   resetUserLimits,
-  getModelLimitCode,
   supabaseKey
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
@@ -1498,6 +1495,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
     setErrorState(null);
 
     let timeoutId: any = null;
+    let aiReplyText = '';
+    let effectiveConvId = currentSessionId || getValidUUID(null);
 
     try {
       // Ambil UUID user yang sedang login secara dinamis
@@ -1540,15 +1539,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         ? 'agnes-2.5-flash' 
         : selectedModel;
 
-      // =========================================================================
-      // [PEMBERSIHAN KODE FRONTEND - LANGSUNG KIRIM KE EDGE FUNCTION]:
-      // Panggilan limit ke tabel 'user_limits' dan RPC 'consume_ai_limit' dinonaktifkan
-      // agar proses pengiriman pesan langsung dan tidak terblokir oleh kendala RLS/DB.
-      // // const limitCheck = await supabase.from('user_limits').select('*');
-      // // const consume = await supabase.rpc('consume_ai_limit', { ... });
-      // // const reset = await supabase.rpc('reset_user_limits', { ... });
-      // =========================================================================
-
       updateUsage(currentEffectiveModel, isVisionNow);
 
       // =========================================================================
@@ -1584,13 +1574,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const updatedMessages = [...baseMessages, userMessage];
       setMessages(updatedMessages);
 
-      let sessionId = getValidUUID(currentSessionId);
-      let currentSessions = [...chatSessions];
+      // Pastikan sessionId konsisten untuk seluruh percakapan aktif
+      if (!currentSessionId) {
+        setCurrentSessionId(effectiveConvId);
+      }
 
-      const sessionIdx = currentSessions.findIndex(s => s.id === sessionId);
+      let currentSessions = [...chatSessions];
+      const sessionIdx = currentSessions.findIndex(s => s.id === effectiveConvId);
       if (sessionIdx === -1) {
         const newSession = {
-          id: sessionId,
+          id: effectiveConvId,
           title: userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Lampiran Media'),
           messages: updatedMessages,
           updatedAt: Date.now(),
@@ -1607,10 +1600,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       
       saveSessionsToLocal(currentSessions);
 
+      // Simpan langsung pesan pengguna ke Supabase
+      sendMessageToSupabase(userText, effectiveConvId, 'user').catch(err => {
+        console.warn("⚠️ [Supabase] Info simpan pesan pengguna:", err);
+      });
+
       abortControllerRef.current = new AbortController();
       timeoutId = setTimeout(() => abortControllerRef.current?.abort(), 80000);
-      let aiReplyText = '';
-      let effectiveConvId = currentSessionId || sessionId;
 
       // =========================================================================
       // DUAL-ENGINE FALLBACK WEB SEARCH INTENT DETECTION & CONTEXT INJECTION (3-5 MULTI-SEARCH + ADVANCE)
@@ -1627,10 +1623,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           });
 
           const mode: SearchModeType = searchPayload.searchMode || 'standard';
-          // Panggilan consumeSearchLimit dinonaktifkan sesuai pembersihan frontend
-          // if (activeUserId) {
-          //   consumeSearchLimit(activeUserId, mode).catch(() => {});
-          // }
           updateUsage(currentEffectiveModel, isVisionNow, mode);
 
           if (searchPayload.has_sources && searchPayload.sources.length > 0) {
@@ -1683,7 +1675,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const { data: { session } } = await supabase.auth.getSession();
       const userSessionToken = session?.access_token || supabaseKey;
 
-      const response = await fetch("https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor", {
+      // Siapkan riwayat pesan sebelumnya untuk konteks backend
+      const formattedHistory = baseMessages
+        .slice(-10)
+        .map(m => ({
+          role: m.role === 'user' ? 'user' : 'assistant',
+          text: m.text
+        }));
+
+      // Panggil Backend Server Express (/api/chat) yang terhubung ke Gemini & OpenRouter
+      const response = await fetch("/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1692,9 +1693,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         },
         body: JSON.stringify({
           message: promptToSend,
-          conversation_id: currentSessionId || null,
+          history: formattedHistory,
+          conversation_id: effectiveConvId,
           is_vision: isVisionNow,
-          image_url: onlyImageUrl, // HANYA gambar nyata atau null (TIDAK PERNAH mengirim data:text/plain!)
+          isVision: isVisionNow,
+          image_url: onlyImageUrl, // HANYA gambar nyata atau null
           image: onlyImageUrl,
           imageUrl: onlyImageUrl,
           images: onlyImageUrl ? [onlyImageUrl] : [],
@@ -1705,6 +1708,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           smart_select_level: smartSelectLevel,
           smartSelectLevel: smartSelectLevel,
           reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
           reasoning: {
             effort: currentReasoningEffort
           },
@@ -1712,8 +1716,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
             effort: currentReasoningEffort
           },
+          customInstruction: customInstruction || "",
           system_prompt: BLUEFOX_SYSTEM_PROMPT,
-          systemPrompt: BLUEFOX_SYSTEM_PROMPT
+          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+          stream: false
         }),
         signal: abortControllerRef.current.signal
       });
@@ -1792,6 +1798,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
         if (!extractedReply && !raw.startsWith('{') && raw.length > 5) {
           extractedReply = raw;
+        }
+      }
+
+      if (result?.data?.sources && Array.isArray(result.data.sources) && result.data.sources.length > 0) {
+        attachedSources = result.data.sources;
+        if (result.data.search_engine_used) {
+          attachedEngine = result.data.search_engine_used;
         }
       }
 
@@ -1950,8 +1963,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         });
       }
 
-      sendMessageToSupabase(userText, effectiveConvId, 'user').catch(() => {});
-      sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
+      sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(err => {
+        console.warn("⚠️ [Supabase] Info simpan pesan asisten:", err);
+      });
 
       const finalMessages = [...updatedMessages, {
         id: aiMessageId,
@@ -1963,7 +1977,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         sources: attachedSources.length > 0 ? attachedSources : undefined,
       }];
 
-      const updateIdx = currentSessions.findIndex(s => s.id === sessionId || s.id === effectiveConvId);
+      const updateIdx = currentSessions.findIndex(s => s.id === effectiveConvId);
       if (updateIdx !== -1) {
         currentSessions[updateIdx] = {
           ...currentSessions[updateIdx],
@@ -1977,6 +1991,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       if (err.name === 'AbortError') {
         if (isUserStoppedRef.current) {
           console.log('Request stopped by user');
+          if (aiReplyText && aiReplyText.trim()) {
+            sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(() => {});
+          }
           return;
         }
 

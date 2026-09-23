@@ -163,11 +163,9 @@ async function startServer() {
     const abortController = new AbortController();
     
     // Stop server-side processing immediately if user cancels / disconnects
-    req.on("close", () => {
-      if (!res.writableEnded) {
-        console.log("🛑 Client disconnected / requested stop. Aborting AI generation.");
-        abortController.abort();
-      }
+    req.on("aborted", () => {
+      console.log("🛑 Client aborted request.");
+      abortController.abort();
     });
 
     try {
@@ -317,6 +315,7 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             res.write(`data: ${JSON.stringify({ 
               done: true, 
               fullText,
+              conversation_id: req.body.conversation_id || null,
               has_sources: searchRes.has_sources,
               search_engine_used: searchRes.search_engine_used,
               sources: searchRes.sources,
@@ -326,8 +325,10 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             // Kontrak Respon API Backend PRD 3.2
             res.json({
               status: "success",
+              conversation_id: req.body.conversation_id || null,
               data: {
                 reply: fullText,
+                conversation_id: req.body.conversation_id || null,
                 has_sources: searchRes.has_sources,
                 search_engine_used: searchRes.search_engine_used,
                 sources: searchRes.sources,

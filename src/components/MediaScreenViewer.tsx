@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Download, Share2, Check, ZoomIn, ZoomOut, RotateCw, FileText, Music, Video, Image as ImageIcon, ArrowLeft, ExternalLink } from 'lucide-react';
+import { X, Download, Share2, Check, ZoomIn, ZoomOut, RotateCw, FileText, Music, Video, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { MediaAttachment } from '../types';
 
 interface MediaScreenViewerProps {

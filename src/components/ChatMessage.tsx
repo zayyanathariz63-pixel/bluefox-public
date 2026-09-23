@@ -2,7 +2,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Bot, User, Pencil, Power, Copy, Check, Globe, Sparkles, Search, ExternalLink, Zap, AlertCircle, Maximize2, Music, FileText, Play } from 'lucide-react';
+import { User, Pencil, Power, Copy, Check, Globe, Zap, Maximize2, Music, FileText } from 'lucide-react';
 import { Message, MediaAttachment } from '../types';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
@@ -87,8 +87,17 @@ export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: Chat
 
   const hasWebSources = !isUser && Boolean(message.sources && message.sources.length > 0);
   const isTavily = message.search_engine_used === 'tavily';
+  const [copiedMessage, setCopiedMessage] = useState(false);
 
   const { thinking, content, isThinkingComplete } = parseThinking(message.text, message.thinking);
+
+  const handleCopyFullMessage = () => {
+    const textToCopy = (content || message.text || '').trim();
+    if (!textToCopy) return;
+    navigator.clipboard.writeText(textToCopy);
+    setCopiedMessage(true);
+    setTimeout(() => setCopiedMessage(false), 2000);
+  };
 
   const handleSave = () => {
     if (editValue.trim() !== '' && onEdit) {
@@ -331,23 +340,51 @@ export function ChatMessage({ message, onEdit, onStop, onOpenMediaScreen }: Chat
                   )
                 )}
 
-                {/* Tombol Lihat Sumber di Chat Bubble */}
-                {hasWebSources && (
-                  <div className="mt-3 pt-1 flex items-center gap-2 flex-wrap">
+                {/* Action Bar: Tombol Salin (Copy) & Sumber Web */}
+                {(content || message.text) && (
+                  <div className="mt-3 pt-1 flex items-center gap-2 flex-wrap select-none">
                     <button
-                      onClick={() => setShowSourcesModal(true)}
-                      className="btn-sources inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors shadow-xs select-none cursor-pointer group"
+                      onClick={handleCopyFullMessage}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer border shadow-xs",
+                        copiedMessage
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                          : "text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border-slate-200"
+                      )}
+                      title={lang === 'id' ? "Salin seluruh teks jawaban" : "Copy full response text"}
                     >
-                      <Globe size={13} className="text-blue-600 group-hover:rotate-12 transition-transform" />
-                      <span>{t('viewSources')} ({message.sources?.length || 0})</span>
-                      <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border ml-1 ${
-                        isTavily 
-                          ? 'bg-blue-100 text-blue-800 border-blue-200' 
-                          : 'bg-amber-100 text-amber-800 border-amber-200'
-                      }`}>
-                        {isTavily ? 'Tavily' : 'DuckDuckGo'}
-                      </span>
+                      {copiedMessage ? (
+                        <>
+                          <Check size={13} className="text-emerald-600" />
+                          <span className="font-semibold text-emerald-700">
+                            {lang === 'id' ? 'Tersalin!' : 'Copied!'}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={13} className="text-slate-500" />
+                          <span>{lang === 'id' ? 'Salin' : 'Copy'}</span>
+                        </>
+                      )}
                     </button>
+
+                    {/* Tombol Lihat Sumber di Chat Bubble */}
+                    {hasWebSources && (
+                      <button
+                        onClick={() => setShowSourcesModal(true)}
+                        className="btn-sources inline-flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-700 hover:bg-blue-100 transition-colors shadow-xs select-none cursor-pointer group"
+                      >
+                        <Globe size={13} className="text-blue-600 group-hover:rotate-12 transition-transform" />
+                        <span>{t('viewSources')} ({message.sources?.length || 0})</span>
+                        <span className={`text-[10px] font-mono font-medium px-1.5 py-0.5 rounded border ml-1 ${
+                          isTavily 
+                            ? 'bg-blue-100 text-blue-800 border-blue-200' 
+                            : 'bg-amber-100 text-amber-800 border-amber-200'
+                        }`}>
+                          {isTavily ? 'Tavily' : 'DuckDuckGo'}
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
 

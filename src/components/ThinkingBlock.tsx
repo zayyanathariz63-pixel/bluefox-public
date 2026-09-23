@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Brain, ChevronDown, Sparkles, Loader2 } from 'lucide-react';
+import { Brain, ChevronDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';

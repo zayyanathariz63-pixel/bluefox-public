@@ -1,4 +1,4 @@
-import { X, Search, Plus, Power, Key, Layers, ArrowRight } from 'lucide-react';
+import { X, Layers, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Connector } from '../types';

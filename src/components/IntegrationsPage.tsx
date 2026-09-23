@@ -3,8 +3,7 @@ import { supabase } from "../lib/supabase";
 import { getProviderClientId, SUPABASE_CONFIG } from "../lib/env";
 import { 
   ArrowLeft, Search, RefreshCw, X, Check, Sparkles,
-  ArrowRight, ShieldCheck, Lock, ExternalLink, Key, Trash2,
-  CheckCircle2, AlertTriangle, Layers
+  ShieldCheck, ExternalLink, Key, CheckCircle2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { cn } from "../lib/utils";

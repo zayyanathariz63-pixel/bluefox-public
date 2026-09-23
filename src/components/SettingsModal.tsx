@@ -2,8 +2,8 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
-  Camera, Clock, Calendar, Volume2, Globe, Sparkles, Smartphone, Check,
-  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, RefreshCw, Cpu, Layers, ExternalLink, RotateCcw,
+  Camera, Clock, Calendar, Globe, Sparkles, Check,
+  Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
   HardDrive, AlertTriangle
 } from 'lucide-react';
 import { cn } from '../lib/utils';

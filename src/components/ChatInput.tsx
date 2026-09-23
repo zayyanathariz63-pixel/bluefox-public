@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Square as StopCircle, Upload, X, Image as ImageIcon, Video as VideoIcon, Eye, AlertTriangle, Clock, Film, Music, FileText, Globe, ExternalLink } from 'lucide-react';
+import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Upload, X, Eye, AlertTriangle, Clock, Film, Music, FileText, Globe, ExternalLink, Square as StopCircle, Image as ImageIcon, Video as VideoIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';

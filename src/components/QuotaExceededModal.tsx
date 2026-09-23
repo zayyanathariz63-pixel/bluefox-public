@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { AlertCircle, RotateCcw, X, ShieldAlert, Sparkles, Clock, Calendar } from 'lucide-react';
+import { RotateCcw, X, ShieldAlert, Clock, Calendar } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useLanguage } from '../lib/i18n';
 
