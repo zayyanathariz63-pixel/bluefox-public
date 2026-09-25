@@ -8,7 +8,24 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  // Support large file and vision payloads
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Global CORS Middleware - Ensures browser preflights and iframe cross-origin calls succeed
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, x-client-info"
+    );
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+    next();
+  });
 
   // API Route to extract Supabase session from HTTP-Only cookies
   app.get("/api/auth/cookie-session", (req, res) => {
@@ -133,11 +150,13 @@ async function startServer() {
   };
 
   // API Route for Standalone Web Search (Dual-Engine: Tavily -> DuckDuckGo)
-  app.post("/api/search", async (req, res) => {
+  app.all("/api/search", async (req, res) => {
+    if (req.method === "OPTIONS") return res.status(204).end();
     try {
-      const { query = "", force = true } = req.body;
-      const searchRes = await executeDualEngineSearch(query, {
-        forceSearch: force,
+      const payload = req.method === "GET" ? req.query : (req.body || {});
+      const { query = "", force = true } = payload as any;
+      const searchRes = await executeDualEngineSearch(String(query || ""), {
+        forceSearch: force === true || force === "true",
         tavilyApiKey: process.env.TAVILY_API_KEY,
       });
 
@@ -159,7 +178,8 @@ async function startServer() {
   });
 
   // API Route for Chat with Realtime Streaming, Dual-Engine Search & Autonomous Self-Validation
-  app.post("/api/chat", async (req, res) => {
+  app.all("/api/chat", async (req, res) => {
+    if (req.method === "OPTIONS") return res.status(204).end();
     const abortController = new AbortController();
     
     // Stop server-side processing immediately if user cancels / disconnects
@@ -169,6 +189,7 @@ async function startServer() {
     });
 
     try {
+      const payload = req.method === "GET" ? req.query : (req.body || {});
       const { 
         history = [], 
         message = "", 
@@ -184,8 +205,9 @@ async function startServer() {
         vision = false,
         imageUrl = null,
         image_url = null,
-        stream = true 
-      } = req.body;
+        stream = true,
+        customApi = null
+      } = payload as any;
 
       const openRouterKey = process.env.OPENROUTER_API_KEY;
       const geminiKey = process.env.GEMINI_API_KEY;
@@ -341,44 +363,116 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
       let accumulatedText = "";
       let successfullyGenerated = false;
 
-      // 1. Coba Gemini Streaming jika API Key tersedia
-      if (geminiKey) {
+      // 0. Coba Custom API jika disediakan oleh client / user
+      if (customApi && customApi.apiKey && String(customApi.apiKey).trim()) {
         try {
-          const ai = new GoogleGenAI({ apiKey: geminiKey });
-          const chatContents = [];
+          const endpoint = (customApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
+          console.log(`📡 [Custom API] Memanggil endpoint kustom: ${endpoint} (Model: ${customApi.model || "default"})`);
+          const customRes = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${String(customApi.apiKey).trim()}`
+            },
+            body: JSON.stringify({
+              model: customApi.model || "gpt-4o",
+              messages: formattedMessages,
+              temperature: isCreative ? 0.95 : 0.7,
+              stream: false
+            }),
+            signal: abortController.signal
+          });
+
+          if (customRes.ok) {
+            const data = await customRes.json();
+            const text = data.choices?.[0]?.message?.content || data.choices?.[0]?.text || data.reply || "";
+            if (text && text.trim()) {
+              accumulatedText = text;
+              sendChunk(text);
+              successfullyGenerated = true;
+            }
+          } else {
+            console.warn(`⚠️ Custom API returned status ${customRes.status}`);
+          }
+        } catch (cErr: any) {
+          console.warn("⚠️ Custom API request error:", cErr?.message || cErr);
+        }
+      }
+
+      // 1. Coba Gemini Streaming jika API Key tersedia
+      if (!successfullyGenerated && geminiKey) {
+        try {
+          const ai = new GoogleGenAI({ 
+            apiKey: geminiKey,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build',
+              }
+            }
+          });
+          const chatContents: any[] = [];
           
           for (const msg of formattedMessages) {
             if (msg.role !== "system") {
+              const parts: any[] = [{ text: msg.content }];
               chatContents.push({
                 role: msg.role === 'user' ? 'user' : 'model',
-                parts: [{ text: msg.content }]
+                parts
               });
             }
           }
 
-          const streamResult = await ai.models.generateContentStream({
-            model: 'gemini-2.5-flash',
-            contents: chatContents,
-            config: {
-              systemInstruction: systemPrompt,
-              temperature: isCreative ? 0.95 : (isVerifyAi || isDeepVerify ? 0.3 : 0.7),
-            }
-          });
-
-          for await (const chunk of streamResult) {
-            if (abortController.signal.aborted) {
-              console.log("🛑 Aborted during Gemini stream loop.");
-              break;
-            }
-            const chunkText = chunk.text;
-            if (chunkText) {
-              accumulatedText += chunkText;
-              sendChunk(chunkText);
+          // Handle inline image attachment if present
+          const targetImg = imageUrl || image_url;
+          if (targetImg && typeof targetImg === 'string' && targetImg.includes('base64,')) {
+            const mimeMatch = targetImg.match(/data:([^;]+);base64,/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            const base64Data = targetImg.split('base64,')[1];
+            if (chatContents.length > 0) {
+              const lastTurn = chatContents[chatContents.length - 1];
+              if (lastTurn.role === 'user') {
+                lastTurn.parts.unshift({
+                  inlineData: {
+                    mimeType,
+                    data: base64Data
+                  }
+                });
+              }
             }
           }
 
-          if (accumulatedText.trim().length > 0) {
-            successfullyGenerated = true;
+          const geminiModelsToTry = ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+          for (const gModel of geminiModelsToTry) {
+            if (abortController.signal.aborted) break;
+            try {
+              const streamResult = await ai.models.generateContentStream({
+                model: gModel,
+                contents: chatContents,
+                config: {
+                  systemInstruction: systemPrompt,
+                  temperature: isCreative ? 0.95 : (isVerifyAi || isDeepVerify ? 0.3 : 0.7),
+                }
+              });
+
+              for await (const chunk of streamResult) {
+                if (abortController.signal.aborted) {
+                  console.log("🛑 Aborted during Gemini stream loop.");
+                  break;
+                }
+                const chunkText = chunk.text;
+                if (chunkText) {
+                  accumulatedText += chunkText;
+                  sendChunk(chunkText);
+                }
+              }
+
+              if (accumulatedText.trim().length > 0) {
+                successfullyGenerated = true;
+                break;
+              }
+            } catch (innerGeminiErr: any) {
+              console.warn(`⚠️ Model ${gModel} error:`, innerGeminiErr?.message || innerGeminiErr);
+            }
           }
         } catch (geminiErr: any) {
           console.warn("⚠️ Gemini stream gagal/fallback:", geminiErr?.message || geminiErr);

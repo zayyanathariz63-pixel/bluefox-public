@@ -1672,9 +1672,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         promptToSend = "Halo";
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const userSessionToken = session?.access_token || supabaseKey;
-
       // Siapkan riwayat pesan sebelumnya untuk konteks backend
       const formattedHistory = baseMessages
         .slice(-10)
@@ -1683,46 +1680,106 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           text: m.text
         }));
 
-      // Panggil Backend Server Express (/api/chat) yang terhubung ke Gemini & OpenRouter
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${userSessionToken}`,
-          "apikey": supabaseKey
+      const chatPayload = {
+        message: promptToSend,
+        history: formattedHistory,
+        conversation_id: effectiveConvId,
+        is_vision: isVisionNow,
+        isVision: isVisionNow,
+        image_url: onlyImageUrl, // HANYA gambar nyata atau null
+        image: onlyImageUrl,
+        imageUrl: onlyImageUrl,
+        images: onlyImageUrl ? [onlyImageUrl] : [],
+        image_base64: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
+        base64_image: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
+        model: currentEffectiveModel,
+        reasoning_effort: currentReasoningEffort,
+        smart_select_level: smartSelectLevel,
+        smartSelectLevel: smartSelectLevel,
+        reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+        reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+        reasoning: {
+          effort: currentReasoningEffort
         },
-        body: JSON.stringify({
-          message: promptToSend,
-          history: formattedHistory,
-          conversation_id: effectiveConvId,
-          is_vision: isVisionNow,
-          isVision: isVisionNow,
-          image_url: onlyImageUrl, // HANYA gambar nyata atau null
-          image: onlyImageUrl,
-          imageUrl: onlyImageUrl,
-          images: onlyImageUrl ? [onlyImageUrl] : [],
-          image_base64: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
-          base64_image: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
-          model: currentEffectiveModel,
-          reasoning_effort: currentReasoningEffort,
-          smart_select_level: smartSelectLevel,
-          smartSelectLevel: smartSelectLevel,
-          reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-          reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-          reasoning: {
-            effort: currentReasoningEffort
+        thinking: {
+          type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
+          effort: currentReasoningEffort
+        },
+        customInstruction: customInstruction || "",
+        system_prompt: BLUEFOX_SYSTEM_PROMPT,
+        systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+        stream: false,
+        customApi: activeCustomApi ? {
+          provider: activeCustomApi.provider,
+          baseUrl: activeCustomApi.baseUrl,
+          apiKey: activeCustomApi.apiKey,
+          model: activeCustomApi.model
+        } : null
+      };
+
+      // Panggil Backend Server Express (/api/chat) dengan credentials: "include"
+      let response: Response;
+      try {
+        response = await fetch("/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
           },
-          thinking: {
-            type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
-            effort: currentReasoningEffort
-          },
-          customInstruction: customInstruction || "",
-          system_prompt: BLUEFOX_SYSTEM_PROMPT,
-          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
-          stream: false
-        }),
-        signal: abortControllerRef.current.signal
-      });
+          credentials: "include",
+          body: JSON.stringify(chatPayload),
+          signal: abortControllerRef.current.signal
+        });
+
+        // Jika server perantara menolak dengan 405 atau redirect error, coba fallback langsung jika ada Custom API
+        if ((!response.ok || response.status === 405) && activeCustomApi && activeCustomApi.apiKey) {
+          console.warn("⚠️ /api/chat error/405, beralih ke direct fallback Custom API...");
+          const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
+          response = await fetch(customEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
+            },
+            body: JSON.stringify({
+              model: activeCustomApi.model || "gpt-4o",
+              messages: [
+                { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
+                ...formattedHistory,
+                { role: "user", content: promptToSend }
+              ],
+              temperature: 0.7
+            }),
+            signal: abortControllerRef.current.signal
+          });
+        }
+      } catch (fetchErr: any) {
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new DOMException('Request aborted', 'AbortError');
+        }
+        if (activeCustomApi && activeCustomApi.apiKey) {
+          console.warn("⚠️ Fetch gagal, mencoba direct Custom API fallback:", fetchErr?.message);
+          const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
+          response = await fetch(customEndpoint, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
+            },
+            body: JSON.stringify({
+              model: activeCustomApi.model || "gpt-4o",
+              messages: [
+                { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
+                ...formattedHistory,
+                { role: "user", content: promptToSend }
+              ],
+              temperature: 0.7
+            }),
+            signal: abortControllerRef.current.signal
+          });
+        } else {
+          throw fetchErr;
+        }
+      }
 
       if (abortControllerRef.current?.signal.aborted) {
         throw new DOMException('Request aborted', 'AbortError');
@@ -1847,6 +1904,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           errorCategory = 'Waktu Pemrosesan Habis (HTTP 504 Gateway Timeout)';
           friendlyReason = 'Server AI membutuhkan waktu pemrosesan lebih lama dari batas respons jaringan.';
           suggestion = 'Gunakan berkas dengan teks yang lebih ringkas atau tanyakan hal yang lebih terfokus.';
+        } else if (status === 405 || /method not allowed/i.test(rawError)) {
+          errorCategory = 'Metode Tidak Diizinkan (HTTP 405 Method Not Allowed)';
+          friendlyReason = 'Server perantara atau proksi hosting memblokir transmisi metode HTTP.';
+          suggestion = 'Sistem telah memperbarui rute transmisi otomatis. Jika kendala berlanjut, Anda dapat menggunakan Custom API Key di menu Pengaturan.';
         } else if (/vision|image|unsupported|mime/i.test(rawError)) {
           errorCategory = 'Kendala Format Media';
           friendlyReason = 'Server AI tidak dapat mengenali atau memproses berkas media yang dilampirkan.';
