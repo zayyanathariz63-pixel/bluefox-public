@@ -24,7 +24,8 @@ import {
   hasValidConfig,
   getUserLimits,
   resetUserLimits,
-  supabaseKey
+  supabaseKey,
+  invokeBluefoxProcessor
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -1730,54 +1731,50 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           signal: abortControllerRef.current.signal
         });
 
-        // Jika server perantara menolak dengan 405 atau redirect error, coba fallback langsung jika ada Custom API
-        if ((!response.ok || response.status === 405) && activeCustomApi && activeCustomApi.apiKey) {
-          console.warn("⚠️ /api/chat error/405, beralih ke direct fallback Custom API...");
-          const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
-          response = await fetch(customEndpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
-            },
-            body: JSON.stringify({
-              model: activeCustomApi.model || "gpt-4o",
-              messages: [
-                { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
-                ...formattedHistory,
-                { role: "user", content: promptToSend }
-              ],
-              temperature: 0.7
-            }),
-            signal: abortControllerRef.current.signal
+        // Jika server lokal /api/chat gagal atau 405, langsung fallback ke Supabase Edge Function bluefox-processor-
+        if (!response.ok || response.status === 405) {
+          console.warn("⚠️ /api/chat error/405, beralih ke direct Supabase Edge Function bluefox-processor-...");
+          const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current.signal);
+          response = new Response(JSON.stringify(edgeData), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
           });
         }
       } catch (fetchErr: any) {
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException('Request aborted', 'AbortError');
         }
-        if (activeCustomApi && activeCustomApi.apiKey) {
-          console.warn("⚠️ Fetch gagal, mencoba direct Custom API fallback:", fetchErr?.message);
-          const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
-          response = await fetch(customEndpoint, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
-            },
-            body: JSON.stringify({
-              model: activeCustomApi.model || "gpt-4o",
-              messages: [
-                { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
-                ...formattedHistory,
-                { role: "user", content: promptToSend }
-              ],
-              temperature: 0.7
-            }),
-            signal: abortControllerRef.current.signal
+        try {
+          console.warn("⚠️ Fetch gagal, mencoba direct fallback Supabase Edge Function bluefox-processor-:", fetchErr?.message);
+          const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current?.signal);
+          response = new Response(JSON.stringify(edgeData), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
           });
-        } else {
-          throw fetchErr;
+        } catch (edgeErr: any) {
+          if (activeCustomApi && activeCustomApi.apiKey) {
+            console.warn("⚠️ Edge function gagal, mencoba fallback Custom API:", edgeErr?.message);
+            const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
+            response = await fetch(customEndpoint, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
+              },
+              body: JSON.stringify({
+                model: activeCustomApi.model || "gpt-4o",
+                messages: [
+                  { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
+                  ...formattedHistory,
+                  { role: "user", content: promptToSend }
+                ],
+                temperature: 0.7
+              }),
+              signal: abortControllerRef.current.signal
+            });
+          } else {
+            throw edgeErr;
+          }
         }
       }
 

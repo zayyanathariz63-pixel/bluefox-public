@@ -399,7 +399,71 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
         }
       }
 
-      // 1. Coba Gemini Streaming jika API Key tersedia
+      // Hitung tingkat Smart Select / penalaran (none, low, medium, high):
+      const chosenLevel = (smartSelectLevel || smart_select_level || reasoning_effort || "").toLowerCase();
+      const isPenalaranActive = reasoningMode === "penalaran" || chosenLevel === "high";
+
+      // 1. Pemanggilan Utama: Supabase Edge Function 'bluefox-processor-'
+      if (!successfullyGenerated) {
+        try {
+          const edgeUrl = "https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-";
+          const anonKey = process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U";
+          console.log(`📡 [Supabase Edge Function] Memanggil bluefox-processor- untuk: "${message.slice(0, 40)}" (Model: ${requestedModelId})`);
+
+          const edgePayload: any = {
+            message,
+            history,
+            conversation_id: req.body?.conversation_id || null,
+            model: requestedModelId,
+            is_vision: Boolean(isVision || is_vision || vision || imageUrl || image_url),
+            imageUrl: imageUrl || image_url || null,
+            image_url: imageUrl || image_url || null,
+            reasoning_mode: reasoningMode,
+            reasoningMode: reasoningMode,
+            smart_select_level: chosenLevel,
+            smartSelectLevel: chosenLevel,
+            custom_instruction: customInstruction,
+            customInstruction: customInstruction,
+            customApi: customApi || null,
+            custom_api: customApi || null,
+            system_prompt: systemPrompt,
+            stream: false
+          };
+
+          const edgeRes = await fetch(edgeUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "apikey": anonKey,
+              "Authorization": `Bearer ${anonKey}`
+            },
+            body: JSON.stringify(edgePayload),
+            signal: abortController.signal
+          });
+
+          if (edgeRes.ok) {
+            const edgeData = await edgeRes.json();
+            const replyText = edgeData.reply || edgeData.text || edgeData.message || (edgeData.choices?.[0]?.message?.content) || "";
+            if (replyText && replyText.trim()) {
+              accumulatedText = replyText;
+              if (isSse) {
+                const words = replyText.match(/\S+\s*/g) || [replyText];
+                for (const word of words) {
+                  if (abortController.signal.aborted) break;
+                  sendChunk(word);
+                }
+              }
+              successfullyGenerated = true;
+            }
+          } else {
+            console.warn(`⚠️ Supabase Edge Function bluefox-processor- returned status ${edgeRes.status}`);
+          }
+        } catch (edgeErr: any) {
+          console.warn("⚠️ Supabase Edge Function bluefox-processor- error:", edgeErr?.message || edgeErr);
+        }
+      }
+
+      // 2. Fallback: Gemini jika Edge Function mengalami kendala
       if (!successfullyGenerated && geminiKey) {
         try {
           const ai = new GoogleGenAI({ 
@@ -476,181 +540,6 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
           }
         } catch (geminiErr: any) {
           console.warn("⚠️ Gemini stream gagal/fallback:", geminiErr?.message || geminiErr);
-        }
-      }
-
-      // Hitung tingkat Smart Select / penalaran (none, low, medium, high):
-      const chosenLevel = (smartSelectLevel || smart_select_level || reasoning_effort || "").toLowerCase();
-      const isPenalaranActive = reasoningMode === "penalaran" || chosenLevel === "high";
-
-      const getReasoningEffort = (modelName: string): "none" | "high" | "medium" | "low" => {
-        if (chosenLevel === "none" || chosenLevel === "low" || chosenLevel === "medium" || chosenLevel === "high") {
-          return chosenLevel as "none" | "high" | "medium" | "low";
-        }
-        const clean = (modelName || "").toLowerCase();
-        if (clean.includes("agnes") || clean.includes("pro") || clean.includes("deepseek") || clean.includes("v2") || clean.includes("qwen")) {
-          return "high";
-        }
-        if (clean.includes("laguna") || clean.includes("dilo") || clean.includes("longcat") || clean.includes("nemotron")) {
-          return isPenalaranActive ? "medium" : "low";
-        }
-        if (clean.includes("tencent") || clean.includes("standard") || clean.includes("standar")) {
-          return isPenalaranActive ? "high" : "medium";
-        }
-        return isPenalaranActive ? "high" : "medium";
-      };
-
-      // 2. Fallback: Router Bynara / OpenRouter Streaming
-      if (!successfullyGenerated && openRouterKey && openRouterKey !== "YOUR_OPENROUTER_API_KEY") {
-        try {
-          const isVisionRequest = Boolean(isVision || is_vision || vision || imageUrl || image_url);
-          // Vision tidak ada fallback karena hanya agnes-2.5-flash yang mendukung vision
-          const modelsToTry = isVisionRequest
-            ? ["agnes-2.5-flash"]
-            : [requestedModelId, "agnes-2.5-flash", "tencent-hy3-free", "laguna-s-2.1"].filter((v, i, a) => a.indexOf(v) === i);
-
-          for (const mId of modelsToTry) {
-            if (abortController.signal.aborted) break;
-            try {
-              const currentEffort = getReasoningEffort(mId);
-              const isThinkingEnabled = currentEffort !== "none";
-              console.log(`Trying stream on Router Bynara: ${mId} (Smart Select: ${currentEffort})`);
-
-              const routerPayload: any = {
-                model: mId,
-                messages: formattedMessages,
-                temperature: isCreative ? 0.95 : 0.7,
-                max_tokens: 3500,
-                stream: true,
-              };
-
-              if (isThinkingEnabled) {
-                routerPayload.reasoning_effort = currentEffort;
-                routerPayload.reasoning = {
-                  effort: currentEffort
-                };
-                routerPayload.thinking = {
-                  type: "enabled",
-                  effort: currentEffort
-                };
-              } else {
-                routerPayload.reasoning_effort = "none";
-                routerPayload.thinking = {
-                  type: "disabled"
-                };
-              }
-
-              const response = await fetch("https://router.bynara.id/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                  "Authorization": `Bearer ${openRouterKey}`,
-                  "Content-Type": "application/json",
-                  "HTTP-Referer": "https://ai.studio/build",
-                  "X-Title": "tmpa chat"
-                },
-                body: JSON.stringify(routerPayload),
-                signal: abortController.signal
-              });
-
-              if (response.ok && response.body) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = "";
-                let isInsideThinkingTag = false;
-
-                while (true) {
-                  const { done, value } = await reader.read();
-                  if (done || abortController.signal.aborted) break;
-                  
-                  buffer += decoder.decode(value, { stream: true });
-                  const lines = buffer.split("\n");
-                  buffer = lines.pop() || "";
-
-                  for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed || !trimmed.startsWith("data:")) continue;
-                    const dataStr = trimmed.replace(/^data:\s*/, "");
-                    if (dataStr === "[DONE]") continue;
-                    try {
-                      const json = JSON.parse(dataStr);
-                      const delta = json.choices?.[0]?.delta?.content || "";
-                      const reasoningDelta = json.choices?.[0]?.delta?.reasoning_content 
-                        || json.choices?.[0]?.delta?.reasoning 
-                        || json.choices?.[0]?.delta?.thought 
-                        || "";
-
-                      if (reasoningDelta) {
-                        if (!isInsideThinkingTag) {
-                          isInsideThinkingTag = true;
-                          accumulatedText += "<think>";
-                          sendChunk("<think>");
-                        }
-                        accumulatedText += reasoningDelta;
-                        sendChunk(reasoningDelta);
-                      }
-
-                      if (delta) {
-                        if (isInsideThinkingTag) {
-                          isInsideThinkingTag = false;
-                          accumulatedText += "</think>\n\n";
-                          sendChunk("</think>\n\n");
-                        }
-                        accumulatedText += delta;
-                        sendChunk(delta);
-                      }
-                    } catch {}
-                  }
-                }
-
-                if (isInsideThinkingTag) {
-                  isInsideThinkingTag = false;
-                  accumulatedText += "</think>\n\n";
-                  sendChunk("</think>\n\n");
-                }
-
-                if (accumulatedText.trim().length > 0) {
-                  successfullyGenerated = true;
-                  break;
-                }
-              }
-            } catch (rErr: any) {
-              console.warn(`Router ${mId} failed:`, rErr?.message);
-            }
-          }
-        } catch (routerErr: any) {
-          console.error("Router error:", routerErr);
-        }
-      }
-
-      // 3. Fallback: NVIDIA NIM API
-      if (!successfullyGenerated && nvidiaKey && nvidiaKey !== "YOUR_NVIDIA_API_KEY") {
-        try {
-          const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${nvidiaKey.trim()}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              model: "meta/llama-3.1-70b-instruct",
-              messages: formattedMessages,
-              temperature: 0.7,
-              max_tokens: 2048
-            }),
-            signal: abortController.signal
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            const text = data.choices?.[0]?.message?.content || "";
-            if (text) {
-              accumulatedText = text;
-              sendChunk(text);
-              successfullyGenerated = true;
-            }
-          }
-        } catch (nvidiaErr: any) {
-          console.error("NVIDIA API failed:", nvidiaErr);
         }
       }
 

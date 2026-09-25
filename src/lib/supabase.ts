@@ -59,6 +59,33 @@ export const exchangeSsoTicket = async (ticketId: string) => {
 };
 
 /**
+ * Pemanggilan langsung ke Supabase Edge Function 'bluefox-processor-'
+ * Endpoint: https://jjlanjshpyklqayjzxyy.supahttps:/base.co/functions/v1/bluefox-processor-
+ */
+export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal) {
+  const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
+  const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
+
+  const response = await fetch(edgeFunctionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': anonKey,
+      'Authorization': `Bearer ${anonKey}`,
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  const data = await response.json();
+  if (!response.ok || data?.error) {
+    throw new Error(data?.error || data?.message || `Edge function error (${response.status})`);
+  }
+
+  return data;
+}
+
+/**
  * Mendengarkan pesan baru secara Realtime untuk suatu percakapan
  */
 export function listenToRealtimeMessages(conversationId: string, onNewMessage: (msg: any) => void) {
