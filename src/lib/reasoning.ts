@@ -81,7 +81,7 @@ export function getSmartSelectEffort(
   if (clean.includes('laguna') || clean.includes('dilo') || clean.includes('longcat') || clean.includes('nemotron')) {
     return 'low';
   }
-  if (clean.includes('tencent') || clean.includes('standard') || clean.includes('standar')) {
+  if (clean.includes('jev') || clean.includes('tencent') || clean.includes('standard') || clean.includes('standar')) {
     return 'medium';
   }
   return 'medium';

@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -13,6 +13,7 @@ import { ConnectorsModal } from './components/ConnectorsModal';
 import { IntegrationsPage } from './components/IntegrationsPage';
 import { MediaScreenViewer } from './components/MediaScreenViewer';
 import { QuotaExceededModal } from './components/QuotaExceededModal';
+import { UserGradientAvatar } from './components/UserGradientAvatar';
 import { useLanguage } from './lib/i18n';
 import { 
   supabase, 
@@ -25,7 +26,8 @@ import {
   getUserLimits,
   resetUserLimits,
   supabaseKey,
-  invokeBluefoxProcessor
+  invokeBluefoxProcessor,
+  DEFAULT_MODELS
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -1131,6 +1133,23 @@ export default function App() {
     handleSendMessage(newText, baseHistory);
   };
 
+  const handleRetryMessage = (aiMessageId: string) => {
+    const aiIdx = messages.findIndex(m => m.id === aiMessageId);
+    if (aiIdx === -1) return;
+
+    // Temukan pesan user terdekat sebelum pesan AI ini
+    const prevUserMsg = [...messages.slice(0, aiIdx)].reverse().find(m => m.role === 'user');
+    if (!prevUserMsg) return;
+
+    // Ambil index pesan user tersebut untuk menentukan base history sebelum pesan user
+    const userIdx = messages.findIndex(m => m.id === prevUserMsg.id);
+    const baseHistory = userIdx > 0 ? messages.slice(0, userIdx) : [];
+
+    // Potong state pesan sampai sebelum pesan user tersebut, lalu kirim ulang
+    setMessages(baseHistory);
+    handleSendMessage(prevUserMsg.text, baseHistory, null, prevUserMsg.media);
+  };
+
   const stopGeneration = () => {
     isUserStoppedRef.current = true;
     if (typewriterIntervalRef.current) {
@@ -1693,7 +1712,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         images: onlyImageUrl ? [onlyImageUrl] : [],
         image_base64: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
         base64_image: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
-        model: currentEffectiveModel,
+        model: DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || currentEffectiveModel,
         reasoning_effort: currentReasoningEffort,
         smart_select_level: smartSelectLevel,
         smartSelectLevel: smartSelectLevel,
@@ -1868,69 +1887,70 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       if (isExplicitError) {
         const status = response.status;
         const rawError = String(result.error || (result.success === false && result.message) || result.rawText || '').trim();
+        const isId = lang === 'id';
 
-        let errorCategory = `Status Server AI (HTTP ${status || 'Error'})`;
+        let errorCategory = isId ? `Status Server AI (HTTP ${status || 'Error'})` : `AI Server Status (HTTP ${status || 'Error'})`;
         let friendlyReason = '';
         let suggestion = '';
 
         if (status === 400 || /bad request|invalid request/i.test(rawError)) {
-          errorCategory = 'Permintaan Tidak Valid (HTTP 400 Bad Request)';
-          friendlyReason = rawError || 'Parameter atau struktur data payload yang dikirimkan ke server tidak sesuai dengan format yang diharapkan.';
-          suggestion = 'Periksa kelengkapan pesan atau format berkas lampiran yang diunggah.';
+          errorCategory = isId ? 'Permintaan Tidak Valid (HTTP 400 Bad Request)' : 'Invalid Request (HTTP 400 Bad Request)';
+          friendlyReason = rawError || (isId ? 'Parameter atau struktur data payload yang dikirimkan ke server tidak sesuai dengan format yang diharapkan.' : 'The payload parameters or data structure sent to the server do not match the expected format.');
+          suggestion = isId ? 'Periksa kelengkapan pesan atau format berkas lampiran yang diunggah.' : 'Check the message content or uploaded attachment format.';
         } else if (status === 404 || /not found/i.test(rawError)) {
-          errorCategory = 'Endpoint Tidak Ditemukan (HTTP 404 Not Found)';
-          friendlyReason = rawError || 'Endpoint fungsi server pemrosesan tidak dapat diakses atau rute belum terdaftar.';
-          suggestion = 'Pastikan URL fungsi Edge Supabase tepat dan aktif.';
+          errorCategory = isId ? 'Endpoint Tidak Ditemukan (HTTP 404 Not Found)' : 'Endpoint Not Found (HTTP 404 Not Found)';
+          friendlyReason = rawError || (isId ? 'Endpoint fungsi server pemrosesan tidak dapat diakses atau rute belum terdaftar.' : 'The processing server function endpoint cannot be reached or the route is not registered.');
+          suggestion = isId ? 'Pastikan URL fungsi Edge Supabase tepat dan aktif.' : 'Ensure the Supabase Edge function URL is correct and active.';
         } else if (status === 413 || /payload|too large|request entity|size/i.test(rawError)) {
-          errorCategory = 'Ukuran Permintaan Terlalu Besar (HTTP 413 Payload Too Large)';
-          friendlyReason = 'Isi teks berkas atau prompt yang dikirimkan melebihi batas kapasitas transmisi server.';
-          suggestion = 'Kurangi isi teks berkas lampiran atau unggah potongan teks yang lebih ringkas.';
+          errorCategory = isId ? 'Ukuran Permintaan Terlalu Besar (HTTP 413 Payload Too Large)' : 'Payload Too Large (HTTP 413 Payload Too Large)';
+          friendlyReason = isId ? 'Isi teks berkas atau prompt yang dikirimkan melebihi batas kapasitas transmisi server.' : 'The prompt or file text content exceeds the server transmission limit.';
+          suggestion = isId ? 'Kurangi isi teks berkas lampiran atau unggah potongan teks yang lebih ringkas.' : 'Reduce file attachment text or upload smaller excerpts.';
         } else if (status === 429 || /rate limit|quota|exceeded|too many/i.test(rawError)) {
-          errorCategory = 'Batas Permintaan Tercapai (HTTP 429 Rate Limit)';
-          friendlyReason = 'Frekuensi penggunaan model AI sementara telah mencapai batas kuota server.';
-          suggestion = 'Mohon tunggu 1 hingga 2 menit sebelum mencoba mengirimkan pertanyaan kembali.';
+          errorCategory = isId ? 'Batas Permintaan Tercapai (HTTP 429 Rate Limit)' : 'Rate Limit Reached (HTTP 429 Rate Limit)';
+          friendlyReason = isId ? 'Frekuensi penggunaan model AI sementara telah mencapai batas kuota server.' : 'AI model request frequency has reached the server rate limit.';
+          suggestion = isId ? 'Mohon tunggu 1 hingga 2 menit sebelum mencoba mengirimkan pertanyaan kembali.' : 'Please wait 1 to 2 minutes before resubmitting your query.';
         } else if (status === 401 || status === 403 || /jwt|unauthorized|auth|permission/i.test(rawError)) {
-          errorCategory = `Sesi Akun Kedaluwarsa (HTTP ${status})`;
-          friendlyReason = 'Sesi autentikasi akun Anda telah kedaluwarsa atau otorisasi tidak valid.';
-          suggestion = 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali ke akun Anda.';
+          errorCategory = isId ? `Sesi Akun Kedaluwarsa (HTTP ${status})` : `Account Session Expired (HTTP ${status})`;
+          friendlyReason = isId ? 'Sesi autentikasi akun Anda telah kedaluwarsa atau otorisasi tidak valid.' : 'Your session authentication has expired or authorization is invalid.';
+          suggestion = isId ? 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali ke akun Anda.' : 'Please refresh the page or re-login to your account.';
         } else if (status === 502 || /bad gateway/i.test(rawError)) {
-          errorCategory = 'Gerbang Bermasalah (HTTP 502 Bad Gateway)';
-          friendlyReason = rawError || 'Server perantara (Edge/Gateway) menerima respons tidak valid dari model AI upstream.';
-          suggestion = 'Tunggu beberapa saat atau gunakan model alternatif.';
+          errorCategory = isId ? 'Gerbang Bermasalah (HTTP 502 Bad Gateway)' : 'Bad Gateway (HTTP 502 Bad Gateway)';
+          friendlyReason = rawError || (isId ? 'Server perantara (Edge/Gateway) menerima respons tidak valid dari model AI upstream.' : 'The gateway/edge server received an invalid upstream AI response.');
+          suggestion = isId ? 'Tunggu beberapa saat atau gunakan model alternatif.' : 'Wait a few moments or try an alternative AI model.';
         } else if (status === 504 || /timeout|gateway/i.test(rawError)) {
-          errorCategory = 'Waktu Pemrosesan Habis (HTTP 504 Gateway Timeout)';
-          friendlyReason = 'Server AI membutuhkan waktu pemrosesan lebih lama dari batas respons jaringan.';
-          suggestion = 'Gunakan berkas dengan teks yang lebih ringkas atau tanyakan hal yang lebih terfokus.';
+          errorCategory = isId ? 'Waktu Pemrosesan Habis (HTTP 504 Gateway Timeout)' : 'Gateway Timeout (HTTP 504 Gateway Timeout)';
+          friendlyReason = isId ? 'Server AI membutuhkan waktu pemrosesan lebih lama dari batas respons jaringan.' : 'The AI server took longer to process than the network response window allows.';
+          suggestion = isId ? 'Gunakan berkas dengan teks yang lebih ringkas atau tanyakan hal yang lebih terfokus.' : 'Use shorter text files or ask more focused questions.';
         } else if (status === 405 || /method not allowed/i.test(rawError)) {
-          errorCategory = 'Metode Tidak Diizinkan (HTTP 405 Method Not Allowed)';
-          friendlyReason = 'Server perantara atau proksi hosting memblokir transmisi metode HTTP.';
-          suggestion = 'Sistem telah memperbarui rute transmisi otomatis. Jika kendala berlanjut, Anda dapat menggunakan Custom API Key di menu Pengaturan.';
+          errorCategory = isId ? 'Metode Tidak Diizinkan (HTTP 405 Method Not Allowed)' : 'Method Not Allowed (HTTP 405 Method Not Allowed)';
+          friendlyReason = isId ? 'Server perantara atau proksi hosting memblokir transmisi metode HTTP.' : 'The proxy or hosting gateway blocked HTTP transmission.';
+          suggestion = isId ? 'Sistem telah memperbarui rute transmisi otomatis ke Supabase Edge Function.' : 'System has switched transmission directly to Supabase Edge Function.';
         } else if (/vision|image|unsupported|mime/i.test(rawError)) {
-          errorCategory = 'Kendala Format Media';
-          friendlyReason = 'Server AI tidak dapat mengenali atau memproses berkas media yang dilampirkan.';
-          suggestion = 'Pastikan gambar berformat WebP, PNG, atau GIF, dan dokumen berupa teks (TXT, MD, JSON, YAML) atau PDF yang valid.';
+          errorCategory = isId ? 'Kendala Format Media' : 'Media Format Issue';
+          friendlyReason = isId ? 'Server AI tidak dapat mengenali atau memproses berkas media yang dilampirkan.' : 'The AI server could not recognize the attached media file format.';
+          suggestion = isId ? 'Pastikan gambar berformat WebP, PNG, atau GIF, dan dokumen berupa teks (TXT, MD, JSON, YAML) atau PDF.' : 'Ensure image is WebP, PNG, or GIF, and document is valid text (TXT, MD, PDF).';
         } else if (status >= 500) {
-          errorCategory = `Kendala Server Internal (HTTP ${status})`;
-          friendlyReason = rawError || 'Server pemrosesan AI mengalami kendala internal sementara.';
-          suggestion = 'Tunggu beberapa detik dan coba kirimkan kembali pertanyaan Anda.';
+          errorCategory = isId ? `Kendala Server Internal (HTTP ${status})` : `Internal Server Error (HTTP ${status})`;
+          friendlyReason = rawError || (isId ? 'Server pemrosesan AI mengalami kendala internal sementara.' : 'AI processing server encountered a temporary internal issue.');
+          suggestion = isId ? 'Tunggu beberapa detik dan coba kirimkan kembali pertanyaan Anda.' : 'Wait a few moments and try sending your prompt again.';
         } else {
-          errorCategory = `Kendala Pemrosesan (HTTP ${status || 'Error'})`;
-          friendlyReason = rawError || 'Gagal menerima respons yang valid dari server AI.';
-          suggestion = 'Periksa koneksi internet Anda atau coba ajukan kembali pertanyaan.';
+          errorCategory = isId ? `Kendala Pemrosesan (HTTP ${status || 'Error'})` : `Processing Issue (HTTP ${status || 'Error'})`;
+          friendlyReason = rawError || (isId ? 'Gagal menerima respons yang valid dari server AI.' : 'Failed to receive a valid response from the AI server.');
+          suggestion = isId ? 'Periksa koneksi internet Anda atau coba ajukan kembali pertanyaan.' : 'Check your internet connection or try asking again.';
         }
 
         const formattedError = [
-          `### ⚠️ ${errorCategory}`,
+          `### ${errorCategory}`,
           '',
           friendlyReason,
           '',
-          '| Parameter | Detail Keterangan |',
+          `| Parameter | ${isId ? 'Detail Keterangan' : 'Description'} |`,
           '| :--- | :--- |',
-          `| **Status HTTP** | \`${status || 'Error'}\` |`,
-          `| **Detail Teknis** | \`${(rawError || 'Tidak ada detail teknis tambahan').slice(0, 200)}\` |`,
-          mediaList.length > 0 ? `| **Berkas Terkait** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
+          `| **${isId ? 'Status HTTP' : 'HTTP Status'}** | \`${status || 'Error'}\` |`,
+          `| **${isId ? 'Detail Teknis' : 'Technical Details'}** | \`${(rawError || (isId ? 'Tidak ada detail teknis tambahan' : 'No additional technical details')).slice(0, 200)}\` |`,
+          mediaList.length > 0 ? `| **${isId ? 'Berkas Terkait' : 'Associated Files'}** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
           '',
-          '> **💡 Saran Solusi:**',
+          `> **${isId ? 'Saran Solusi:' : 'Suggested Solution:'}**`,
           `> ${suggestion}`
         ].filter(Boolean).join('\n');
 
@@ -2056,19 +2076,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
 
         // Penanganan waktu tunggu timeout 80 detik
+        const isId = lang === 'id';
         const timeoutMsg = [
-          '### ⚠️ Waktu Tunggu Pemrosesan Habis (Timeout 80 Detik)',
+          `### ${isId ? 'Waktu Tunggu Pemrosesan Habis (Timeout 80 Detik)' : 'Processing Timeout (80s Timeout)'}`,
           '',
-          'Server AI membutuhkan waktu lebih dari 80 detik untuk memproses permintaan ini sehingga koneksi dihentikan otomatis.',
+          isId 
+            ? 'Server AI membutuhkan waktu lebih dari 80 detik untuk memproses permintaan ini sehingga koneksi dihentikan otomatis.'
+            : 'The AI server took more than 80 seconds to complete this request and the connection was automatically closed.',
           '',
-          '| Parameter | Keterangan |',
+          `| Parameter | ${isId ? 'Keterangan' : 'Detail'} |`,
           '| :--- | :--- |',
-          '| **Batas Waktu** | 80 Detik |',
-          mediaList.length > 0 ? `| **Berkas Lampiran** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
+          `| **${isId ? 'Batas Waktu' : 'Time Limit'}** | ${isId ? '80 Detik' : '80 Seconds'} |`,
+          mediaList.length > 0 ? `| **${isId ? 'Berkas Lampiran' : 'Attachment Files'}** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |` : '',
           '',
-          '> **💡 Saran Solusi:**',
-          '> - Jika berkas teks atau PDF cukup panjang, coba tanyakan bagian spesifik atau ringkas isi berkas.',
-          '> - Coba kirimkan kembali pertanyaan dengan model AI alternatif.'
+          `> **${isId ? 'Saran Solusi:' : 'Suggested Solution:'}**`,
+          isId 
+            ? '> - Jika berkas teks atau PDF cukup panjang, coba tanyakan bagian spesifik atau ringkas isi berkas.\n> - Coba kirimkan kembali pertanyaan dengan model AI alternatif.'
+            : '> - If the text file or PDF is long, try asking about specific sections.\n> - Try resubmitting your query using an alternative AI model.'
         ].filter(Boolean).join('\n');
 
         const errorMessage: Message = {
@@ -2080,28 +2104,33 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           const filtered = prev.filter(m => m.text.trim() !== '');
           return [...filtered, errorMessage];
         });
-        showToast("Waktu tunggu permintaan habis (Timeout)");
+        showToast(isId ? "Waktu tunggu permintaan habis (Timeout)" : "Request timed out");
         return;
       }
 
       console.error("[FRONTEND CRASH ERROR]:", err);
-      const rawErrMsg = String(err?.message || "Gagal memproses pesan dari Edge Function.").trim();
-      const isAlreadyFormatted = rawErrMsg.includes('### ⚠️') || rawErrMsg.includes('| :--- |');
+      const isId = lang === 'id';
+      const rawErrMsg = String(err?.message || (isId ? "Gagal memproses pesan dari Edge Function." : "Failed to process message from Edge Function.")).trim();
+      const isAlreadyFormatted = rawErrMsg.includes('### ') || rawErrMsg.includes('| :--- |');
 
       const fullDisplay = isAlreadyFormatted ? rawErrMsg : [
-        '### ⚠️ Kendala Komunikasi Server',
+        `### ${isId ? 'Kendala Komunikasi Server' : 'Server Communication Issue'}`,
         '',
         rawErrMsg.includes('Failed to fetch') 
-          ? 'Gagal menghubungi server AI. Kemungkinan koneksi internet Anda terputus atau server tidak dapat dijangkau.'
+          ? (isId 
+              ? 'Gagal menghubungi server AI. Kemungkinan koneksi internet Anda terputus atau server tidak dapat dijangkau.'
+              : 'Failed to reach AI server. Your connection might be offline or the server is temporarily unreachable.')
           : rawErrMsg,
         '',
-        mediaList.length > 0 ? `| Parameter | Keterangan |\n| :--- |\n| **Berkas Terkait** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |\n` : '',
-        '> **💡 Saran Solusi:**',
-        '> Periksa koneksi internet Anda atau muat ulang halaman jika masalah terus berlanjut.'
+        mediaList.length > 0 ? `| Parameter | ${isId ? 'Keterangan' : 'Detail'} |\n| :--- |\n| **${isId ? 'Berkas Terkait' : 'Associated Files'}** | ${mediaList.map(m => `\`${m.name}\``).join(', ')} |\n` : '',
+        `> **${isId ? 'Saran Solusi:' : 'Suggested Solution:'}**`,
+        isId 
+          ? '> Periksa koneksi internet Anda atau muat ulang halaman jika masalah terus berlanjut.'
+          : '> Check your internet connection or refresh the page if the issue persists.'
       ].filter(Boolean).join('\n');
 
       setErrorState(rawErrMsg);
-      showToast("Terjadi kendala pemrosesan");
+      showToast(isId ? "Terjadi kendala pemrosesan" : "Processing error occurred");
 
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -2389,6 +2418,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 key={msg.id} 
                 message={msg} 
                 onEdit={handleEditMessage} 
+                onRetry={handleRetryMessage}
                 onStop={isLoading ? stopGeneration : undefined} 
                 onOpenMediaScreen={handleOpenMediaScreen}
               />
@@ -2634,17 +2664,45 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               {/* 3. BAGIAN BAWAH: Profil User & Logout */}
               <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex flex-col gap-3">
                 <div className="flex items-center gap-3 px-2">
-                  <img src="https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png" alt="Bluefox AI Logo" className="w-10 h-10 rounded-xl object-cover bg-slate-100 border border-slate-200 flex-shrink-0 shadow-xs" />
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-sm font-semibold text-slate-900 truncate">
-                      {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
-                    </span>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 truncate">
-                      Plan: {userTier}
-                    </span>
-                    <span className="text-xs text-slate-500 truncate">
+                  <UserGradientAvatar 
+                    userId={user?.id}
+                    email={user?.email}
+                    name={user?.user_metadata?.full_name}
+                    size="md"
+                    className="w-10 h-10 rounded-xl"
+                  />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-sm font-semibold text-slate-900 truncate">
+                        {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
+                      </span>
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 shrink-0">
+                        {userTier}
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500 truncate" title={user?.email || ''}>
                       {user?.email || 'user@tmpa.example'}
                     </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] font-mono text-slate-400 truncate" title={user?.id || 'UUID'}>
+                        ID: {user?.id ? `${user.id.slice(0, 8)}...${user.id.slice(-4)}` : 'tmpa-guest'}
+                      </span>
+                      {user?.id && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(user.id);
+                            setShowActionToast(lang === 'id' ? 'ID Pengguna disalin!' : 'User ID copied!');
+                            setTimeout(() => setShowActionToast(null), 2000);
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer transition-colors"
+                          title={lang === 'id' ? 'Salin UUID' : 'Copy UUID'}
+                        >
+                          <Copy size={11} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
                 
@@ -3475,6 +3533,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         hourlyUsage={usage.hourly}
         weeklyUsage={usage.weekly}
         resetUsage={handleResetLimits}
+        user={user}
+        userTier={userTier}
         onClearAllMedia={() => {
           setChatSessions(prev => prev.map(s => ({
             ...s,

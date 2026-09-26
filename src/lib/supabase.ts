@@ -60,7 +60,7 @@ export const exchangeSsoTicket = async (ticketId: string) => {
 
 /**
  * Pemanggilan langsung ke Supabase Edge Function 'bluefox-processor-'
- * Endpoint: https://jjlanjshpyklqayjzxyy.supahttps:/base.co/functions/v1/bluefox-processor-
+ * Endpoint: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
  */
 export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal) {
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
@@ -340,6 +340,18 @@ export async function resetUserLimits(userId: string) {
 }
 
 /**
+ * Default Models Mapping (Bluefox AI)
+ */
+export const DEFAULT_MODELS: Record<string, string> = {
+  "bluefox-pro": "agnes-2.5-flash",
+  "bluefox-standard": "jev",
+  "bluefox-dilo": "laguna-s-2.1",
+  "tmpa_v2": "jev",
+  "tmpa_v1": "laguna-s-2.1",
+  "dilo": "laguna-s-2.1",
+};
+
+/**
  * Standardized Model Display Names
  */
 export function getModelDisplayName(modelId?: string): string {
@@ -348,7 +360,7 @@ export function getModelDisplayName(modelId?: string): string {
   if (clean.includes('pro') || clean.includes('agnes') || clean.includes('deepseek') || clean.includes('v2') || clean.includes('qwen')) {
     return 'bluefox pro';
   }
-  if (clean.includes('tencent') || clean.includes('standard') || clean.includes('standar') || clean.includes('v1') || clean.includes('gpt')) {
+  if (clean.includes('jev') || clean.includes('tencent') || clean.includes('standard') || clean.includes('standar') || clean.includes('v1') || clean.includes('gpt')) {
     return 'bluefox standard';
   }
   if (clean.includes('laguna') || clean.includes('dilo') || clean.includes('longcat') || clean.includes('nemotron')) {

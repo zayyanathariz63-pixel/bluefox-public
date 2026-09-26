@@ -34,6 +34,7 @@ import {
   isSelfHostedProvider,
   getProviderPreset
 } from '../lib/customApi';
+import { UserGradientAvatar } from './UserGradientAvatar';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -47,6 +48,8 @@ interface SettingsModalProps {
   onClearAllMedia?: () => void;
   onClearAllSessions?: () => void;
   onDeleteAccount?: () => void;
+  user?: any;
+  userTier?: string;
 }
 
 type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete';
@@ -62,7 +65,9 @@ export function SettingsModal({
   resetUsage,
   onClearAllMedia,
   onClearAllSessions,
-  onDeleteAccount
+  onDeleteAccount,
+  user,
+  userTier
 }: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
@@ -593,43 +598,72 @@ export function SettingsModal({
                 {currentView === 'account' && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <div className="flex flex-col sm:items-center sm:flex-row gap-6 border-b border-slate-200 pb-8">
-                      <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                        <div className="w-24 h-24 rounded-full overflow-hidden border-4 border-white shadow-md group-hover:border-blue-500 transition-colors relative">
-                          <img src={profilePic} alt="Profile" className="w-full h-full object-cover" />
-                        </div>
-                        <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Camera size={24} className="text-white" />
-                        </div>
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="hidden" 
-                          ref={fileInputRef} 
-                          onChange={handlePicUpload}
+                      <div className="relative group">
+                        <UserGradientAvatar 
+                          userId={user?.id}
+                          email={user?.email}
+                          name={user?.user_metadata?.full_name}
+                          size="xl"
+                          className="w-24 h-24 text-3xl rounded-3xl shadow-md border-4 border-white"
                         />
                       </div>
                       <div className="text-left space-y-1">
-                        <h4 className="text-xl font-bold text-slate-900">TMPA User</h4>
+                        <h4 className="text-xl font-bold text-slate-900">
+                          {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
+                        </h4>
                         <p className="text-sm text-slate-500">
-                          {lang === 'id' ? 'Klik gambar di atas untuk mengganti foto profil Anda' : 'Click the image above to change your profile picture'}
+                          {lang === 'id' 
+                            ? 'Avatar digenerate otomatis dengan pola gradien unik berdasarkan akun Supabase Anda.' 
+                            : 'Avatar dynamically generated with unique gradient patterns based on your Supabase account.'}
                         </p>
                       </div>
                     </div>
 
                     <div className="space-y-4">
                       <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Username</label>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-900 font-semibold text-[15px] shadow-xs">TMPA User</div>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          {lang === 'id' ? 'Nama Pengguna' : 'Username'}
+                        </label>
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-900 font-semibold text-[15px] shadow-xs">
+                          {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
+                        </div>
                       </div>
                       <div>
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
                           {lang === 'id' ? 'Email Terdaftar' : 'Registered Email'}
                         </label>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-900 font-semibold text-[15px] shadow-xs">user@tmpa.example</div>
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-900 font-semibold text-[15px] shadow-xs flex items-center justify-between">
+                          <span className="truncate">{user?.email || 'user@tmpa.example'}</span>
+                        </div>
                       </div>
                       <div>
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Identifier ID</label>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-600 font-mono text-sm leading-relaxed shadow-xs">tmpa_usr_988319aa</div>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          {lang === 'id' ? 'User Identifier (Supabase UUID)' : 'User Identifier (Supabase UUID)'}
+                        </label>
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-slate-700 font-mono text-sm leading-relaxed shadow-xs flex items-center justify-between gap-3">
+                          <span className="truncate font-mono">{user?.id || 'tmpa-guest-uuid'}</span>
+                          {user?.id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(user.id);
+                                showToast(lang === 'id' ? 'UUID berhasil disalin!' : 'UUID copied to clipboard!');
+                              }}
+                              className="px-2.5 py-1 text-xs font-sans font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                            >
+                              <Copy size={12} />
+                              <span>{lang === 'id' ? 'Salin' : 'Copy'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          {lang === 'id' ? 'Status Paket Akun' : 'Account Plan Status'}
+                        </label>
+                        <div className="bg-white p-4 rounded-xl border border-slate-200 text-blue-600 font-bold text-sm tracking-wide shadow-xs uppercase">
+                          {userTier || 'FREE (DEFAULT)'}
+                        </div>
                       </div>
                     </div>
                   </div>

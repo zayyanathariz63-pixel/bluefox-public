@@ -213,32 +213,32 @@ async function startServer() {
       const geminiKey = process.env.GEMINI_API_KEY;
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
 
-      const modelMapping: { [key: string]: string } = {
+      const DEFAULT_MODELS: Record<string, string> = {
+        "bluefox-pro": "agnes-2.5-flash",
+        "bluefox-standard": "jev",
+        "bluefox-dilo": "laguna-s-2.1",
+        "tmpa_v2": "jev",
+        "tmpa_v1": "laguna-s-2.1",
+        "dilo": "laguna-s-2.1",
         "agnes-2.5-flash": "agnes-2.5-flash",
-        "agnes_2_5_flash": "agnes-2.5-flash",
-        "bluefox_pro": "agnes-2.5-flash",
-        "tencent-hy3-free": "tencent-hy3-free",
-        "tencent_hy3_free": "tencent-hy3-free",
-        "bluefox_standard": "tencent-hy3-free",
-        "bluefox_standar": "tencent-hy3-free",
+        "jev": "jev",
         "laguna-s-2.1": "laguna-s-2.1",
-        "laguna_s_2_1": "laguna-s-2.1",
+        // Backward compatibility aliases
+        "bluefox_pro": "agnes-2.5-flash",
+        "bluefox_standard": "jev",
+        "bluefox_standar": "jev",
         "bluefox_dilo": "laguna-s-2.1",
-        // Backward compatibility
+        "tencent-hy3-free": "jev",
+        "tencent_hy3_free": "jev",
         "deepseek-v4.1-flash-free": "agnes-2.5-flash",
-        "deepseek_v4_1_flash_free": "agnes-2.5-flash",
         "agnes-2.0-flash": "agnes-2.5-flash",
-        "agnes_2_0_flash": "agnes-2.5-flash",
         "longcat-2.0-free": "laguna-s-2.1",
         "qwen3_coder": "agnes-2.5-flash",
-        "tmpa_v2": "agnes-2.5-flash",
-        "tmpa_v1": "tencent-hy3-free",
-        "dilo": "laguna-s-2.1",
-        "gpt_oss": "tencent-hy3-free",
+        "gpt_oss": "jev",
         "mistral_nemotron": "laguna-s-2.1"
       };
 
-      const requestedModelId = modelMapping[model] || "agnes-2.5-flash";
+      const requestedModelId = DEFAULT_MODELS[model] || "agnes-2.5-flash";
 
       // =========================================================================
       // 2.2 DUAL-ENGINE FALLBACK WEB SEARCH (TAVILY -> DUCKDUCKGO)
