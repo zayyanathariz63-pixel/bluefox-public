@@ -143,7 +143,179 @@ export function getValidUUID(id?: string | null): string {
 }
 
 /**
- * Menyimpan pesan ke tabel 'messages' dan memperbarui 'conversations' di Supabase
+ * -------------------------------------------------------------
+ * B. Fungsi Database Supabase (Tabel Bluefox: session_bluefox & message_bluefox)
+ * -------------------------------------------------------------
+ */
+
+// 1. Membuat Sesi Percakapan Baru di session_bluefox
+export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
+  const title = firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt;
+  const payload: any = { 
+    title,
+    updated_at: new Date().toISOString()
+  };
+  if (customId) {
+    payload.id = getValidUUID(customId);
+  }
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      payload.user_id = session.user.id;
+    }
+  } catch {}
+
+  const { data, error } = await supabase
+    .from('session_bluefox')
+    .insert([payload])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Gagal membuat sesi di session_bluefox:', error);
+    // Fallback object jika RLS atau kendala sementara
+    return {
+      id: payload.id || getValidUUID(null),
+      title: title,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+  }
+  return data;
+}
+
+// 2. Menyimpan Pesan (User / Assistant) di message_bluefox
+export async function saveMessage(
+  sessionId: string, 
+  sender: 'user' | 'assistant', 
+  content: string, 
+  attachmentMetadata: any[] = []
+) {
+  const validSessionId = getValidUUID(sessionId);
+  const msgPayload: any = {
+    session_id: validSessionId,
+    sender: sender,
+    content: content,
+    attachments: attachmentMetadata || []
+  };
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user?.id) {
+      msgPayload.user_id = session.user.id;
+    }
+  } catch {}
+
+  const { data, error } = await supabase
+    .from('message_bluefox')
+    .insert([msgPayload])
+    .select();
+
+  if (error) {
+    console.error('Gagal menyimpan pesan ke message_bluefox:', error);
+  }
+
+  // Perbarui waktu update pada sesi di session_bluefox
+  try {
+    await supabase
+      .from('session_bluefox')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', validSessionId);
+  } catch {}
+
+  return data;
+}
+
+// 3. Memuat Seluruh Percakapan Sesi Tertentu dari session_bluefox & message_bluefox
+export async function loadChatSession(sessionId: string) {
+  const validSessionId = getValidUUID(sessionId);
+
+  const { data: session, error: sessionErr } = await supabase
+    .from('session_bluefox')
+    .select('*')
+    .eq('id', validSessionId)
+    .maybeSingle();
+
+  if (sessionErr) {
+    console.warn('Sesi tidak ditemukan di session_bluefox:', sessionErr);
+  }
+
+  const { data: messages, error: msgErr } = await supabase
+    .from('message_bluefox')
+    .select('*')
+    .eq('session_id', validSessionId)
+    .order('created_at', { ascending: true });
+
+  if (msgErr) {
+    console.warn('Gagal memuat pesan dari message_bluefox:', msgErr);
+    return { session: session || null, messages: [] };
+  }
+
+  return { session, messages: messages || [] };
+}
+
+// 4. Memuat Daftar Semua Sesi untuk Sidebar dari session_bluefox
+export async function getAllSessions() {
+  try {
+    const { data, error } = await supabase
+      .from('session_bluefox')
+      .select('*')
+      .order('updated_at', { ascending: false });
+
+    if (error) {
+      console.warn('Gagal memuat daftar sesi dari session_bluefox:', error);
+      return [];
+    }
+    return data || [];
+  } catch (err) {
+    console.warn('Error saat getAllSessions:', err);
+    return [];
+  }
+}
+
+// 5. Menghapus Sesi Percakapan dari database Supabase
+export async function deleteChatSession(sessionId: string) {
+  const validSessionId = getValidUUID(sessionId);
+  try {
+    await supabase
+      .from('message_bluefox')
+      .delete()
+      .eq('session_id', validSessionId);
+
+    const { error } = await supabase
+      .from('session_bluefox')
+      .delete()
+      .eq('id', validSessionId);
+
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+// 6. Memperbarui Judul Sesi Percakapan di session_bluefox
+export async function updateSessionTitleInSupabase(sessionId: string, newTitle: string) {
+  const validSessionId = getValidUUID(sessionId);
+  try {
+    const { data, error } = await supabase
+      .from('session_bluefox')
+      .update({ 
+        title: newTitle,
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', validSessionId)
+      .select()
+      .single();
+
+    return { data, error: error?.message || null };
+  } catch (err: any) {
+    return { data: null, error: err?.message };
+  }
+}
+
+/**
+ * Menyimpan pesan ke tabel 'messages' dan memperbarui 'conversations' di Supabase (Kompatibilitas Tambahan)
  */
 export async function sendMessageToSupabase(
   text: string, 

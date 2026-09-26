@@ -1,9 +1,13 @@
 import { motion } from 'motion/react';
 import { ArrowRight, Shield, Zap, Sparkles, Search } from 'lucide-react';
+import { useLanguage } from '../lib/i18n';
 
 const LOGO_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png';
 
 export function LandingPage({ onStart }: { onStart: () => void }) {
+  const { lang } = useLanguage();
+  const isId = lang === 'id';
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden relative app-clean-grid">
       {/* Navigation */}
@@ -23,7 +27,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
           onClick={onStart}
           className="text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
         >
-          Mulai Chat
+          {isId ? 'Mulai Chat' : 'Start Chat'}
         </button>
       </header>
 
@@ -48,18 +52,24 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
 
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold mb-6 shadow-xs">
             <Sparkles size={13} className="text-blue-600" />
-            <span>Asisten AI Generasi Baru · Multi-Model & Real-time Web</span>
+            <span>
+              {isId 
+                ? 'Asisten AI Generasi Baru · Multi-Model & Real-time Web' 
+                : 'Next-Generation AI Assistant · Multi-Model & Real-time Web'}
+            </span>
           </div>
           
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight mb-5 text-slate-900 leading-[1.15]">
-            Tanya Apapun.<br />
+            {isId ? 'Tanya Apapun.' : 'Ask Anything.'}<br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700">
-              Selesaikan Lebih Cepat.
+              {isId ? 'Selesaikan Lebih Cepat.' : 'Accomplish Faster.'}
             </span>
           </h1>
           
           <p className="text-base sm:text-lg text-slate-600 mb-8 max-w-xl leading-relaxed">
-            Asisten AI cerdas untuk bertukar ide, penulisan kode, penelusuran web real-time yang akurat, serta otomasi tugas harian Anda.
+            {isId 
+              ? 'Asisten AI cerdas untuk bertukar ide, penulisan kode, penelusuran web real-time yang akurat, serta otomasi tugas harian Anda.' 
+              : 'Smart AI assistant for brainstorming, coding, accurate real-time web search, and daily task automation.'}
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
@@ -67,7 +77,7 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               onClick={onStart}
               className="group w-full sm:w-auto flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-7 py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
             >
-              <span>Mulai Percakapan Sekarang</span>
+              <span>{isId ? 'Mulai Percakapan Sekarang' : 'Start Conversation Now'}</span>
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
@@ -84,9 +94,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3.5 border border-blue-100">
               <Zap size={20} />
             </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1.5">Tiga Model Canggih</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">
+              {isId ? 'Tiga Model Canggih' : 'Advanced Model Suite'}
+            </h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Dukungan penuh model <strong>bluefox pro</strong> (Vision & Multi-modal), <strong>bluefox standard</strong>, dan <strong>bluefox Dilo</strong>.
+              {isId 
+                ? 'Dukungan penuh model bluefox pro (Vision & Multi-modal), bluefox standard, dan bluefox dilo.'
+                : 'Full support for bluefox pro (Vision & Multi-modal), bluefox standard, and bluefox dilo.'}
             </p>
           </div>
 
@@ -94,9 +108,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center mb-3.5 border border-cyan-100">
               <Search size={20} />
             </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1.5">Pencarian Web & Advance</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">
+              {isId ? 'Pencarian Web & Advance' : 'Web & Advance Search'}
+            </h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Pencarian web multi-query 3-5 sumber dengan mode advance otomatis untuk informasi faktual yang akurat dan terkini.
+              {isId 
+                ? 'Pencarian web multi-query 3-5 sumber dengan mode advance otomatis untuk informasi faktual yang akurat dan terkini.'
+                : 'Multi-query web search aggregating 3-5 sources with advance mode for verified, real-time factual accuracy.'}
             </p>
           </div>
 
@@ -104,9 +122,13 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
             <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-3.5 border border-emerald-100">
               <Shield size={20} />
             </div>
-            <h3 className="text-base font-bold text-slate-900 mb-1.5">Aman & Terenkripsi</h3>
+            <h3 className="text-base font-bold text-slate-900 mb-1.5">
+              {isId ? 'Aman & Terenkripsi' : 'Safe & Encrypted'}
+            </h3>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Keamanan data sesi dengan manajemen kuota pintar per 5 jam dan mingguan yang transparan dan stabil.
+              {isId 
+                ? 'Keamanan data sesi dengan manajemen kuota pintar per 5 jam dan mingguan yang transparan dan stabil.'
+                : 'Session security paired with smart 5-hour and weekly quota management, transparent and resilient.'}
             </p>
           </div>
         </motion.div>
@@ -119,3 +141,5 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
     </div>
   );
 }
+
+export default LandingPage;

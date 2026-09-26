@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -14,7 +14,12 @@ import { IntegrationsPage } from './components/IntegrationsPage';
 import { MediaScreenViewer } from './components/MediaScreenViewer';
 import { QuotaExceededModal } from './components/QuotaExceededModal';
 import { UserGradientAvatar } from './components/UserGradientAvatar';
+import { FileHistoryModal } from './components/FileHistoryModal';
 import { useLanguage } from './lib/i18n';
+import { 
+  saveBase64ToLocalStorage, 
+  getFileFromLocalStorage 
+} from './lib/fileStorage';
 import { 
   supabase, 
   exchangeSsoTicket, 
@@ -27,7 +32,12 @@ import {
   resetUserLimits,
   supabaseKey,
   invokeBluefoxProcessor,
-  DEFAULT_MODELS
+  DEFAULT_MODELS,
+  createNewSession,
+  saveMessage,
+  loadChatSession,
+  getAllSessions,
+  deleteChatSession
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -166,6 +176,7 @@ export default function App() {
   const [visionLockedNotice, setVisionLockedNotice] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConnectorsModalOpen, setIsConnectorsModalOpen] = useState(false);
+  const [isFileHistoryOpen, setIsFileHistoryOpen] = useState(false);
   
   // State for Long-Press (1s) Chat Session Action Modal & Toast
   const [contextMenuSession, setContextMenuSession] = useState<ChatSession | null>(null);
@@ -452,6 +463,31 @@ export default function App() {
         console.error("Failed to parse sessions", e);
       }
     }
+
+    // Muat daftar sesi dari database Supabase (tabel session_bluefox)
+    getAllSessions().then((dbSessions) => {
+      if (dbSessions && dbSessions.length > 0) {
+        const formatted: ChatSession[] = dbSessions.map((s: any) => ({
+          id: s.id,
+          title: s.title || 'Percakapan',
+          messages: [],
+          updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now(),
+          model: 'agnes-2.5-flash',
+          isPinned: false
+        }));
+        setChatSessions((prev) => {
+          const pinnedMap = new Map(prev.filter(p => p.isPinned).map(p => [p.id, true]));
+          const combined = formatted.map(f => ({
+            ...f,
+            isPinned: pinnedMap.has(f.id)
+          }));
+          return sortSessions(combined);
+        });
+      }
+    }).catch(err => {
+      console.warn("Gagal memuat sesi dari session_bluefox:", err);
+    });
+
     const savedInstruction = localStorage.getItem('tmpa_custom_instruction');
     if (savedInstruction) {
       setCustomInstruction(savedInstruction);
@@ -512,7 +548,7 @@ export default function App() {
 
           // Ada tiket -> Tukarkan via Edge Function exchange-sso-ticket
           setIsSyncingSSO(true);
-          setSyncStatus('🔄 Memverifikasi Sesi... Mohon tunggu sebentar, sedang menyambungkan akun Anda.');
+          setSyncStatus(lang === 'id' ? 'Memverifikasi Sesi... Mohon tunggu sebentar, sedang menyambungkan akun Anda.' : 'Verifying Session... Please wait a moment, connecting your account.');
           console.log("[Bluefox Chat] Tiket SSO terdeteksi, memproses autentikasi...");
 
           try {
@@ -970,6 +1006,7 @@ export default function App() {
   };
 
   const handleDeleteChatSession = (session: ChatSession) => {
+    deleteChatSession(session.id).catch(e => console.warn("deleteChatSession error:", e));
     const updatedSessions = chatSessions.filter(s => s.id !== session.id);
     saveSessionsToLocal(updatedSessions);
     if (currentSessionId === session.id) {
@@ -1012,17 +1049,53 @@ export default function App() {
     setIsSidebarOpen(false);
   };
 
-  const loadSession = (sessionId: string) => {
+  const loadSession = async (sessionId: string) => {
+    setIsSidebarOpen(false);
+    setCurrentSessionId(sessionId);
+    try {
+      localStorage.setItem('tmpa_last_active_session_id', sessionId);
+    } catch {}
+
+    // 1. Muat percakapan dari Supabase database (session_bluefox & message_bluefox)
+    try {
+      const { messages: dbMsgs } = await loadChatSession(sessionId);
+      if (dbMsgs && dbMsgs.length > 0) {
+        const hydratedMessages: Message[] = dbMsgs.map((m: any) => {
+          let mediaItems: MediaAttachment[] | undefined = undefined;
+          if (m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0) {
+            mediaItems = m.attachments.map((att: any) => {
+              const localData = att.local_id ? getFileFromLocalStorage(att.local_id) : null;
+              return {
+                id: att.local_id || att.id,
+                name: att.name || 'Lampiran',
+                type: att.type || (att.name?.endsWith('.pdf') ? 'document' : 'image'),
+                size: att.size || 0,
+                url: localData?.base64 || '',
+                textContent: att.textContent,
+                pageCount: att.pageCount
+              };
+            });
+          }
+          return {
+            id: m.id?.toString() || Date.now().toString(),
+            role: (m.sender === 'assistant' || m.sender === 'model') ? 'model' : 'user',
+            text: m.content || '',
+            media: mediaItems
+          };
+        });
+        setMessages(hydratedMessages);
+        return;
+      }
+    } catch (err) {
+      console.warn("Gagal loadChatSession dari Supabase:", err);
+    }
+
+    // Fallback jika sudah ada di cache lokal
     const session = chatSessions.find(s => s.id === sessionId);
-    if (session) {
+    if (session && session.messages) {
       setMessages(session.messages);
       setSelectedModel(session.model as any);
-      setCurrentSessionId(session.id);
-      try {
-        localStorage.setItem('tmpa_last_active_session_id', session.id);
-      } catch {}
     }
-    setIsSidebarOpen(false);
   };
 
   // Handler untuk membuka halaman media fullscreen (/screen-:id)
@@ -1594,6 +1667,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const updatedMessages = [...baseMessages, userMessage];
       setMessages(updatedMessages);
 
+      // Simpan berkas lampiran ke Local Storage dan siapkan attachmentMetadata untuk database
+      const attachmentMetadata: any[] = [];
+      for (const m of mediaList) {
+        if (m.url) {
+          const saved = saveBase64ToLocalStorage(m.url, m.name || 'image.png', m.type || 'image/png', m.size);
+          if (saved) {
+            attachmentMetadata.push({
+              local_id: saved.local_id,
+              name: saved.name,
+              type: saved.type,
+              size: saved.size,
+              pageCount: (m as any).pageCount,
+            });
+          }
+        }
+      }
+
       // Pastikan sessionId konsisten untuk seluruh percakapan aktif
       if (!currentSessionId) {
         setCurrentSessionId(effectiveConvId);
@@ -1610,6 +1700,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           model: selectedModel
         };
         currentSessions = [newSession, ...currentSessions];
+
+        // Buat sesi baru di tabel session_bluefox di Supabase
+        createNewSession(userText || 'Percakapan Baru', effectiveConvId).catch(err => {
+          console.warn("Gagal createNewSession di session_bluefox:", err);
+        });
       } else {
         currentSessions[sessionIdx] = {
           ...currentSessions[sessionIdx],
@@ -1620,7 +1715,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       
       saveSessionsToLocal(currentSessions);
 
-      // Simpan langsung pesan pengguna ke Supabase
+      // Simpan langsung pesan pengguna ke Supabase database (message_bluefox & messages)
+      saveMessage(effectiveConvId, 'user', userText, attachmentMetadata).catch(err => {
+        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan pengguna:", err);
+      });
       sendMessageToSupabase(userText, effectiveConvId, 'user').catch(err => {
         console.warn("⚠️ [Supabase] Info simpan pesan pengguna:", err);
       });
@@ -1737,40 +1835,30 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         } : null
       };
 
-      // Panggil Backend Server Express (/api/chat) dengan credentials: "include"
+      // Panggil Supabase Edge Function bluefox-processor- langsung (Sesuai instruksi: panggil edge function supabase)
       let response: Response;
       try {
-        response = await fetch("/api/chat", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          credentials: "include",
-          body: JSON.stringify(chatPayload),
-          signal: abortControllerRef.current.signal
+        const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current.signal);
+        response = new Response(JSON.stringify(edgeData), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
         });
-
-        // Jika server lokal /api/chat gagal atau 405, langsung fallback ke Supabase Edge Function bluefox-processor-
-        if (!response.ok || response.status === 405) {
-          console.warn("⚠️ /api/chat error/405, beralih ke direct Supabase Edge Function bluefox-processor-...");
-          const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current.signal);
-          response = new Response(JSON.stringify(edgeData), {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
-      } catch (fetchErr: any) {
+      } catch (edgeErr: any) {
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException('Request aborted', 'AbortError');
         }
+        console.warn("⚠️ Direct Edge Function error, mencoba fallback /api/chat:", edgeErr?.message);
         try {
-          console.warn("⚠️ Fetch gagal, mencoba direct fallback Supabase Edge Function bluefox-processor-:", fetchErr?.message);
-          const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current?.signal);
-          response = new Response(JSON.stringify(edgeData), {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
+          response = await fetch("/api/chat", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            credentials: "include",
+            body: JSON.stringify(chatPayload),
+            signal: abortControllerRef.current.signal
           });
-        } catch (edgeErr: any) {
+        } catch (fetchErr: any) {
           if (activeCustomApi && activeCustomApi.apiKey) {
             console.warn("⚠️ Edge function gagal, mencoba fallback Custom API:", edgeErr?.message);
             const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
@@ -2023,7 +2111,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       if (!aiReplyText.trim()) {
-        aiReplyText = "⚠️ Respons AI tidak menghasilkan teks.";
+        aiReplyText = lang === 'id' ? "Respons AI tidak menghasilkan teks." : "AI response produced no text.";
         setMessages(prev => {
           const next = [...prev];
           const targetIdx = next.findIndex(m => m.id === aiMessageId);
@@ -2041,6 +2129,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         });
       }
 
+      // Simpan langsung pesan asisten ke Supabase database (message_bluefox & messages)
+      saveMessage(effectiveConvId, 'assistant', aiReplyText, []).catch(err => {
+        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan asisten:", err);
+      });
       sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(err => {
         console.warn("⚠️ [Supabase] Info simpan pesan asisten:", err);
       });
@@ -2549,6 +2641,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   >
                     <Layers size={18} className="text-emerald-600" />
                     <span>{t.mcpIntegrations}</span>
+                  </button>
+
+                  <button 
+                    onClick={() => { setIsFileHistoryOpen(true); setIsSidebarOpen(false); }} 
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <ImageIcon size={18} className="text-cyan-600" />
+                    <span>{t.fileHistory || 'File History'}</span>
                   </button>
 
                   <button 
@@ -3593,6 +3693,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         used5h={quotaModalInfo.used5h}
         usedWeekly={quotaModalInfo.usedWeekly}
         isCustomApi={quotaModalInfo.isCustomApi}
+      />
+
+      <FileHistoryModal
+        isOpen={isFileHistoryOpen}
+        onClose={() => setIsFileHistoryOpen(false)}
       />
     </div>
       )}

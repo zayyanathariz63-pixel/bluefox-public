@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase, supabaseKey } from '../lib/supabase';
+import { useLanguage } from '../lib/i18n';
 
 // Di Bluefox (/verify atau tombol Login)
 export function handleRedirectToAccount() {
@@ -26,6 +27,9 @@ export function handleRedirectToAccount() {
 }
 
 export function VerifyPage() {
+  const { lang } = useLanguage();
+  const isId = lang === 'id';
+
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -93,10 +97,18 @@ export function VerifyPage() {
         const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://bluefox.tmpa.my.id';
         window.location.href = `${currentOrigin}/`;
       } else {
-        setErrorMessage('Gagal mengaktifkan sesi: ' + error.message);
+        setErrorMessage(
+          isId 
+            ? 'Gagal mengaktifkan sesi: ' + error.message 
+            : 'Failed to activate session: ' + error.message
+        );
       }
     } catch (err: any) {
-      setErrorMessage('Gagal mengaktifkan sesi: ' + (err?.message || String(err)));
+      setErrorMessage(
+        isId 
+          ? 'Gagal mengaktifkan sesi: ' + (err?.message || String(err))
+          : 'Failed to activate session: ' + (err?.message || String(err))
+      );
     }
   };
 
@@ -105,8 +117,12 @@ export function VerifyPage() {
     return (
       <div style={styles.centerContainer}>
         <div className="spinner" style={styles.spinner}></div>
-        <h3 style={{ marginTop: '20px', color: '#ffffff', fontSize: '18px', fontWeight: 600 }}>Memeriksa Sesi TMPA...</h3>
-        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '8px' }}>Mohon tunggu sebentar, sedang menghubungkan akun Anda.</p>
+        <h3 style={{ marginTop: '20px', color: '#ffffff', fontSize: '18px', fontWeight: 600 }}>
+          {isId ? 'Memeriksa Sesi TMPA...' : 'Checking TMPA Session...'}
+        </h3>
+        <p style={{ color: '#9ca3af', fontSize: '14px', marginTop: '8px' }}>
+          {isId ? 'Mohon tunggu sebentar, sedang menghubungkan akun Anda.' : 'Please wait a moment, connecting your account.'}
+        </p>
         <style>{`
           @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -139,9 +155,13 @@ export function VerifyPage() {
           </div>
         </div>
 
-        <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0' }}>Pilih Akun TMPA</h3>
+        <h3 style={{ color: '#ffffff', fontSize: '20px', fontWeight: 700, margin: '0 0 8px 0' }}>
+          {isId ? 'Pilih Akun TMPA' : 'Select TMPA Account'}
+        </h3>
         <p style={{ color: '#9ca3af', marginBottom: '20px', fontSize: '14px', lineHeight: '1.5' }}>
-          Sesi terdeteksi! Klik akun di bawah untuk masuk ke Bluefox Chat:
+          {isId 
+            ? 'Sesi terdeteksi! Klik akun di bawah untuk masuk ke Bluefox Chat:' 
+            : 'Session detected! Click an account below to enter Bluefox Chat:'}
         </p>
 
         {errorMessage && (
@@ -182,7 +202,7 @@ export function VerifyPage() {
                 }}
               />
               <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontWeight: 600, color: '#ffffff', fontSize: '15px' }}>{acc.name || 'Pengguna TMPA'}</div>
+                <div style={{ fontWeight: 600, color: '#ffffff', fontSize: '15px' }}>{acc.name || (isId ? 'Pengguna TMPA' : 'TMPA User')}</div>
                 <div style={{ fontSize: '13px', color: '#9ca3af', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{acc.email}</div>
               </div>
             </div>
@@ -199,7 +219,7 @@ export function VerifyPage() {
             e.currentTarget.style.color = '#3b82f6';
           }}
         >
-          + Gunakan Akun Lain
+          {isId ? '+ Gunakan Akun Lain' : '+ Use Another Account'}
         </button>
       </div>
     </div>
@@ -224,59 +244,58 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#00050b',
-    textAlign: 'center',
-    padding: '24px',
     fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    textAlign: 'center',
+    padding: '16px',
   },
   cardContainer: {
-    maxWidth: '420px',
+    maxWidth: '400px',
     width: '100%',
-    margin: '0 auto',
-    padding: '28px',
-    borderRadius: '16px',
+    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backdropFilter: 'blur(16px)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
-    backgroundColor: '#0c1017',
+    borderRadius: '24px',
+    padding: '32px 24px',
     textAlign: 'center',
-    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+    boxShadow: '0 20px 40px -15px rgba(0, 0, 0, 0.5)',
   },
   accountCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: '14px',
+    gap: '12px',
     padding: '12px 16px',
+    borderRadius: '16px',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
-    borderRadius: '12px',
     cursor: 'pointer',
     textAlign: 'left',
     transition: 'all 0.2s ease',
   },
   avatar: {
-    width: '42px',
-    height: '42px',
+    width: '40px',
+    height: '40px',
     borderRadius: '50%',
     objectFit: 'cover',
-    border: '1px solid rgba(255, 255, 255, 0.15)',
-    flexShrink: 0,
+    border: '1px solid rgba(255, 255, 255, 0.2)',
   },
   useOtherButton: {
     marginTop: '24px',
-    background: 'none',
+    background: 'transparent',
     border: 'none',
     color: '#3b82f6',
-    cursor: 'pointer',
-    fontWeight: 600,
     fontSize: '14px',
+    fontWeight: 500,
+    cursor: 'pointer',
     transition: 'color 0.2s ease',
   },
   spinner: {
-    width: '44px',
-    height: '44px',
-    border: '4px solid rgba(255, 255, 255, 0.1)',
-    borderTop: '4px solid #3b82f6',
+    width: '40px',
+    height: '40px',
+    border: '3px solid rgba(59, 130, 246, 0.2)',
+    borderTop: '3px solid #3b82f6',
     borderRadius: '50%',
-    margin: '0 auto',
     animation: 'spin 1s linear infinite',
-  },
+  }
 };
+
+export default VerifyPage;

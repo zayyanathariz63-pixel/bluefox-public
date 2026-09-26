@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Bot, LogIn, Loader2, ArrowLeft, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useLanguage } from '../lib/i18n';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -9,6 +10,9 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
+  const { lang } = useLanguage();
+  const isId = lang === 'id';
+
   const [isLoading, setIsLoading] = useState(false);
   const [userIp, setUserIp] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -41,13 +45,12 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
       }
 
       if (!ipToVerify) {
-        throw new Error('IP address not detected');
+        throw new Error(isId ? 'Alamat IP tidak terdeteksi' : 'IP address not detected');
       }
 
       const cleanIp = ipToVerify.trim();
 
       // Check IP in Supabase table 'user_ips'
-      // Menggunakan ilike untuk menghindari masalah whitespace atau format
       const { data: matchedRecords, error: ipError } = await supabase
         .from('user_ips')
         .select('*')
@@ -60,14 +63,21 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
       }
 
       if (matchedRecords && matchedRecords.length > 0) {
-        // Berhasil ditemukan di tabel user_ips
         onLoginSuccess();
       } else {
-        setErrorMsg(`Akses Ditolak: IP Anda (${cleanIp}) tidak terdaftar di database TMPA.`);
+        setErrorMsg(
+          isId 
+            ? `Akses Ditolak: IP Anda (${cleanIp}) tidak terdaftar di database TMPA.`
+            : `Access Denied: Your IP (${cleanIp}) is not registered in the TMPA database.`
+        );
       }
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(`Gagal memverifikasi IP: ${err.message || 'Kesalahan sistem'}. Pastikan koneksi internet stabil.`);
+      setErrorMsg(
+        isId
+          ? `Gagal memverifikasi IP: ${err.message || 'Kesalahan sistem'}. Pastikan koneksi internet stabil.`
+          : `Failed to verify IP: ${err.message || 'System error'}. Please ensure a stable internet connection.`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -97,23 +107,27 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
         >
           <button 
             onClick={onBack}
-            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors mb-6"
+            className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors mb-6 cursor-pointer"
           >
             <ArrowLeft size={16} />
-            <span>Kembali ke Landing Page</span>
+            <span>{isId ? 'Kembali ke Beranda' : 'Back to Home'}</span>
           </button>
 
           <div className="flex items-center gap-2.5 mb-2">
             <ShieldCheck className="text-blue-500" size={24} />
-            <h2 className="text-2xl font-bold">Verifikasi Akses</h2>
+            <h2 className="text-2xl font-bold">{isId ? 'Verifikasi Akses' : 'Access Verification'}</h2>
           </div>
           <p className="text-gray-400 text-sm mb-6">
-            Akses ke Tmpa Chat dibatasi khusus untuk perangkat yang terdaftar di website utama TMPA.
+            {isId 
+              ? 'Akses ke Tmpa Chat dibatasi khusus untuk perangkat yang terdaftar di website utama TMPA.'
+              : 'Access to Tmpa Chat is restricted to devices registered on the main TMPA website.'}
           </p>
 
           {userIp && (
             <div className="bg-black/60 border border-gray-800/60 p-4 rounded-xl mb-6 flex flex-col gap-1 text-center">
-              <span className="text-xs text-gray-500 uppercase tracking-wider font-mono">IP Terdeteksi</span>
+              <span className="text-xs text-gray-500 uppercase tracking-wider font-mono">
+                {isId ? 'IP Terdeteksi' : 'Detected IP'}
+              </span>
               <span className="text-base font-semibold font-mono text-blue-400">{userIp}</span>
             </div>
           )}
@@ -128,16 +142,18 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
             <button
               onClick={handleLoginWithIP}
               disabled={isLoading}
-              className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white px-6 py-4 rounded-xl font-medium transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] hover:shadow-[0_0_30px_rgba(37,99,235,0.4)] hover:scale-[1.02] active:scale-[0.98]"
+              className="w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white px-6 py-4 rounded-xl font-medium transition-all shadow-[0_0_20px_rgba(37,99,235,0.2)] hover:shadow-[0_0_30px_rgba(37,99,235,0.4)] hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
             >
               {isLoading ? <Loader2 size={18} className="animate-spin" /> : <LogIn size={18} />}
-              <span>{isLoading ? 'Memverifikasi...' : 'Masuk dengan TMPA IP'}</span>
+              <span>{isLoading ? (isId ? 'Memverifikasi...' : 'Verifying...') : (isId ? 'Masuk dengan TMPA IP' : 'Login with TMPA IP')}</span>
             </button>
           </div>
 
           <div className="mt-8 text-center border-t border-gray-800/50 pt-4">
             <p className="text-xs text-gray-500 leading-relaxed">
-              ID Anda otomatis diverifikasi berdasarkan koneksi Anda saat ini. Tidak perlu login manual.
+              {isId 
+                ? 'ID Anda otomatis diverifikasi berdasarkan koneksi Anda saat ini. Tidak perlu login manual.'
+                : 'Your ID is automatically verified based on your current connection. No manual login required.'}
             </p>
           </div>
         </motion.div>
@@ -145,3 +161,5 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
     </div>
   );
 }
+
+export default LoginPage;
