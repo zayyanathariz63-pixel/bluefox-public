@@ -71,14 +71,17 @@ export const SUPABASE_CONFIG = {
     );
   },
   get anonKey(): string {
-    return getEnvAny([
-      "VITE_SUPABASE_ANON_KEY",
-      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      "SUPABASE_ANON_KEY",
-      "SUPABASE_KEY",
-      "VITE_SUPABASE_KEY",
-      "PUBLIC_SUPABASE_ANON_KEY",
-    ]);
+    return getEnvAny(
+      [
+        "VITE_SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "SUPABASE_ANON_KEY",
+        "SUPABASE_KEY",
+        "VITE_SUPABASE_KEY",
+        "PUBLIC_SUPABASE_ANON_KEY",
+      ],
+      "sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U"
+    );
   },
   get serviceRoleKey(): string {
     return getEnvAny(["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SERVICE_KEY"]);

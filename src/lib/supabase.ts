@@ -148,90 +148,149 @@ export function getValidUUID(id?: string | null): string {
  * -------------------------------------------------------------
  */
 
-// 1. Membuat Sesi Percakapan Baru di session_bluefox
+// -------------------------------------------------------------
+// A. Fungsi Membuat Sesi Baru
+// -------------------------------------------------------------
 export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
-  const title = firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt;
-  const payload: { id?: string; title: string } = { title };
+  const title = (firstPrompt && firstPrompt.trim())
+    ? (firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt)
+    : 'Percakapan Baru';
+
+  const validId = customId ? getValidUUID(customId) : undefined;
   
-  if (customId) {
-    payload.id = getValidUUID(customId);
+  if (validId) {
+    try {
+      const { data: existing } = await supabase
+        .from('session_bluefox')
+        .select('*')
+        .eq('id', validId)
+        .maybeSingle();
+
+      if (existing) {
+        return existing;
+      }
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('session_bluefox')
+        .insert([{ id: validId, title }])
+        .select()
+        .maybeSingle();
+
+      if (!insertError && inserted) {
+        return inserted;
+      }
+    } catch (e) {
+      console.warn('Error saat createNewSession dengan customId:', e);
+    }
   }
 
-  const query = payload.id 
-    ? supabase.from('session_bluefox').upsert([payload], { onConflict: 'id' })
-    : supabase.from('session_bluefox').insert([payload]);
-
-  const { data, error } = await query.select().single();
+  const { data, error } = await supabase
+    .from('session_bluefox')
+    .insert([{ title }])
+    .select()
+    .single();
 
   if (error) {
-    console.error('Gagal membuat sesi di session_bluefox:', error);
+    console.error('Gagal membuat sesi:', error.message || error);
     return null;
   }
   return data;
 }
 
-// 2. Menyimpan Pesan (User / Assistant) di message_bluefox
+// -------------------------------------------------------------
+// B. Fungsi Menyimpan Sekaligus (User Prompt + AI Response)
+// -------------------------------------------------------------
+export async function saveChatTurn(
+  sessionId: string, 
+  userMessage: string, 
+  aiResponse: string, 
+  attachmentMetadata: any[] = []
+) {
+  const validSessionId = getValidUUID(sessionId);
+
+  // Pastikan sesi ada di session_bluefox sebelum insert message untuk menghindari Foreign Key error
+  try {
+    const { data: existingSession } = await supabase
+      .from('session_bluefox')
+      .select('id')
+      .eq('id', validSessionId)
+      .maybeSingle();
+
+    if (!existingSession) {
+      const title = (userMessage && userMessage.trim())
+        ? (userMessage.length > 30 ? userMessage.substring(0, 30) + '...' : userMessage)
+        : 'Percakapan Baru';
+
+      await supabase
+        .from('session_bluefox')
+        .insert([{ id: validSessionId, title }])
+        .select()
+        .maybeSingle();
+    }
+  } catch (sessErr) {
+    console.warn("Memastikan session_bluefox:", sessErr);
+  }
+
+  const { data, error } = await supabase
+    .from('message_bluefox')
+    .insert([
+      {
+        session_id: validSessionId,
+        user_message: userMessage,
+        ai_response: aiResponse,
+        attachments: attachmentMetadata || []
+      }
+    ])
+    .select();
+
+  if (error) {
+    console.error('Gagal menyimpan percakapan:', error.message || error);
+    return null;
+  }
+  
+  // Perbarui timestamp sesi
+  await supabase
+    .from('session_bluefox')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', validSessionId);
+
+  return data;
+}
+
+// Kompatibilitas alias untuk saveMessage
 export async function saveMessage(
   sessionId: string, 
   sender: 'user' | 'assistant', 
   content: string, 
   attachmentMetadata: any[] = []
 ) {
-  const validSessionId = getValidUUID(sessionId);
-  const msgPayload = {
-    session_id: validSessionId,
-    sender: sender,
-    content: content || '',
-    attachments: attachmentMetadata || []
-  };
-
-  const { data, error } = await supabase
-    .from('message_bluefox')
-    .insert([msgPayload])
-    .select();
-
-  if (error) {
-    console.error('Gagal menyimpan pesan ke message_bluefox:', error);
-    return null;
+  if (sender === 'assistant') {
+    return saveChatTurn(sessionId, '', content, attachmentMetadata);
   }
-
-  // Perbarui waktu update pada sesi di session_bluefox
-  try {
-    await supabase
-      .from('session_bluefox')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', validSessionId);
-  } catch {}
-
-  return data;
+  return saveChatTurn(sessionId, content, '', attachmentMetadata);
 }
 
-// 3. Memuat Seluruh Percakapan Sesi Tertentu dari session_bluefox & message_bluefox
+// -------------------------------------------------------------
+// C. Memuat Riwayat Percakapan
+// -------------------------------------------------------------
 export async function loadChatSession(sessionId: string) {
   const validSessionId = getValidUUID(sessionId);
-
-  const { data: session, error: sessionErr } = await supabase
-    .from('session_bluefox')
-    .select('*')
-    .eq('id', validSessionId)
-    .maybeSingle();
-
-  if (sessionErr) {
-    console.warn('Sesi tidak ditemukan di session_bluefox:', sessionErr);
-  }
-
-  const { data: messages, error: msgErr } = await supabase
+  const { data: messages, error } = await supabase
     .from('message_bluefox')
     .select('*')
     .eq('session_id', validSessionId)
     .order('created_at', { ascending: true });
 
-  if (msgErr) {
-    console.warn('Gagal memuat pesan dari message_bluefox:', msgErr);
-    return { session: session || null, messages: [] };
+  if (error) {
+    console.error('Gagal memuat pesan:', error.message || error);
+    const empty: any = [];
+    empty.messages = [];
+    return empty;
   }
 
-  return { session: session || null, messages: messages || [] };
+  const result: any = messages || [];
+  result.messages = result; // Dukungan kompatibilitas ganda (array langsung dan destructuring { messages })
+  return result;
 }
 
 // 4. Memuat Daftar Semua Sesi untuk Sidebar dari session_bluefox

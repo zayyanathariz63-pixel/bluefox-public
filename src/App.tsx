@@ -34,6 +34,7 @@ import {
   invokeBluefoxProcessor,
   DEFAULT_MODELS,
   createNewSession,
+  saveChatTurn,
   saveMessage,
   loadChatSession,
   getAllSessions,
@@ -90,6 +91,62 @@ export function redirectToSSO() {
 
   console.log("🔄 [SSO Redirect] Mengarahkan ke:", ssoUrl.toString());
   window.location.href = ssoUrl.toString();
+}
+
+/**
+ * Mengubah baris dari tabel message_bluefox (yang menyimpan user_message dan ai_response per turn)
+ * menjadi urutan Message[] untuk UI obrolan.
+ */
+function parseBluefoxMessages(rows: any[]): Message[] {
+  const result: Message[] = [];
+  if (!Array.isArray(rows)) return result;
+
+  rows.forEach((item: any, idx: number) => {
+    let mediaItems: MediaAttachment[] | undefined = undefined;
+    if (item.attachments && Array.isArray(item.attachments) && item.attachments.length > 0) {
+      mediaItems = item.attachments.map((att: any) => {
+        const localData = att.local_id ? getFileFromLocalStorage(att.local_id) : null;
+        return {
+          id: att.local_id || att.id,
+          name: att.name || 'Lampiran',
+          type: att.type || (att.name?.endsWith('.pdf') ? 'document' : 'image'),
+          size: att.size || 0,
+          url: localData?.base64 || '',
+          textContent: att.textContent,
+          pageCount: att.pageCount
+        };
+      });
+    }
+
+    // Format Baru: Kolom user_message & ai_response (disimpan sekaligus per chat turn)
+    if (item.user_message !== undefined || item.ai_response !== undefined) {
+      if (item.user_message) {
+        result.push({
+          id: `${item.id || idx}_u`,
+          role: 'user',
+          text: item.user_message,
+          media: mediaItems
+        });
+      }
+      if (item.ai_response) {
+        result.push({
+          id: `${item.id || idx}_a`,
+          role: 'model',
+          text: item.ai_response
+        });
+      }
+    } else if (item.content) {
+      // Kompatibilitas format legacy jika ada
+      result.push({
+        id: item.id?.toString() || `${Date.now()}_${idx}`,
+        role: (item.sender === 'assistant' || item.sender === 'model') ? 'model' : 'user',
+        text: item.content || '',
+        media: mediaItems
+      });
+    }
+  });
+
+  return result;
 }
 
 export type SupportedModel = 'agnes-2.5-flash' | 'tencent-hy3-free' | 'laguna-s-2.1';
@@ -926,31 +983,8 @@ export default function App() {
 
     // Ambil Riwayat Chat saat pertama kali membuka room dari tabel message_bluefox
     loadChatSession(convId).then((res) => {
-      if (res && res.messages && res.messages.length > 0) {
-        const historyMsgs: Message[] = res.messages.map((item: any) => {
-          let mediaItems: MediaAttachment[] | undefined = undefined;
-          if (item.attachments && Array.isArray(item.attachments) && item.attachments.length > 0) {
-            mediaItems = item.attachments.map((att: any) => {
-              const localData = att.local_id ? getFileFromLocalStorage(att.local_id) : null;
-              return {
-                id: att.local_id || att.id,
-                name: att.name || 'Lampiran',
-                type: att.type || (att.name?.endsWith('.pdf') ? 'document' : 'image'),
-                size: att.size || 0,
-                url: localData?.base64 || '',
-                textContent: att.textContent,
-                pageCount: att.pageCount
-              };
-            });
-          }
-          return {
-            id: item.id?.toString() || Date.now().toString() + Math.random(),
-            role: (item.sender === 'assistant' || item.sender === 'model') ? 'model' : 'user',
-            text: item.content || '',
-            media: mediaItems
-          };
-        });
-        
+      const historyMsgs = parseBluefoxMessages(res);
+      if (historyMsgs && historyMsgs.length > 0) {
         setMessages((prev) => {
           if (prev.length === 0) return historyMsgs;
           return mergeWithoutDuplicates(prev, historyMsgs);
@@ -1092,31 +1126,9 @@ export default function App() {
 
     // 1. Muat percakapan dari Supabase database (session_bluefox & message_bluefox)
     try {
-      const { messages: dbMsgs } = await loadChatSession(sessionId);
-      if (dbMsgs && dbMsgs.length > 0) {
-        const hydratedMessages: Message[] = dbMsgs.map((m: any) => {
-          let mediaItems: MediaAttachment[] | undefined = undefined;
-          if (m.attachments && Array.isArray(m.attachments) && m.attachments.length > 0) {
-            mediaItems = m.attachments.map((att: any) => {
-              const localData = att.local_id ? getFileFromLocalStorage(att.local_id) : null;
-              return {
-                id: att.local_id || att.id,
-                name: att.name || 'Lampiran',
-                type: att.type || (att.name?.endsWith('.pdf') ? 'document' : 'image'),
-                size: att.size || 0,
-                url: localData?.base64 || '',
-                textContent: att.textContent,
-                pageCount: att.pageCount
-              };
-            });
-          }
-          return {
-            id: m.id?.toString() || Date.now().toString(),
-            role: (m.sender === 'assistant' || m.sender === 'model') ? 'model' : 'user',
-            text: m.content || '',
-            media: mediaItems
-          };
-        });
+      const dbMsgs = await loadChatSession(sessionId);
+      const hydratedMessages = parseBluefoxMessages(dbMsgs);
+      if (hydratedMessages && hydratedMessages.length > 0) {
         setMessages(hydratedMessages);
         return;
       }
@@ -1746,16 +1758,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       // 1. Pastikan sesi sudah dibuat di tabel session_bluefox sebelum pesan disimpan
       try {
-        await createNewSession(userText || 'Percakapan Baru', effectiveConvId);
+        const sessionResult = await createNewSession(userText || 'Percakapan Baru', effectiveConvId);
+        if (sessionResult && sessionResult.id) {
+          effectiveConvId = sessionResult.id;
+          setCurrentSessionId(sessionResult.id);
+          try {
+            localStorage.setItem('tmpa_last_active_session_id', sessionResult.id);
+          } catch {}
+        }
       } catch (err) {
         console.warn("Info createNewSession di session_bluefox:", err);
-      }
-
-      // 2. Simpan pesan pengguna ke tabel message_bluefox di Supabase
-      try {
-        await saveMessage(effectiveConvId, 'user', userText, attachmentMetadata);
-      } catch (err) {
-        console.warn("Info saveMessage pengguna ke message_bluefox:", err);
       }
 
       // Kompatibilitas backup
@@ -2169,9 +2181,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         });
       }
 
-      // Simpan langsung pesan asisten ke Supabase database (message_bluefox & messages)
-      saveMessage(effectiveConvId, 'assistant', aiReplyText, []).catch(err => {
-        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan asisten:", err);
+      // Simpan percakapan sekaligus (User Prompt + AI Response) ke tabel message_bluefox & perbarui timestamp session_bluefox
+      saveChatTurn(effectiveConvId, userText, aiReplyText, attachmentMetadata).catch(err => {
+        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan (saveChatTurn):", err);
       });
       sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(err => {
         console.warn("⚠️ [Supabase] Info simpan pesan asisten:", err);
