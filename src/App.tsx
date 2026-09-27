@@ -34,11 +34,16 @@ import {
   invokeBluefoxProcessor,
   DEFAULT_MODELS,
   createNewSession,
+  getUserSessions,
   saveChatTurn,
   saveMessage,
   loadChatSession,
+  loadChatMessages,
   getAllSessions,
-  deleteChatSession
+  deleteChatSession,
+  deleteSessionById,
+  deleteSessionByTitle,
+  getLoggedInUser
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -521,8 +526,8 @@ export default function App() {
       }
     }
 
-    // Muat daftar sesi dari database Supabase (tabel session_bluefox)
-    getAllSessions().then((dbSessions) => {
+    // Muat daftar sesi dari database Supabase (tabel session_bluefox milik user)
+    getUserSessions().then((dbSessions) => {
       if (dbSessions && dbSessions.length > 0) {
         const formatted: ChatSession[] = dbSessions.map((s: any) => ({
           id: s.id,
@@ -1074,7 +1079,7 @@ export default function App() {
   };
 
   const handleDeleteChatSession = (session: ChatSession) => {
-    deleteChatSession(session.id).catch(e => console.warn("deleteChatSession error:", e));
+    deleteSessionById(session.id).catch(e => console.warn("deleteSessionById error:", e));
     const updatedSessions = chatSessions.filter(s => s.id !== session.id);
     saveSessionsToLocal(updatedSessions);
     if (currentSessionId === session.id) {

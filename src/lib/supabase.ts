@@ -149,9 +149,36 @@ export function getValidUUID(id?: string | null): string {
  */
 
 // -------------------------------------------------------------
-// A. Fungsi Membuat Sesi Baru
+// A. Mendapatkan Info User yang Sedang Login
 // -------------------------------------------------------------
+export async function getLoggedInUser() {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) return session.user;
+      console.error('Pengguna belum login:', error?.message);
+      return null;
+    }
+    return user;
+  } catch (err: any) {
+    console.error('Error getLoggedInUser:', err?.message || err);
+    return null;
+  }
+}
+
+// -------------------------------------------------------------
+// B. Manajemen Sesi Percakapan (Sesuai User ID)
+// -------------------------------------------------------------
+
+// 1. Buat Sesi Baru untuk User yang Login
 export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
+  const user = await getLoggedInUser();
+  if (!user) {
+    console.warn('Pengguna belum login saat membuat sesi baru.');
+    return null;
+  }
+
   const title = (firstPrompt && firstPrompt.trim())
     ? (firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt)
     : 'Percakapan Baru';
@@ -172,7 +199,7 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
 
       const { data: inserted, error: insertError } = await supabase
         .from('session_bluefox')
-        .insert([{ id: validId, title }])
+        .insert([{ id: validId, user_id: user.id, title }])
         .select()
         .maybeSingle();
 
@@ -186,20 +213,103 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
 
   const { data, error } = await supabase
     .from('session_bluefox')
-    .insert([{ title }])
+    .insert([{ 
+      user_id: user.id, 
+      title: title 
+    }])
     .select()
     .single();
 
   if (error) {
-    console.error('Gagal membuat sesi:', error.message || error);
+    console.error('Gagal membuat sesi baru:', error.message);
     return null;
   }
   return data;
 }
 
+// 2. Ambil Semua Daftar Sesi Milik User (Untuk Pindah Perangkat / Sidebar)
+export async function getUserSessions() {
+  const { data, error } = await supabase
+    .from('session_bluefox')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Gagal memuat daftar sesi:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Alias getAllSessions untuk kompatibilitas penuh dengan kode eksisting
+export const getAllSessions = getUserSessions;
+
 // -------------------------------------------------------------
-// B. Fungsi Menyimpan Sekaligus (User Prompt + AI Response)
+// C. Fitur Hapus Sesi (Otomatis Menghapus Seluruh Pesan di Dalamnya)
 // -------------------------------------------------------------
+
+// Hapus Sesi Berdasarkan ID (Sangat Direkomendasikan)
+export async function deleteSessionById(sessionId: string) {
+  const validSessionId = getValidUUID(sessionId);
+  try {
+    await supabase
+      .from('message_bluefox')
+      .delete()
+      .eq('session_id', validSessionId);
+  } catch {}
+
+  const { error } = await supabase
+    .from('session_bluefox')
+    .delete()
+    .eq('id', validSessionId);
+
+  if (error) {
+    console.error('Gagal menghapus sesi:', error.message);
+    return false;
+  }
+  console.log('Sesi beserta seluruh pesannya berhasil dihapus.');
+  return true;
+}
+
+// Alias deleteChatSession untuk kompatibilitas penuh
+export const deleteChatSession = deleteSessionById;
+
+// Hapus Sesi Berdasarkan Judul (Sesuai Permintaan)
+export async function deleteSessionByTitle(title: string) {
+  try {
+    const { data: sessions } = await supabase
+      .from('session_bluefox')
+      .select('id')
+      .eq('title', title);
+
+    if (sessions && sessions.length > 0) {
+      for (const s of sessions) {
+        await supabase
+          .from('message_bluefox')
+          .delete()
+          .eq('session_id', s.id);
+      }
+    }
+  } catch {}
+
+  const { error } = await supabase
+    .from('session_bluefox')
+    .delete()
+    .eq('title', title);
+
+  if (error) {
+    console.error('Gagal menghapus sesi berdasarkan judul:', error.message);
+    return false;
+  }
+  console.log(`Sesi dengan judul "${title}" berhasil dihapus.`);
+  return true;
+}
+
+// -------------------------------------------------------------
+// D. Menyimpan dan Memuat Pesan Percakapan
+// -------------------------------------------------------------
+
+// Simpan Pertanyaan User + Jawaban AI dalam 1 Kali Simpan
 export async function saveChatTurn(
   sessionId: string, 
   userMessage: string, 
@@ -217,13 +327,19 @@ export async function saveChatTurn(
       .maybeSingle();
 
     if (!existingSession) {
+      const user = await getLoggedInUser();
       const title = (userMessage && userMessage.trim())
         ? (userMessage.length > 30 ? userMessage.substring(0, 30) + '...' : userMessage)
         : 'Percakapan Baru';
 
+      const payload: any = { id: validSessionId, title };
+      if (user?.id) {
+        payload.user_id = user.id;
+      }
+
       await supabase
         .from('session_bluefox')
-        .insert([{ id: validSessionId, title }])
+        .insert([payload])
         .select()
         .maybeSingle();
     }
@@ -244,7 +360,7 @@ export async function saveChatTurn(
     .select();
 
   if (error) {
-    console.error('Gagal menyimpan percakapan:', error.message || error);
+    console.error('Gagal menyimpan percakapan:', error.message);
     return null;
   }
   
@@ -270,67 +386,29 @@ export async function saveMessage(
   return saveChatTurn(sessionId, content, '', attachmentMetadata);
 }
 
-// -------------------------------------------------------------
-// C. Memuat Riwayat Percakapan
-// -------------------------------------------------------------
-export async function loadChatSession(sessionId: string) {
+// Memuat Isi Chat Saat Sesi Dipilih
+export async function loadChatMessages(sessionId: string) {
   const validSessionId = getValidUUID(sessionId);
-  const { data: messages, error } = await supabase
+  const { data, error } = await supabase
     .from('message_bluefox')
     .select('*')
     .eq('session_id', validSessionId)
     .order('created_at', { ascending: true });
 
   if (error) {
-    console.error('Gagal memuat pesan:', error.message || error);
+    console.error('Gagal memuat isi pesan:', error.message);
     const empty: any = [];
     empty.messages = [];
     return empty;
   }
 
-  const result: any = messages || [];
+  const result: any = data || [];
   result.messages = result; // Dukungan kompatibilitas ganda (array langsung dan destructuring { messages })
   return result;
 }
 
-// 4. Memuat Daftar Semua Sesi untuk Sidebar dari session_bluefox
-export async function getAllSessions() {
-  try {
-    const { data, error } = await supabase
-      .from('session_bluefox')
-      .select('*')
-      .order('updated_at', { ascending: false });
-
-    if (error) {
-      console.warn('Gagal memuat daftar sesi dari session_bluefox:', error);
-      return [];
-    }
-    return data || [];
-  } catch (err) {
-    console.warn('Error saat getAllSessions:', err);
-    return [];
-  }
-}
-
-// 5. Menghapus Sesi Percakapan dari database Supabase
-export async function deleteChatSession(sessionId: string) {
-  const validSessionId = getValidUUID(sessionId);
-  try {
-    await supabase
-      .from('message_bluefox')
-      .delete()
-      .eq('session_id', validSessionId);
-
-    const { error } = await supabase
-      .from('session_bluefox')
-      .delete()
-      .eq('id', validSessionId);
-
-    return !error;
-  } catch {
-    return false;
-  }
-}
+// Alias loadChatSession untuk kompatibilitas penuh dengan kode eksisting
+export const loadChatSession = loadChatMessages;
 
 // 6. Memperbarui Judul Sesi Percakapan di session_bluefox
 export async function updateSessionTitleInSupabase(sessionId: string, newTitle: string) {
