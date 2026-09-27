@@ -151,36 +151,21 @@ export function getValidUUID(id?: string | null): string {
 // 1. Membuat Sesi Percakapan Baru di session_bluefox
 export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
   const title = firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt;
-  const payload: any = { 
-    title,
-    updated_at: new Date().toISOString()
-  };
+  const payload: { id?: string; title: string } = { title };
+  
   if (customId) {
     payload.id = getValidUUID(customId);
   }
 
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user?.id) {
-      payload.user_id = session.user.id;
-    }
-  } catch {}
+  const query = payload.id 
+    ? supabase.from('session_bluefox').upsert([payload], { onConflict: 'id' })
+    : supabase.from('session_bluefox').insert([payload]);
 
-  const { data, error } = await supabase
-    .from('session_bluefox')
-    .insert([payload])
-    .select()
-    .single();
+  const { data, error } = await query.select().single();
 
   if (error) {
     console.error('Gagal membuat sesi di session_bluefox:', error);
-    // Fallback object jika RLS atau kendala sementara
-    return {
-      id: payload.id || getValidUUID(null),
-      title: title,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
+    return null;
   }
   return data;
 }
@@ -193,19 +178,12 @@ export async function saveMessage(
   attachmentMetadata: any[] = []
 ) {
   const validSessionId = getValidUUID(sessionId);
-  const msgPayload: any = {
+  const msgPayload = {
     session_id: validSessionId,
     sender: sender,
-    content: content,
+    content: content || '',
     attachments: attachmentMetadata || []
   };
-
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user?.id) {
-      msgPayload.user_id = session.user.id;
-    }
-  } catch {}
 
   const { data, error } = await supabase
     .from('message_bluefox')
@@ -214,6 +192,7 @@ export async function saveMessage(
 
   if (error) {
     console.error('Gagal menyimpan pesan ke message_bluefox:', error);
+    return null;
   }
 
   // Perbarui waktu update pada sesi di session_bluefox
@@ -252,7 +231,7 @@ export async function loadChatSession(sessionId: string) {
     return { session: session || null, messages: [] };
   }
 
-  return { session, messages: messages || [] };
+  return { session: session || null, messages: messages || [] };
 }
 
 // 4. Memuat Daftar Semua Sesi untuk Sidebar dari session_bluefox

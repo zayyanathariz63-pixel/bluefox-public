@@ -924,19 +924,53 @@ export default function App() {
       return result;
     };
 
-    // Ambil Riwayat Chat saat pertama kali membuka room
-    loadChatHistory(convId).then((data) => {
-      if (data && data.length > 0) {
-        const historyMsgs: Message[] = data.map((item: any) => ({
-          id: item.id?.toString() || Date.now().toString() + Math.random(),
-          role: (item.role === 'assistant' || item.role === 'model') ? 'model' : 'user',
-          text: item.content || item.text || '',
-        }));
+    // Ambil Riwayat Chat saat pertama kali membuka room dari tabel message_bluefox
+    loadChatSession(convId).then((res) => {
+      if (res && res.messages && res.messages.length > 0) {
+        const historyMsgs: Message[] = res.messages.map((item: any) => {
+          let mediaItems: MediaAttachment[] | undefined = undefined;
+          if (item.attachments && Array.isArray(item.attachments) && item.attachments.length > 0) {
+            mediaItems = item.attachments.map((att: any) => {
+              const localData = att.local_id ? getFileFromLocalStorage(att.local_id) : null;
+              return {
+                id: att.local_id || att.id,
+                name: att.name || 'Lampiran',
+                type: att.type || (att.name?.endsWith('.pdf') ? 'document' : 'image'),
+                size: att.size || 0,
+                url: localData?.base64 || '',
+                textContent: att.textContent,
+                pageCount: att.pageCount
+              };
+            });
+          }
+          return {
+            id: item.id?.toString() || Date.now().toString() + Math.random(),
+            role: (item.sender === 'assistant' || item.sender === 'model') ? 'model' : 'user',
+            text: item.content || '',
+            media: mediaItems
+          };
+        });
         
         setMessages((prev) => {
           if (prev.length === 0) return historyMsgs;
           return mergeWithoutDuplicates(prev, historyMsgs);
         });
+      } else {
+        // Fallback ke tabel legacy jika ada
+        loadChatHistory(convId).then((data) => {
+          if (data && data.length > 0) {
+            const legacyMsgs: Message[] = data.map((item: any) => ({
+              id: item.id?.toString() || Date.now().toString() + Math.random(),
+              role: (item.role === 'assistant' || item.role === 'model') ? 'model' : 'user',
+              text: item.content || item.text || '',
+            }));
+            
+            setMessages((prev) => {
+              if (prev.length === 0) return legacyMsgs;
+              return mergeWithoutDuplicates(prev, legacyMsgs);
+            });
+          }
+        }).catch(() => {});
       }
     }).catch((e) => {
       console.warn("Gagal memuat histori dari Supabase:", e);
@@ -1700,11 +1734,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           model: selectedModel
         };
         currentSessions = [newSession, ...currentSessions];
-
-        // Buat sesi baru di tabel session_bluefox di Supabase
-        createNewSession(userText || 'Percakapan Baru', effectiveConvId).catch(err => {
-          console.warn("Gagal createNewSession di session_bluefox:", err);
-        });
       } else {
         currentSessions[sessionIdx] = {
           ...currentSessions[sessionIdx],
@@ -1715,12 +1744,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       
       saveSessionsToLocal(currentSessions);
 
-      // Simpan langsung pesan pengguna ke Supabase database (message_bluefox & messages)
-      saveMessage(effectiveConvId, 'user', userText, attachmentMetadata).catch(err => {
-        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan pengguna:", err);
-      });
+      // 1. Pastikan sesi sudah dibuat di tabel session_bluefox sebelum pesan disimpan
+      try {
+        await createNewSession(userText || 'Percakapan Baru', effectiveConvId);
+      } catch (err) {
+        console.warn("Info createNewSession di session_bluefox:", err);
+      }
+
+      // 2. Simpan pesan pengguna ke tabel message_bluefox di Supabase
+      try {
+        await saveMessage(effectiveConvId, 'user', userText, attachmentMetadata);
+      } catch (err) {
+        console.warn("Info saveMessage pengguna ke message_bluefox:", err);
+      }
+
+      // Kompatibilitas backup
       sendMessageToSupabase(userText, effectiveConvId, 'user').catch(err => {
-        console.warn("⚠️ [Supabase] Info simpan pesan pengguna:", err);
+        console.warn("Info sendMessageToSupabase pengguna:", err);
       });
 
       abortControllerRef.current = new AbortController();
