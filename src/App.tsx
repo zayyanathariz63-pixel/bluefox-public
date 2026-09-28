@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Connector, MediaAttachment, ChatSession, SearchSource } from './types';
 import { ChatMessage } from './components/ChatMessage';
 import { ChatInput } from './components/ChatInput';
@@ -34,11 +34,14 @@ import {
   invokeBluefoxProcessor,
   DEFAULT_MODELS,
   createNewSession,
+  fetchUserSessions,
   getUserSessions,
   saveChatTurn,
+  sendChatMessage,
   saveMessage,
   loadChatSession,
   loadChatMessages,
+  openChatRoom,
   getAllSessions,
   deleteChatSession,
   deleteSessionById,
@@ -515,6 +518,56 @@ export default function App() {
     setAppState('landing');
   };
 
+  // Sinkronisasi Sesi & Seluruh Isi Chat Lintas Perangkat langsung dari Supabase
+  const syncSessionsFromSupabase = useCallback(async (preferredSessionId?: string | null) => {
+    try {
+      const dbSessions = await fetchUserSessions();
+      if (dbSessions && dbSessions.length > 0) {
+        const formatted: ChatSession[] = dbSessions.map((s: any) => ({
+          id: s.id,
+          title: s.title || 'Percakapan',
+          messages: [],
+          updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now(),
+          model: 'agnes-2.5-flash',
+          isPinned: false
+        }));
+
+        setChatSessions((prev) => {
+          const pinnedMap = new Map(prev.filter(p => p.isPinned).map(p => [p.id, true]));
+          const combined = formatted.map(f => ({
+            ...f,
+            isPinned: pinnedMap.has(f.id)
+          }));
+          return sortSessions(combined);
+        });
+
+        // Tentukan sesi yang akan dibuka di UI:
+        const savedLastId = typeof window !== 'undefined' ? localStorage.getItem('tmpa_last_active_session_id') : null;
+        const targetId = (preferredSessionId && dbSessions.some((s: any) => s.id === preferredSessionId))
+          ? preferredSessionId
+          : (currentSessionId && dbSessions.some((s: any) => s.id === currentSessionId))
+            ? currentSessionId
+            : (savedLastId && dbSessions.some((s: any) => s.id === savedLastId))
+              ? savedLastId
+              : dbSessions[0].id;
+
+        if (targetId) {
+          setCurrentSessionId(targetId);
+          try {
+            localStorage.setItem('tmpa_last_active_session_id', targetId);
+          } catch {}
+
+          // Tarik SELURUH baris pesan dari Supabase untuk sesi ini (lintas perangkat)
+          const rawMessages = await openChatRoom(targetId);
+          const hydrated = parseBluefoxMessages(rawMessages);
+          setMessages(hydrated);
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal sinkronisasi sesi dari Supabase:", err);
+    }
+  }, [currentSessionId]);
+
   useEffect(() => {
     initTheme();
     const saved = localStorage.getItem('tmpa_chat_sessions');
@@ -527,28 +580,7 @@ export default function App() {
     }
 
     // Muat daftar sesi dari database Supabase (tabel session_bluefox milik user)
-    getUserSessions().then((dbSessions) => {
-      if (dbSessions && dbSessions.length > 0) {
-        const formatted: ChatSession[] = dbSessions.map((s: any) => ({
-          id: s.id,
-          title: s.title || 'Percakapan',
-          messages: [],
-          updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now(),
-          model: 'agnes-2.5-flash',
-          isPinned: false
-        }));
-        setChatSessions((prev) => {
-          const pinnedMap = new Map(prev.filter(p => p.isPinned).map(p => [p.id, true]));
-          const combined = formatted.map(f => ({
-            ...f,
-            isPinned: pinnedMap.has(f.id)
-          }));
-          return sortSessions(combined);
-        });
-      }
-    }).catch(err => {
-      console.warn("Gagal memuat sesi dari session_bluefox:", err);
-    });
+    syncSessionsFromSupabase();
 
     const savedInstruction = localStorage.getItem('tmpa_custom_instruction');
     if (savedInstruction) {
@@ -947,8 +979,9 @@ export default function App() {
         }
       };
       fetchTierAndLimits();
+      syncSessionsFromSupabase();
     }
-  }, [user]);
+  }, [user, syncSessionsFromSupabase]);
 
   const handleCustomInstructionChange = (val: string) => {
     setCustomInstruction(val);
@@ -1078,9 +1111,10 @@ export default function App() {
     setContextMenuSession(null);
   };
 
-  const handleDeleteChatSession = (session: ChatSession) => {
-    deleteSessionById(session.id).catch(e => console.warn("deleteSessionById error:", e));
+  const handleDeleteChatSession = async (session: ChatSession) => {
+    await deleteSessionById(session.id);
     const updatedSessions = chatSessions.filter(s => s.id !== session.id);
+    setChatSessions(updatedSessions);
     saveSessionsToLocal(updatedSessions);
     if (currentSessionId === session.id) {
       setMessages([]);
@@ -1129,16 +1163,14 @@ export default function App() {
       localStorage.setItem('tmpa_last_active_session_id', sessionId);
     } catch {}
 
-    // 1. Muat percakapan dari Supabase database (session_bluefox & message_bluefox)
+    // 1. Bersihkan layar UI chat dan TAMPILKAN ulang seluruh data dari Supabase
     try {
-      const dbMsgs = await loadChatSession(sessionId);
+      const dbMsgs = await openChatRoom(sessionId);
       const hydratedMessages = parseBluefoxMessages(dbMsgs);
-      if (hydratedMessages && hydratedMessages.length > 0) {
-        setMessages(hydratedMessages);
-        return;
-      }
+      setMessages(hydratedMessages);
+      return;
     } catch (err) {
-      console.warn("Gagal loadChatSession dari Supabase:", err);
+      console.warn("Gagal openChatRoom dari Supabase:", err);
     }
 
     // Fallback jika sudah ada di cache lokal
@@ -1762,17 +1794,22 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       saveSessionsToLocal(currentSessions);
 
       // 1. Pastikan sesi sudah dibuat di tabel session_bluefox sebelum pesan disimpan
-      try {
-        const sessionResult = await createNewSession(userText || 'Percakapan Baru', effectiveConvId);
-        if (sessionResult && sessionResult.id) {
-          effectiveConvId = sessionResult.id;
-          setCurrentSessionId(sessionResult.id);
-          try {
-            localStorage.setItem('tmpa_last_active_session_id', sessionResult.id);
-          } catch {}
+      if (!currentSessionId) {
+        try {
+          const sessionTitle = userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Percakapan Baru');
+          const sessionResult = await createNewSession(sessionTitle);
+          if (sessionResult && sessionResult.id) {
+            effectiveConvId = sessionResult.id;
+            setCurrentSessionId(sessionResult.id);
+            try {
+              localStorage.setItem('tmpa_last_active_session_id', sessionResult.id);
+            } catch {}
+          }
+        } catch (err) {
+          console.warn("Info createNewSession di session_bluefox:", err);
         }
-      } catch (err) {
-        console.warn("Info createNewSession di session_bluefox:", err);
+      } else {
+        effectiveConvId = currentSessionId;
       }
 
       // Kompatibilitas backup

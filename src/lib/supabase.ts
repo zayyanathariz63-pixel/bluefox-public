@@ -167,6 +167,13 @@ export async function getLoggedInUser() {
   }
 }
 
+// State global untuk menyimpan ID sesi yang sedang aktif di UI
+export let currentSessionId: string | null = null;
+
+export function setCurrentSessionId(id: string | null) {
+  currentSessionId = id;
+}
+
 // -------------------------------------------------------------
 // B. Manajemen Sesi Percakapan (Sesuai User ID)
 // -------------------------------------------------------------
@@ -175,7 +182,7 @@ export async function getLoggedInUser() {
 export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
   const user = await getLoggedInUser();
   if (!user) {
-    console.warn('Pengguna belum login saat membuat sesi baru.');
+    console.error('User belum terautentikasi.');
     return null;
   }
 
@@ -194,6 +201,7 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
         .maybeSingle();
 
       if (existing) {
+        currentSessionId = existing.id;
         return existing;
       }
 
@@ -204,6 +212,7 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
         .maybeSingle();
 
       if (!insertError && inserted) {
+        currentSessionId = inserted.id;
         return inserted;
       }
     } catch (e) {
@@ -211,6 +220,7 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
     }
   }
 
+  // PENTING: Biarkan Supabase dan PostgreSQL yang membuat nilai id baru secara otomatis menggunakan gen_random_uuid()
   const { data, error } = await supabase
     .from('session_bluefox')
     .insert([{ 
@@ -224,25 +234,31 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
     console.error('Gagal membuat sesi baru:', error.message);
     return null;
   }
-  return data;
+
+  // Set ID Sesi baru ke state aktif
+  if (data?.id) {
+    currentSessionId = data.id;
+  }
+  return data; // Object sesi baru beserta ID UUID-nya
 }
 
 // 2. Ambil Semua Daftar Sesi Milik User (Untuk Pindah Perangkat / Sidebar)
-export async function getUserSessions() {
+export async function fetchUserSessions() {
   const { data, error } = await supabase
     .from('session_bluefox')
     .select('*')
     .order('updated_at', { ascending: false });
 
   if (error) {
-    console.error('Gagal memuat daftar sesi:', error.message);
+    console.error('Gagal mengambil daftar sesi:', error.message);
     return [];
   }
-  return data || [];
+  return data || []; // Mengembalikan array daftar sesi [{ id, title, updated_at }, ...]
 }
 
-// Alias getAllSessions untuk kompatibilitas penuh dengan kode eksisting
-export const getAllSessions = getUserSessions;
+// Alias untuk kompatibilitas penuh dengan kode eksisting
+export const getUserSessions = fetchUserSessions;
+export const getAllSessions = fetchUserSessions;
 
 // -------------------------------------------------------------
 // C. Fitur Hapus Sesi (Otomatis Menghapus Seluruh Pesan di Dalamnya)
@@ -250,6 +266,11 @@ export const getAllSessions = getUserSessions;
 
 // Hapus Sesi Berdasarkan ID (Sangat Direkomendasikan)
 export async function deleteSessionById(sessionId: string) {
+  if (!sessionId) {
+    console.error('ID Sesi wajib disertakan untuk menghapus.');
+    return false;
+  }
+
   const validSessionId = getValidUUID(sessionId);
   try {
     await supabase
@@ -258,16 +279,23 @@ export async function deleteSessionById(sessionId: string) {
       .eq('session_id', validSessionId);
   } catch {}
 
+  // Menghapus baris pada session_bluefox berdasarkan ID uniknya
   const { error } = await supabase
     .from('session_bluefox')
     .delete()
-    .eq('id', validSessionId);
+    .eq('id', validSessionId); // Kunci keamanan: Cocokkan ID Sesi secara pasti
 
   if (error) {
     console.error('Gagal menghapus sesi:', error.message);
     return false;
   }
-  console.log('Sesi beserta seluruh pesannya berhasil dihapus.');
+
+  // Jika sesi yang dihapus adalah sesi yang sedang dibuka di layar, kosongkan state & UI
+  if (currentSessionId === validSessionId) {
+    currentSessionId = null;
+  }
+
+  console.log(`Sesi dengan ID ${validSessionId} dan seluruh pesannya berhasil dihapus.`);
   return true;
 }
 
@@ -317,6 +345,7 @@ export async function saveChatTurn(
   attachmentMetadata: any[] = []
 ) {
   const validSessionId = getValidUUID(sessionId);
+  currentSessionId = validSessionId;
 
   // Pastikan sesi ada di session_bluefox sebelum insert message untuk menghindari Foreign Key error
   try {
@@ -347,11 +376,13 @@ export async function saveChatTurn(
     console.warn("Memastikan session_bluefox:", sessErr);
   }
 
+  // PENTING: Jangan masukkan 'id' di dalam object ini.
+  // Hanya masukkan session_id, user_message, ai_response, dan attachments.
   const { data, error } = await supabase
     .from('message_bluefox')
     .insert([
       {
-        session_id: validSessionId,
+        session_id: validSessionId, // ID Sesi tempat pesan ini berada
         user_message: userMessage,
         ai_response: aiResponse,
         attachments: attachmentMetadata || []
@@ -360,9 +391,11 @@ export async function saveChatTurn(
     .select();
 
   if (error) {
-    console.error('Gagal menyimpan percakapan:', error.message);
+    console.error('Gagal menyimpan baris percakapan:', error.message);
     return null;
   }
+
+  console.log('Baris percakapan baru berhasil ditambahkan:', data);
   
   // Perbarui timestamp sesi
   await supabase
@@ -371,6 +404,16 @@ export async function saveChatTurn(
     .eq('id', validSessionId);
 
   return data;
+}
+
+// Menyimpan Pesan Baru ke Sesi yang Sedang Aktif
+export async function sendChatMessage(userMessageText: string, aiResponseText: string, attachmentMetadata: any[] = []) {
+  if (!currentSessionId) {
+    console.error('Tidak ada sesi yang aktif! Buat atau pilih sesi terlebih dahulu.');
+    return null;
+  }
+
+  return saveChatTurn(currentSessionId, userMessageText, aiResponseText, attachmentMetadata);
 }
 
 // Kompatibilitas alias untuk saveMessage
@@ -386,14 +429,17 @@ export async function saveMessage(
   return saveChatTurn(sessionId, content, '', attachmentMetadata);
 }
 
-// Memuat Isi Chat Saat Sesi Dipilih
-export async function loadChatMessages(sessionId: string) {
+// Memuat SELURUH Pesan Sesi (Saat Room Chat Dipilih / Pindah Perangkat)
+export async function openChatRoom(sessionId: string) {
   const validSessionId = getValidUUID(sessionId);
-  const { data, error } = await supabase
+  currentSessionId = validSessionId;
+
+  // Ambil SELURUH baris pesan dari Supabase berdasarkan ID Sesi ini
+  const { data: messages, error } = await supabase
     .from('message_bluefox')
     .select('*')
     .eq('session_id', validSessionId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }); // Mengurutkan dari pesan pertama hingga terbaru
 
   if (error) {
     console.error('Gagal memuat isi pesan:', error.message);
@@ -402,13 +448,14 @@ export async function loadChatMessages(sessionId: string) {
     return empty;
   }
 
-  const result: any = data || [];
+  const result: any = messages || [];
   result.messages = result; // Dukungan kompatibilitas ganda (array langsung dan destructuring { messages })
   return result;
 }
 
-// Alias loadChatSession untuk kompatibilitas penuh dengan kode eksisting
-export const loadChatSession = loadChatMessages;
+// Alias untuk kompatibilitas penuh dengan kode eksisting
+export const loadChatMessages = openChatRoom;
+export const loadChatSession = openChatRoom;
 
 // 6. Memperbarui Judul Sesi Percakapan di session_bluefox
 export async function updateSessionTitleInSupabase(sessionId: string, newTitle: string) {
