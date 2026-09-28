@@ -181,16 +181,23 @@ export function setCurrentSessionId(id: string | null) {
 // 1. Buat Sesi Baru untuk User yang Login
 export async function createNewSession(firstPrompt: string = 'Percakapan Baru', customId?: string) {
   const user = await getLoggedInUser();
-  if (!user) {
-    console.error('User belum terautentikasi.');
-    return null;
-  }
-
   const title = (firstPrompt && firstPrompt.trim())
     ? (firstPrompt.length > 30 ? firstPrompt.substring(0, 30) + '...' : firstPrompt)
     : 'Percakapan Baru';
 
   const validId = customId ? getValidUUID(customId) : undefined;
+
+  if (!user) {
+    console.warn('User belum terautentikasi di Supabase. Menggunakan sesi lokal.');
+    const fallbackId = validId || getValidUUID(null);
+    currentSessionId = fallbackId;
+    return {
+      id: fallbackId,
+      title,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+  }
   
   if (validId) {
     try {
@@ -231,8 +238,15 @@ export async function createNewSession(firstPrompt: string = 'Percakapan Baru', 
     .single();
 
   if (error) {
-    console.error('Gagal membuat sesi baru:', error.message);
-    return null;
+    console.error('Gagal membuat sesi baru di Supabase, fallback lokal:', error.message);
+    const fallbackId = validId || getValidUUID(null);
+    currentSessionId = fallbackId;
+    return {
+      id: fallbackId,
+      title,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
   }
 
   // Set ID Sesi baru ke state aktif
@@ -391,8 +405,15 @@ export async function saveChatTurn(
     .select();
 
   if (error) {
-    console.error('Gagal menyimpan baris percakapan:', error.message);
-    return null;
+    console.warn('Info simpan baris percakapan ke Supabase (tersimpan di lokal):', error.message);
+    return [
+      {
+        session_id: validSessionId,
+        user_message: userMessage,
+        ai_response: aiResponse,
+        attachments: attachmentMetadata || []
+      }
+    ];
   }
 
   console.log('Baris percakapan baru berhasil ditambahkan:', data);

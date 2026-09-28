@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -46,7 +46,8 @@ import {
   deleteChatSession,
   deleteSessionById,
   deleteSessionByTitle,
-  getLoggedInUser
+  getLoggedInUser,
+  setCurrentSessionId as setSupabaseSessionId
 } from './lib/supabase';
 import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
@@ -180,13 +181,6 @@ export default function App() {
     if (typeof window !== 'undefined') {
       const lastId = localStorage.getItem('tmpa_last_active_session_id');
       if (lastId) return lastId;
-      try {
-        const saved = localStorage.getItem('tmpa_chat_sessions');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.length > 0) return parsed[0].id;
-        }
-      } catch {}
     }
     return null;
   });
@@ -196,11 +190,13 @@ export default function App() {
     if (typeof window !== 'undefined') {
       try {
         const lastId = localStorage.getItem('tmpa_last_active_session_id');
-        const saved = localStorage.getItem('tmpa_chat_sessions');
-        if (saved) {
-          const sessions: ChatSession[] = JSON.parse(saved);
-          const active = sessions.find(s => s.id === lastId) || sessions[0];
-          if (active && active.messages) return active.messages;
+        if (lastId) {
+          const saved = localStorage.getItem('tmpa_chat_sessions');
+          if (saved) {
+            const sessions: ChatSession[] = JSON.parse(saved);
+            const active = sessions.find(s => s.id === lastId);
+            if (active && active.messages) return active.messages;
+          }
         }
       } catch {}
     }
@@ -501,11 +497,8 @@ export default function App() {
       }
     }
 
-    // Navigasi internal untuk preview / local env
-    try {
-      window.history.pushState(null, '', '/verify');
-    } catch {}
-    setAppState('verify');
+    // Lingkungan preview / local dev: langsung masuk ke chat
+    setAppState('chat');
   };
 
   const handleLogout = async () => {
@@ -518,8 +511,91 @@ export default function App() {
     setAppState('landing');
   };
 
-  // Sinkronisasi Sesi & Seluruh Isi Chat Lintas Perangkat langsung dari Supabase
-  const syncSessionsFromSupabase = useCallback(async (preferredSessionId?: string | null) => {
+  const sortSessions = (sessions: ChatSession[]) => {
+    return [...sessions].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+  };
+
+  const saveSessionsToLocal = (sessions: ChatSession[]) => {
+    const sorted = sortSessions(sessions);
+    setChatSessions(sorted);
+    safeSaveSessionsToLocal(sorted);
+  };
+
+  const startNewChat = () => {
+    // 1. Hentikan pemrosesan AI jika sedang berjalan
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isUserStoppedRef.current = true;
+    if (typewriterIntervalRef.current) {
+      clearInterval(typewriterIntervalRef.current);
+      typewriterIntervalRef.current = null;
+    }
+    setIsLoading(false);
+    setErrorState(null);
+
+    // 2. Kosongkan riwayat percakapan dan reset ID sesi
+    setMessages([]);
+    setCurrentSessionId(null);
+    setSupabaseSessionId(null);
+
+    // 3. Bersihkan cache sesi aktif di localStorage
+    try {
+      localStorage.removeItem('tmpa_last_active_session_id');
+    } catch {}
+
+    // 4. Tutup sidebar
+    setIsSidebarOpen(false);
+  };
+
+  const loadSession = async (sessionId: string) => {
+    if (!sessionId) return;
+    setIsSidebarOpen(false);
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setErrorState(null);
+
+    setCurrentSessionId(sessionId);
+    setSupabaseSessionId(sessionId);
+    try {
+      localStorage.setItem('tmpa_last_active_session_id', sessionId);
+    } catch {}
+
+    // 1. Bersihkan layar UI chat dan TAMPILKAN ulang seluruh data dari Supabase
+    try {
+      const dbMsgs = await openChatRoom(sessionId);
+      const hydratedMessages = parseBluefoxMessages(dbMsgs);
+      if (hydratedMessages && hydratedMessages.length > 0) {
+        setMessages(hydratedMessages);
+        return;
+      }
+    } catch (err) {
+      console.warn("Gagal openChatRoom dari Supabase:", err);
+    }
+
+    // Fallback jika sudah ada di cache lokal
+    const session = chatSessions.find(s => s.id === sessionId);
+    if (session && session.messages && session.messages.length > 0) {
+      setMessages(session.messages);
+      if (session.model) {
+        setSelectedModel(session.model as any);
+      }
+    } else {
+      setMessages([]);
+    }
+  };
+
+  // Sinkronisasi Sesi & Seluruh Isi Chat Lintas Perangkat langsung dari Supabase (tanpa membajak room aktif)
+  const syncSessionsFromSupabase = useCallback(async (options?: { preferredSessionId?: string | null; isInitialMount?: boolean }) => {
     try {
       const dbSessions = await fetchUserSessions();
       if (dbSessions && dbSessions.length > 0) {
@@ -534,39 +610,29 @@ export default function App() {
 
         setChatSessions((prev) => {
           const pinnedMap = new Map(prev.filter(p => p.isPinned).map(p => [p.id, true]));
+          const prevMessagesMap = new Map(prev.map(p => [p.id, p.messages || []]));
           const combined = formatted.map(f => ({
             ...f,
-            isPinned: pinnedMap.has(f.id)
+            isPinned: pinnedMap.has(f.id),
+            messages: prevMessagesMap.get(f.id) || []
           }));
           return sortSessions(combined);
         });
 
-        // Tentukan sesi yang akan dibuka di UI:
-        const savedLastId = typeof window !== 'undefined' ? localStorage.getItem('tmpa_last_active_session_id') : null;
-        const targetId = (preferredSessionId && dbSessions.some((s: any) => s.id === preferredSessionId))
-          ? preferredSessionId
-          : (currentSessionId && dbSessions.some((s: any) => s.id === currentSessionId))
-            ? currentSessionId
-            : (savedLastId && dbSessions.some((s: any) => s.id === savedLastId))
-              ? savedLastId
-              : dbSessions[0].id;
-
-        if (targetId) {
-          setCurrentSessionId(targetId);
-          try {
-            localStorage.setItem('tmpa_last_active_session_id', targetId);
-          } catch {}
-
-          // Tarik SELURUH baris pesan dari Supabase untuk sesi ini (lintas perangkat)
-          const rawMessages = await openChatRoom(targetId);
-          const hydrated = parseBluefoxMessages(rawMessages);
-          setMessages(hydrated);
+        // Buka sesi HANYA jika diminta secara eksplisit via preferredSessionId ATAU saat pertama kali aplikasi dibuka dengan sesi tersimpan
+        if (options?.preferredSessionId && dbSessions.some((s: any) => s.id === options.preferredSessionId)) {
+          await loadSession(options.preferredSessionId);
+        } else if (options?.isInitialMount) {
+          const savedLastId = typeof window !== 'undefined' ? localStorage.getItem('tmpa_last_active_session_id') : null;
+          if (savedLastId && dbSessions.some((s: any) => s.id === savedLastId)) {
+            await loadSession(savedLastId);
+          }
         }
       }
     } catch (err) {
       console.warn("Gagal sinkronisasi sesi dari Supabase:", err);
     }
-  }, [currentSessionId]);
+  }, []);
 
   useEffect(() => {
     initTheme();
@@ -580,7 +646,7 @@ export default function App() {
     }
 
     // Muat daftar sesi dari database Supabase (tabel session_bluefox milik user)
-    syncSessionsFromSupabase();
+    syncSessionsFromSupabase({ isInitialMount: true });
 
     const savedInstruction = localStorage.getItem('tmpa_custom_instruction');
     if (savedInstruction) {
@@ -1086,20 +1152,6 @@ export default function App() {
     };
   }, [appState, currentSessionId]);
 
-  const sortSessions = (sessions: ChatSession[]) => {
-    return [...sessions].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      return (b.updatedAt || 0) - (a.updatedAt || 0);
-    });
-  };
-
-  const saveSessionsToLocal = (sessions: ChatSession[]) => {
-    const sorted = sortSessions(sessions);
-    setChatSessions(sorted);
-    safeSaveSessionsToLocal(sorted);
-  };
-
   const handleTogglePinChat = (session: ChatSession) => {
     const isCurrentlyPinned = Boolean(session.isPinned);
     const updatedSessions = chatSessions.map(s => 
@@ -1117,11 +1169,7 @@ export default function App() {
     setChatSessions(updatedSessions);
     saveSessionsToLocal(updatedSessions);
     if (currentSessionId === session.id) {
-      setMessages([]);
-      setCurrentSessionId(null);
-      try {
-        localStorage.removeItem('tmpa_last_active_session_id');
-      } catch {}
+      startNewChat();
     }
     setShowActionToast(t.chatDeleted);
     setTimeout(() => setShowActionToast(null), 2500);
@@ -1144,40 +1192,6 @@ export default function App() {
     if (longPressTimeoutRef.current) {
       clearTimeout(longPressTimeoutRef.current);
       longPressTimeoutRef.current = null;
-    }
-  };
-
-  const startNewChat = () => {
-    setMessages([]);
-    setCurrentSessionId(null);
-    try {
-      localStorage.removeItem('tmpa_last_active_session_id');
-    } catch {}
-    setIsSidebarOpen(false);
-  };
-
-  const loadSession = async (sessionId: string) => {
-    setIsSidebarOpen(false);
-    setCurrentSessionId(sessionId);
-    try {
-      localStorage.setItem('tmpa_last_active_session_id', sessionId);
-    } catch {}
-
-    // 1. Bersihkan layar UI chat dan TAMPILKAN ulang seluruh data dari Supabase
-    try {
-      const dbMsgs = await openChatRoom(sessionId);
-      const hydratedMessages = parseBluefoxMessages(dbMsgs);
-      setMessages(hydratedMessages);
-      return;
-    } catch (err) {
-      console.warn("Gagal openChatRoom dari Supabase:", err);
-    }
-
-    // Fallback jika sudah ada di cache lokal
-    const session = chatSessions.find(s => s.id === sessionId);
-    if (session && session.messages) {
-      setMessages(session.messages);
-      setSelectedModel(session.model as any);
     }
   };
 
@@ -1769,15 +1783,32 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       // Pastikan sessionId konsisten untuk seluruh percakapan aktif
       if (!currentSessionId) {
+        try {
+          const sessionTitle = userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Percakapan Baru');
+          const sessionResult = await createNewSession(sessionTitle, effectiveConvId);
+          if (sessionResult && sessionResult.id) {
+            effectiveConvId = sessionResult.id;
+          }
+        } catch (err) {
+          console.warn("Info createNewSession di session_bluefox:", err);
+        }
+
         setCurrentSessionId(effectiveConvId);
+        setSupabaseSessionId(effectiveConvId);
+        try {
+          localStorage.setItem('tmpa_last_active_session_id', effectiveConvId);
+        } catch {}
+      } else {
+        effectiveConvId = currentSessionId;
       }
 
       let currentSessions = [...chatSessions];
       const sessionIdx = currentSessions.findIndex(s => s.id === effectiveConvId);
       if (sessionIdx === -1) {
+        const sessionTitle = userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Percakapan Baru');
         const newSession = {
           id: effectiveConvId,
-          title: userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Lampiran Media'),
+          title: sessionTitle,
           messages: updatedMessages,
           updatedAt: Date.now(),
           model: selectedModel
@@ -1792,25 +1823,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
       
       saveSessionsToLocal(currentSessions);
-
-      // 1. Pastikan sesi sudah dibuat di tabel session_bluefox sebelum pesan disimpan
-      if (!currentSessionId) {
-        try {
-          const sessionTitle = userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Percakapan Baru');
-          const sessionResult = await createNewSession(sessionTitle);
-          if (sessionResult && sessionResult.id) {
-            effectiveConvId = sessionResult.id;
-            setCurrentSessionId(sessionResult.id);
-            try {
-              localStorage.setItem('tmpa_last_active_session_id', sessionResult.id);
-            } catch {}
-          }
-        } catch (err) {
-          console.warn("Info createNewSession di session_bluefox:", err);
-        }
-      } else {
-        effectiveConvId = currentSessionId;
-      }
 
       // Kompatibilitas backup
       sendMessageToSupabase(userText, effectiveConvId, 'user').catch(err => {
@@ -2241,16 +2253,53 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         sources: attachedSources.length > 0 ? attachedSources : undefined,
       }];
 
-      const updateIdx = currentSessions.findIndex(s => s.id === effectiveConvId);
-      if (updateIdx !== -1) {
-        currentSessions[updateIdx] = {
-          ...currentSessions[updateIdx],
-          id: effectiveConvId,
-          messages: finalMessages,
-          updatedAt: Date.now()
-        };
-        saveSessionsToLocal([...currentSessions]);
-      }
+      setChatSessions(prev => {
+        const next = [...prev];
+        const updateIdx = next.findIndex(s => s.id === effectiveConvId);
+        if (updateIdx !== -1) {
+          next[updateIdx] = {
+            ...next[updateIdx],
+            id: effectiveConvId,
+            messages: finalMessages,
+            updatedAt: Date.now()
+          };
+        } else {
+          next.unshift({
+            id: effectiveConvId,
+            title: userText.length > 30 ? userText.substring(0, 30) + '...' : userText,
+            messages: finalMessages,
+            updatedAt: Date.now(),
+            model: selectedModel
+          });
+        }
+        saveSessionsToLocal(next);
+        return next;
+      });
+
+      // Sinkronisasi ringan daftar sesi untuk memperbarui judul di sidebar tanpa mengganggu chat aktif
+      fetchUserSessions().then((dbSessions) => {
+        if (dbSessions && dbSessions.length > 0) {
+          const formatted: ChatSession[] = dbSessions.map((s: any) => ({
+            id: s.id,
+            title: s.title || 'Percakapan',
+            messages: s.id === effectiveConvId ? finalMessages : [],
+            updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now(),
+            model: 'agnes-2.5-flash',
+            isPinned: false
+          }));
+
+          setChatSessions((prev) => {
+            const pinnedMap = new Map(prev.filter(p => p.isPinned).map(p => [p.id, true]));
+            const prevMessagesMap = new Map(prev.map(p => [p.id, p.messages || []]));
+            const combined = formatted.map(f => ({
+              ...f,
+              isPinned: pinnedMap.has(f.id),
+              messages: f.id === effectiveConvId ? finalMessages : (prevMessagesMap.get(f.id) || [])
+            }));
+            return sortSessions(combined);
+          });
+        }
+      }).catch(() => {});
     } catch (err: any) {
       if (err.name === 'AbortError') {
         if (isUserStoppedRef.current) {
@@ -2463,12 +2512,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         {/* Header */}
       <header className="sticky top-0 z-20 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-xs">
         <div className="max-w-5xl mx-auto px-3 md:px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center">
+          <div className="flex items-center gap-1">
             <button 
               onClick={() => setIsSidebarOpen(true)}
               className="w-10 h-10 -ml-2 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              title={lang === 'id' ? "Buka Menu & Riwayat" : "Open Menu"}
             >
               <Menu size={20} />
+            </button>
+            <button 
+              onClick={startNewChat}
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              title={lang === 'id' ? "Percakapan Baru" : "New Chat"}
+            >
+              <SquarePen size={18} />
             </button>
           </div>
 
@@ -2710,6 +2767,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 </button>
 
                 <div className="space-y-1 mb-3">
+                  <button 
+                    onClick={() => { setAppState('landing'); setIsSidebarOpen(false); }}
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <Home size={18} className="text-slate-600" />
+                    <span>{lang === 'id' ? 'Halaman Utama' : 'Home'}</span>
+                  </button>
+
                   <button 
                     onClick={() => { window.location.href = "https://tmpa.my.id"; }}
                     className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
