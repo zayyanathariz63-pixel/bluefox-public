@@ -4,7 +4,7 @@ import {
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
-  HardDrive, AlertTriangle
+  HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
@@ -34,6 +34,13 @@ import {
   isSelfHostedProvider,
   getProviderPreset
 } from '../lib/customApi';
+import { BluefoxCustomApi } from '../types';
+import { 
+  getUserCustomApis, 
+  saveUserCustomApi, 
+  deleteUserCustomApi, 
+  getUserCustomApiDailyUsage 
+} from '../lib/bluefoxCustomApi';
 import { UserGradientAvatar } from './UserGradientAvatar';
 
 interface SettingsModalProps {
@@ -50,6 +57,7 @@ interface SettingsModalProps {
   onDeleteAccount?: () => void;
   user?: any;
   userTier?: string;
+  onOpenCustomGenerate?: (prompt?: string, type?: 'image' | 'video') => void;
 }
 
 type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete';
@@ -67,7 +75,8 @@ export function SettingsModal({
   onClearAllSessions,
   onDeleteAccount,
   user,
-  userTier
+  userTier,
+  onOpenCustomGenerate
 }: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
@@ -86,19 +95,88 @@ export function SettingsModal({
   }>({ isOpen: false, type: null });
   const [isExecutingDelete, setIsExecutingDelete] = useState(false);
 
-  // Custom API states
+  // Custom API states (Chat / LLM)
+  const [customApiTab, setCustomApiTab] = useState<'media' | 'chat'>('media');
   const [customApis, setCustomApis] = useState<CustomApiKey[]>(() => getCustomApis());
   const [customUsage, setCustomUsage] = useState<CustomApiUsageStats>(() => getCustomApiUsageStats());
   const [isAddFormOpen, setIsAddFormOpen] = useState(false);
   const [visibleKeyIds, setVisibleKeyIds] = useState<Record<string, boolean>>({});
 
-  // Form input states
+  // Form input states (Chat / LLM)
   const [formName, setFormName] = useState('');
   const [formProvider, setFormProvider] = useState('OpenAI');
   const [formBaseUrl, setFormBaseUrl] = useState('https://api.openai.com/v1');
   const [formApiKey, setFormApiKey] = useState('');
   const [formModel, setFormModel] = useState('');
   const [formIsActive, setFormIsActive] = useState(true);
+
+  // Media Custom API states (Supabase bluefox_custom_api table)
+  const [mediaApis, setMediaApis] = useState<BluefoxCustomApi[]>([]);
+  const [isLoadingMediaApis, setIsLoadingMediaApis] = useState(false);
+  const [mediaDailyUsage, setMediaDailyUsage] = useState({ usedToday: 0, dailyLimit: 100 });
+  const [isAddMediaFormOpen, setIsAddMediaFormOpen] = useState(false);
+  const [isSavingMediaApi, setIsSavingMediaApi] = useState(false);
+  const [mediaFormName, setMediaFormName] = useState('');
+  const [mediaFormType, setMediaFormType] = useState<'image' | 'video'>('image');
+  const [mediaFormEndpoint, setMediaFormEndpoint] = useState('');
+  const [mediaFormModelId, setMediaFormModelId] = useState('');
+  const [mediaFormApiKey, setMediaFormApiKey] = useState('');
+
+  const loadMediaApis = async () => {
+    setIsLoadingMediaApis(true);
+    try {
+      const [apis, usage] = await Promise.all([
+        getUserCustomApis(),
+        getUserCustomApiDailyUsage()
+      ]);
+      setMediaApis(apis);
+      setMediaDailyUsage(usage);
+    } finally {
+      setIsLoadingMediaApis(false);
+    }
+  };
+
+  const handleSaveMediaCustomApi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mediaFormName.trim() || !mediaFormEndpoint.trim() || !mediaFormModelId.trim() || !mediaFormApiKey.trim()) {
+      alert(lang === 'id' ? 'Semua kolom formulir wajib diisi.' : 'All form fields are required.');
+      return;
+    }
+
+    setIsSavingMediaApi(true);
+    try {
+      const res = await saveUserCustomApi({
+        name: mediaFormName.trim(),
+        apiType: mediaFormType,
+        endpointUrl: mediaFormEndpoint.trim(),
+        modelId: mediaFormModelId.trim(),
+        apiKey: mediaFormApiKey.trim()
+      });
+
+      if (res.success) {
+        showToast(lang === 'id' ? 'Custom API berhasil disimpan ke database!' : 'Custom API saved successfully!');
+        setMediaFormName('');
+        setMediaFormEndpoint('');
+        setMediaFormModelId('');
+        setMediaFormApiKey('');
+        setIsAddMediaFormOpen(false);
+        await loadMediaApis();
+      }
+    } finally {
+      setIsSavingMediaApi(false);
+    }
+  };
+
+  const handleDeleteMediaCustomApi = async (id: string, name: string) => {
+    const confirmDelete = window.confirm(lang === 'id' ? `Hapus Custom API "${name}"?` : `Delete Custom API "${name}"?`);
+    if (!confirmDelete) return;
+
+    const ok = await deleteUserCustomApi(id);
+    if (ok) {
+      showToast(lang === 'id' ? 'Custom API berhasil dihapus.' : 'Custom API deleted.');
+      await loadMediaApis();
+    }
+  };
 
   const selectedPreset = useMemo(() => {
     return getProviderPreset(formProvider) || PROVIDER_PRESETS[0];
@@ -142,6 +220,12 @@ export function SettingsModal({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isOpen && currentView === 'custom_api') {
+      loadMediaApis();
+    }
+  }, [isOpen, currentView]);
 
   const handleActionClick = (target: 'media' | 'sessions' | 'account') => {
     // Jika user klik lagi saat cooldown aktif, langsung buka popup konfirmasi
@@ -416,23 +500,24 @@ export function SettingsModal({
                   onClick={() => setCurrentView('custom_api')}
                   className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
                 >
-                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-emerald-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-emerald-50">
+                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-purple-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-purple-50">
                     <Key size={20} strokeWidth={2} />
                   </div>
                   <div className="flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-[17px] font-semibold text-slate-900">{t.customApi}</h3>
-                      <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                        {customApis.length}/10 API
+                      <span className="text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
+                        {mediaApis.length} Media API
                       </span>
-                      {customApis.some(a => a.isActive) && (
-                        <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.2 rounded font-mono">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          {t.active}
-                        </span>
-                      )}
+                      <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        {customApis.length} LLM API
+                      </span>
                     </div>
-                    <p className="text-sm text-slate-500 mt-0.5">{t.customApiDesc}</p>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {lang === 'id' 
+                        ? 'Konfigurasi API Gambar (SDXL), Video (Runway), dan Chat LLM ke Supabase' 
+                        : 'Configure Image (SDXL), Video (Runway), and Chat LLM APIs with Supabase'}
+                    </p>
                   </div>
                 </button>
 
@@ -1023,42 +1108,362 @@ export function SettingsModal({
                 {/* View E. CUSTOM API */}
                 {currentView === 'custom_api' && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
-                      <div>
-                        <div className="flex items-center gap-2.5">
-                          <h3 className="text-2xl font-bold text-slate-900">Custom API</h3>
-                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold">
-                            {customApis.length} / {MAX_CUSTOM_APIS} API
-                          </span>
-                        </div>
-                        <p className="text-slate-500 text-sm mt-1">
-                          {lang === 'id' 
-                            ? `Kelola hingga maksimal ${MAX_CUSTOM_APIS} API. Kartu hijau di sebelah kiri menandakan API aktif.`
-                            : `Manage up to ${MAX_CUSTOM_APIS} APIs. Green bar indicates active API.`}
-                        </p>
-                      </div>
-
+                    {/* Sub-Tab Navigation: Media (Image & Video) vs Chat (LLM) */}
+                    <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl border border-slate-200">
                       <button
-                        onClick={() => {
-                          if (customApis.length >= MAX_CUSTOM_APIS) {
-                            showToast(lang === 'id' ? `Maksimal ${MAX_CUSTOM_APIS} API telah tercapai!` : `Maximum of ${MAX_CUSTOM_APIS} APIs reached!`);
-                            return;
-                          }
-                          setIsAddFormOpen(prev => !prev);
-                        }}
+                        type="button"
+                        onClick={() => setCustomApiTab('media')}
                         className={cn(
-                          "flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition cursor-pointer whitespace-nowrap shadow-xs",
-                          customApis.length >= MAX_CUSTOM_APIS
-                            ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                            : isAddFormOpen 
-                              ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200" 
-                              : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                          "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs",
+                          customApiTab === 'media'
+                            ? "bg-white text-purple-700 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
                         )}
                       >
-                        <Plus size={18} className={isAddFormOpen ? "rotate-45 transition-transform" : "transition-transform"} />
-                        <span>{isAddFormOpen ? (lang === 'id' ? 'Tutup Formulir' : 'Close Form') : (lang === 'id' ? 'Tambah API Baru' : 'Add New API')}</span>
+                        <ImageIcon size={16} className={customApiTab === 'media' ? "text-purple-600" : "text-slate-400"} />
+                        <span>{lang === 'id' ? 'Gambar & Video (SDXL / Runway)' : 'Image & Video (SDXL / Runway)'}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          {mediaApis.length}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCustomApiTab('chat')}
+                        className={cn(
+                          "flex-1 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs",
+                          customApiTab === 'chat'
+                            ? "bg-white text-emerald-700 shadow-sm"
+                            : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                        )}
+                      >
+                        <Key size={16} className={customApiTab === 'chat' ? "text-emerald-600" : "text-slate-400"} />
+                        <span>{lang === 'id' ? 'Chat / LLM API (OpenAI, Groq)' : 'Chat / LLM API (OpenAI, Groq)'}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {customApis.length}
+                        </span>
                       </button>
                     </div>
+
+                    {/* ============================================================== */}
+                    {/* TAB 1: MEDIA CUSTOM API (Supabase bluefox_custom_api Table)   */}
+                    {/* ============================================================== */}
+                    {customApiTab === 'media' && (
+                      <div className="space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+                          <div>
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <h3 className="text-xl sm:text-2xl font-bold text-slate-900">Custom API (Gambar & Video)</h3>
+                              <span className="bg-purple-50 text-purple-700 border border-purple-200 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold">
+                                {mediaDailyUsage.usedToday} / {mediaDailyUsage.dailyLimit} req hari ini
+                              </span>
+                            </div>
+                            <p className="text-slate-500 text-sm mt-1">
+                              {lang === 'id'
+                                ? 'Simpan kredensial API generasi AI (SDXL, Runway, DALL-E, dll) langsung ke tabel database Supabase.'
+                                : 'Save AI generation credentials (SDXL, Runway, DALL-E, etc.) directly into Supabase database table.'}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                            {onOpenCustomGenerate && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onClose();
+                                  onOpenCustomGenerate();
+                                }}
+                                className="flex items-center gap-2 py-2 px-3.5 rounded-xl text-xs sm:text-sm font-semibold bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 transition cursor-pointer shadow-xs"
+                                title="Buka dialog generate"
+                              >
+                                <Sparkles size={16} className="text-purple-600" />
+                                <span>{lang === 'id' ? 'Generate Sekarang' : 'Generate Now'}</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => setIsAddMediaFormOpen(prev => !prev)}
+                              className={cn(
+                                "flex items-center justify-center gap-2 py-2 px-4 rounded-xl text-xs sm:text-sm font-semibold transition cursor-pointer whitespace-nowrap shadow-xs",
+                                isAddMediaFormOpen 
+                                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200" 
+                                  : "bg-purple-600 hover:bg-purple-700 text-white"
+                              )}
+                            >
+                              <Plus size={16} className={isAddMediaFormOpen ? "rotate-45 transition-transform" : "transition-transform"} />
+                              <span>{isAddMediaFormOpen ? (lang === 'id' ? 'Tutup Formulir' : 'Close Form') : (lang === 'id' ? 'Tambah API Baru' : 'Add New API')}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Form Tambah Media API */}
+                        <AnimatePresence>
+                          {isAddMediaFormOpen && (
+                            <motion.form
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: 'auto' }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.25 }}
+                              onSubmit={handleSaveMediaCustomApi}
+                              className="bg-white border border-purple-300 rounded-2xl p-5 sm:p-6 space-y-4 shadow-lg overflow-hidden"
+                            >
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                                  <Key size={18} className="text-purple-600" />
+                                  <span>{lang === 'id' ? 'Tambah Konfigurasi API Gambar/Video' : 'Add Image/Video API Configuration'}</span>
+                                </h4>
+                                <span className="text-[11px] font-mono text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                                  Tabel: bluefox_custom_api
+                                </span>
+                              </div>
+
+                              <div className="grid sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                    {lang === 'id' ? 'Nama API / Server' : 'API / Server Name'} <span className="text-rose-500">*</span>
+                                  </label>
+                                  <input 
+                                    type="text"
+                                    value={mediaFormName}
+                                    onChange={(e) => setMediaFormName(e.target.value)}
+                                    placeholder='Contoh: "My SDXL Server", "Runway Gen-2", etc.'
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 text-sm"
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                    {lang === 'id' ? 'Tipe API (Generasi)' : 'API Type (Generation)'} <span className="text-rose-500">*</span>
+                                  </label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setMediaFormType('image')}
+                                      className={cn(
+                                        "py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition",
+                                        mediaFormType === 'image'
+                                          ? "bg-purple-50 text-purple-700 border-purple-300 shadow-xs"
+                                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                      )}
+                                    >
+                                      <ImageIcon size={14} />
+                                      <span>Image (Gambar)</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMediaFormType('video')}
+                                      className={cn(
+                                        "py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer transition",
+                                        mediaFormType === 'video'
+                                          ? "bg-purple-50 text-purple-700 border-purple-300 shadow-xs"
+                                          : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                      )}
+                                    >
+                                      <VideoIcon size={14} />
+                                      <span>Video (5s Polling)</span>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                    Endpoint URL <span className="text-rose-500">*</span>
+                                  </label>
+                                  <input 
+                                    type="url"
+                                    value={mediaFormEndpoint}
+                                    onChange={(e) => setMediaFormEndpoint(e.target.value)}
+                                    placeholder="https://api.domainuser.com/v1/generate"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 text-sm font-mono"
+                                    required
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                    Model ID <span className="text-rose-500">*</span>
+                                  </label>
+                                  <input 
+                                    type="text"
+                                    value={mediaFormModelId}
+                                    onChange={(e) => setMediaFormModelId(e.target.value)}
+                                    placeholder='Contoh: "sdxl-v1-0" atau "runway-gen2"'
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 text-sm font-mono"
+                                    required
+                                  />
+                                </div>
+
+                                <div className="sm:col-span-2">
+                                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                    API Key (Disimpan Enkripsi) <span className="text-rose-500">*</span>
+                                  </label>
+                                  <input 
+                                    type="password"
+                                    value={mediaFormApiKey}
+                                    onChange={(e) => setMediaFormApiKey(e.target.value)}
+                                    placeholder="sk-••••••••••••••••••••••••"
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-slate-900 placeholder-slate-400 focus:outline-none focus:border-purple-600 text-sm font-mono"
+                                    required
+                                  />
+                                  <p className="text-[11px] text-slate-400 mt-1">
+                                    API Key disimpan ke kolom <code>api_key_encrypted</code> di database Supabase dan hanya didekripsi di Supabase Edge Function saat proses generate.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                                <button
+                                  type="button"
+                                  onClick={() => setIsAddMediaFormOpen(false)}
+                                  className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                                >
+                                  {lang === 'id' ? 'Batal' : 'Cancel'}
+                                </button>
+                                <button
+                                  type="submit"
+                                  disabled={isSavingMediaApi}
+                                  className="px-5 py-2 rounded-xl text-xs sm:text-sm font-semibold bg-purple-600 hover:bg-purple-700 text-white transition shadow-sm cursor-pointer flex items-center gap-2"
+                                >
+                                  {isSavingMediaApi ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                                  <span>{isSavingMediaApi ? (lang === 'id' ? 'Menyimpan...' : 'Saving...') : (lang === 'id' ? 'Simpan ke Database' : 'Save to Database')}</span>
+                                </button>
+                              </div>
+                            </motion.form>
+                          )}
+                        </AnimatePresence>
+
+                        {/* Daftar Media Custom APIs dari Supabase */}
+                        <div className="space-y-3">
+                          {isLoadingMediaApis ? (
+                            <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
+                              <Loader2 size={24} className="animate-spin text-purple-600 mx-auto mb-2" />
+                              <p className="text-xs text-slate-500">Memuat konfigurasi Custom API...</p>
+                            </div>
+                          ) : mediaApis.length === 0 ? (
+                            <div className="text-center py-12 px-4 border border-dashed border-slate-300 rounded-3xl bg-white space-y-3">
+                              <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 mx-auto">
+                                <ImageIcon size={22} />
+                              </div>
+                              <div>
+                                <h4 className="text-base font-bold text-slate-900">
+                                  {lang === 'id' ? 'Belum Ada Custom API Gambar & Video' : 'No Custom Image/Video APIs'}
+                                </h4>
+                                <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                                  {lang === 'id' 
+                                    ? 'Tambahkan API SDXL, Runway, atau server AI kustom Anda untuk menghasilkan gambar dan video resolusi tinggi.' 
+                                    : 'Add your SDXL, Runway, or custom server AI credentials to generate images and videos.'}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setIsAddMediaFormOpen(true)}
+                                className="inline-flex items-center gap-2 text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl transition cursor-pointer shadow-sm"
+                              >
+                                <Plus size={16} />
+                                <span>{lang === 'id' ? 'Tambah API Pertama' : 'Add First API'}</span>
+                              </button>
+                            </div>
+                          ) : (
+                            mediaApis.map((api) => (
+                              <div 
+                                key={api.id}
+                                className="bg-white rounded-2xl border border-slate-200 hover:border-purple-300 p-4 sm:p-5 transition shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                              >
+                                <div className="space-y-1.5 min-w-0 flex-1">
+                                  <div className="flex items-center gap-2.5 flex-wrap">
+                                    <h4 className="text-base font-bold text-slate-900 truncate">{api.name}</h4>
+                                    <span className={cn(
+                                      "text-[11px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider flex items-center gap-1",
+                                      api.api_type === 'video'
+                                        ? "bg-cyan-50 text-cyan-700 border border-cyan-200"
+                                        : "bg-purple-50 text-purple-700 border border-purple-200"
+                                    )}>
+                                      {api.api_type === 'video' ? <VideoIcon size={12} /> : <ImageIcon size={12} />}
+                                      <span>{api.api_type}</span>
+                                    </span>
+                                    <span className="text-[11px] bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-md font-mono">
+                                      Model: {api.model_id}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 font-mono truncate max-w-lg">
+                                    {api.endpoint_url}
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                  {onOpenCustomGenerate && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onClose();
+                                        onOpenCustomGenerate('', api.api_type);
+                                      }}
+                                      className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+                                    >
+                                      <Sparkles size={13} />
+                                      <span>Generate</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMediaCustomApi(api.id, api.name)}
+                                    className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition cursor-pointer"
+                                    title="Hapus API"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ============================================================== */}
+                    {/* TAB 2: CHAT / LLM API (Existing Multi-Provider Support)        */}
+                    {/* ============================================================== */}
+                    {customApiTab === 'chat' && (
+                      <div className="space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+                          <div>
+                            <div className="flex items-center gap-2.5">
+                              <h3 className="text-2xl font-bold text-slate-900">Custom LLM API</h3>
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs px-2.5 py-0.5 rounded-full font-mono font-semibold">
+                                {customApis.length} / {MAX_CUSTOM_APIS} API
+                              </span>
+                            </div>
+                            <p className="text-slate-500 text-sm mt-1">
+                              {lang === 'id' 
+                                ? `Kelola hingga maksimal ${MAX_CUSTOM_APIS} API. Kartu hijau di sebelah kiri menandakan API aktif.`
+                                : `Manage up to ${MAX_CUSTOM_APIS} APIs. Green bar indicates active API.`}
+                            </p>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              if (customApis.length >= MAX_CUSTOM_APIS) {
+                                showToast(lang === 'id' ? `Maksimal ${MAX_CUSTOM_APIS} API telah tercapai!` : `Maximum of ${MAX_CUSTOM_APIS} APIs reached!`);
+                                return;
+                              }
+                              setIsAddFormOpen(prev => !prev);
+                            }}
+                            className={cn(
+                              "flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition cursor-pointer whitespace-nowrap shadow-xs",
+                              customApis.length >= MAX_CUSTOM_APIS
+                                ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                                : isAddFormOpen 
+                                  ? "bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200" 
+                                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            )}
+                          >
+                            <Plus size={18} className={isAddFormOpen ? "rotate-45 transition-transform" : "transition-transform"} />
+                            <span>{isAddFormOpen ? (lang === 'id' ? 'Tutup Formulir' : 'Close Form') : (lang === 'id' ? 'Tambah API Baru' : 'Add New API')}</span>
+                          </button>
+                        </div>
 
                     {/* Form Tambah API */}
                     <AnimatePresence>
@@ -1340,6 +1745,8 @@ export function SettingsModal({
                         })
                       )}
                     </div>
+                  </div>
+                )}
                   </div>
                 )}
 

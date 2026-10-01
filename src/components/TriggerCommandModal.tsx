@@ -15,7 +15,9 @@ import {
   Palette,
   Terminal,
   CornerDownLeft,
-  X
+  X,
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { TriggerCommand } from '../lib/commands';
 import { cn } from '../lib/utils';
@@ -41,7 +43,9 @@ const ICON_MAP: Record<string, any> = {
   Download,
   Pin,
   Trash2,
-  Palette
+  Palette,
+  Image: ImageIcon,
+  Video
 };
 
 export function TriggerCommandModal({

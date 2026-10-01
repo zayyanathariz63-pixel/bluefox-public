@@ -59,3 +59,15 @@ export interface CustomApiKey {
   isActive: boolean;
   createdAt: number;
 }
+
+export interface BluefoxCustomApi {
+  id: string;
+  user_id: string;
+  name: string;
+  api_type: 'image' | 'video';
+  endpoint_url: string;
+  model_id: string;
+  api_key_encrypted: string;
+  created_at?: string;
+}
+

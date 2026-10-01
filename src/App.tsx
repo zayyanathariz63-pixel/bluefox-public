@@ -15,6 +15,7 @@ import { MediaScreenViewer } from './components/MediaScreenViewer';
 import { QuotaExceededModal } from './components/QuotaExceededModal';
 import { UserGradientAvatar } from './components/UserGradientAvatar';
 import { FileHistoryModal } from './components/FileHistoryModal';
+import { CustomGenerateModal } from './components/CustomGenerateModal';
 import { useLanguage } from './lib/i18n';
 import { 
   saveBase64ToLocalStorage, 
@@ -238,6 +239,49 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConnectorsModalOpen, setIsConnectorsModalOpen] = useState(false);
   const [isFileHistoryOpen, setIsFileHistoryOpen] = useState(false);
+
+  // State for Custom AI Generation Modal (Image & Video via Supabase Edge Function)
+  const [isCustomGenerateOpen, setIsCustomGenerateOpen] = useState(false);
+  const [customGeneratePrompt, setCustomGeneratePrompt] = useState('');
+  const [customGenerateType, setCustomGenerateType] = useState<'image' | 'video' | undefined>(undefined);
+
+  const handleOpenCustomGenerate = (prompt?: string, type?: 'image' | 'video') => {
+    setCustomGeneratePrompt(prompt || '');
+    setCustomGenerateType(type);
+    setIsCustomGenerateOpen(true);
+  };
+
+  const handleInsertCustomGeneratedMedia = async (mediaItem: { type: 'image' | 'video'; url: string; prompt: string }) => {
+    const newMediaAttachment: MediaAttachment = {
+      id: 'custom-' + Date.now(),
+      name: `${mediaItem.type === 'video' ? 'video' : 'image'}_${Date.now()}.${mediaItem.type === 'video' ? 'mp4' : 'png'}`,
+      type: mediaItem.type === 'video' ? 'video' : 'image',
+      size: 1024,
+      url: mediaItem.url,
+      textContent: mediaItem.prompt
+    };
+
+    const aiMessage: Message = {
+      id: Date.now().toString(),
+      role: 'model',
+      text: lang === 'id' 
+        ? `Hasil generasi ${mediaItem.type === 'video' ? 'video' : 'gambar'} via Custom API untuk prompt:\n\n> *"${mediaItem.prompt}"*`
+        : `Generated ${mediaItem.type === 'video' ? 'video' : 'image'} via Custom API for prompt:\n\n> *"${mediaItem.prompt}"*`,
+      media: [newMediaAttachment]
+    };
+
+    const updatedMessages = [...messages, aiMessage];
+    setMessages(updatedMessages);
+
+    // If there is an active session, save to supabase
+    if (currentSessionId) {
+      try {
+        await saveChatTurn(currentSessionId, `[Custom API ${mediaItem.type.toUpperCase()}] ${mediaItem.prompt}`, aiMessage.text, [newMediaAttachment]);
+      } catch (e) {
+        console.warn('Gagal menyimpan hasil generasi ke supabase:', e);
+      }
+    }
+  };
   
   // State for Long-Press (1s) Chat Session Action Modal & Toast
   const [contextMenuSession, setContextMenuSession] = useState<ChatSession | null>(null);
@@ -1346,9 +1390,17 @@ export default function App() {
     if ((!userText && !imageUrl && !hasMedia) || isLoading) return;
 
     // =========================================================================
-    // 0. CEK INTERCEPT SYSTEM CONTROLLER (@bluefox, @theme, @memory standalone)
+    // 0. CEK INTERCEPT SYSTEM CONTROLLER (@image, @video, @bluefox, @theme, @memory standalone)
     // =========================================================================
     const lowerText = userText.toLowerCase();
+
+    if (lowerText.startsWith('@image') || lowerText.startsWith('@video')) {
+      const isImg = lowerText.startsWith('@image');
+      const promptArg = userText.replace(/^@(image|video)\s*/i, '').trim();
+      handleOpenCustomGenerate(promptArg, isImg ? 'image' : 'video');
+      return;
+    }
+
     const isBluefoxCmd = lowerText.startsWith('@bluefox');
     const isThemeCmd = lowerText.startsWith('@theme');
     const isMemoryStandalone = lowerText === '@memory' || lowerText.startsWith('@memory list') || lowerText.startsWith('@memory save') || (lowerText.startsWith('@memory ') && !lowerText.includes('?'));
@@ -2735,6 +2787,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           onDisableVision={handleDisableVision}
           isVisionActive={isVisionActive}
           disabled={isUsageLimitReached}
+          onOpenCustomGenerate={handleOpenCustomGenerate}
         />
       </footer>
 
@@ -2808,6 +2861,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   >
                     <ImageIcon size={18} className="text-cyan-600" />
                     <span>{t.fileHistory || 'File History'}</span>
+                  </button>
+
+                  <button 
+                    onClick={() => { handleOpenCustomGenerate(); setIsSidebarOpen(false); }} 
+                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <Sparkles size={18} className="text-purple-600" />
+                    <span>{lang === 'id' ? 'Custom API (Media)' : 'Custom API (Media)'}</span>
                   </button>
 
                   <button 
@@ -3821,6 +3882,24 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           setChatSessions([]);
           setMessages([]);
           setCurrentSessionId(null);
+        }}
+        onOpenCustomGenerate={handleOpenCustomGenerate}
+      />
+
+      <CustomGenerateModal
+        isOpen={isCustomGenerateOpen}
+        onClose={() => setIsCustomGenerateOpen(false)}
+        initialPrompt={customGeneratePrompt}
+        initialApiType={customGenerateType}
+        onInsertToChat={handleInsertCustomGeneratedMedia}
+        onOpenMediaScreen={(media) => {
+          handleOpenMediaScreen({
+            id: 'media-' + Date.now(),
+            name: media.name,
+            type: media.type === 'video' ? 'video' : 'image',
+            size: 1024,
+            url: media.url
+          });
         }}
       />
 

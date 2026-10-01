@@ -79,6 +79,32 @@ export const TRIGGER_COMMANDS: TriggerCommand[] = [
     hasParameter: true,
     parameterPlaceholder: 'informasi konteks baru untuk disimpan...'
   },
+  {
+    id: 'custom-image',
+    name: '@image',
+    category: 'ai',
+    categoryLabel: 'Custom API Generation',
+    badge: 'Image (SDXL/Kustom)',
+    description: 'Generate gambar resolusi tinggi via Custom API (SDXL, DALL-E, atau model kustom).',
+    syntax: '@image [prompt gambar yang ingin dibuat]',
+    example: '@image pemandangan kota futuristik cyberpunk di malam hari',
+    iconName: 'Image',
+    hasParameter: true,
+    parameterPlaceholder: 'deskripsi gambar yang ingin dibuat...'
+  },
+  {
+    id: 'custom-video',
+    name: '@video',
+    category: 'ai',
+    categoryLabel: 'Custom API Generation',
+    badge: 'Video (Runway/Kustom)',
+    description: 'Generate video via Custom API (Runway Gen-2, Luma, atau model kustom) dengan auto-polling.',
+    syntax: '@video [prompt video yang ingin dibuat]',
+    example: '@video drone shot pemandangan pegunungan es dengan awan bergerak',
+    iconName: 'Video',
+    hasParameter: true,
+    parameterPlaceholder: 'deskripsi video yang ingin dibuat...'
+  },
 
   // 2. System Controller (@bluefox) Commands
   {
