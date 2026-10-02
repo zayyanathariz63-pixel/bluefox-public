@@ -2018,45 +2018,55 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         .slice(-10)
         .map(m => ({
           role: m.role === 'user' ? 'user' : 'assistant',
-          text: m.text
+          text: m.text,
+          content: m.text,
+          message: m.text
         }));
 
-      const chatPayload = {
+      const resolvedModel = DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || (
+        currentEffectiveModel === 'tencent-hy3-free' ? 'jev' : currentEffectiveModel
+      );
+
+      const chatPayload: any = {
         message: promptToSend,
+        prompt: promptToSend,
         history: formattedHistory,
         conversation_id: effectiveConvId,
+        session_id: effectiveConvId,
+        model: resolvedModel,
         is_vision: isVisionNow,
         isVision: isVisionNow,
-        image_url: onlyImageUrl, // HANYA gambar nyata atau null
-        image: onlyImageUrl,
-        imageUrl: onlyImageUrl,
-        images: onlyImageUrl ? [onlyImageUrl] : [],
-        image_base64: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
-        base64_image: onlyImageUrl && onlyImageUrl.includes('base64,') ? onlyImageUrl.split('base64,')[1] : null,
-        model: DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || currentEffectiveModel,
-        reasoning_effort: currentReasoningEffort,
-        smart_select_level: smartSelectLevel,
-        smartSelectLevel: smartSelectLevel,
         reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
         reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-        reasoning: {
-          effort: currentReasoningEffort
-        },
-        thinking: {
-          type: currentReasoningEffort === 'none' ? 'disabled' : 'enabled',
-          effort: currentReasoningEffort
-        },
+        smart_select_level: smartSelectLevel,
+        smartSelectLevel: smartSelectLevel,
         customInstruction: customInstruction || "",
+        custom_instruction: customInstruction || "",
         system_prompt: BLUEFOX_SYSTEM_PROMPT,
         systemPrompt: BLUEFOX_SYSTEM_PROMPT,
-        stream: false,
-        customApi: activeCustomApi ? {
+        stream: false
+      };
+
+      if (onlyImageUrl) {
+        chatPayload.image_url = onlyImageUrl;
+        chatPayload.imageUrl = onlyImageUrl;
+        chatPayload.image = onlyImageUrl;
+        if (onlyImageUrl.includes('base64,')) {
+          const b64 = onlyImageUrl.split('base64,')[1];
+          chatPayload.image_base64 = b64;
+          chatPayload.base64_image = b64;
+        }
+      }
+
+      if (activeCustomApi && activeCustomApi.apiKey) {
+        chatPayload.customApi = {
           provider: activeCustomApi.provider,
           baseUrl: activeCustomApi.baseUrl,
           apiKey: activeCustomApi.apiKey,
           model: activeCustomApi.model
-        } : null
-      };
+        };
+        chatPayload.custom_api = chatPayload.customApi;
+      }
 
       // Panggil Supabase Edge Function bluefox-processor- langsung (Sesuai instruksi: panggil edge function supabase)
       let response: Response;

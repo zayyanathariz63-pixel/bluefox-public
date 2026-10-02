@@ -773,12 +773,27 @@ export async function resetUserLimits(userId: string) {
  * Default Models Mapping (Bluefox AI)
  */
 export const DEFAULT_MODELS: Record<string, string> = {
+  // Lineup Model Aktif
+  "agnes-2.5-flash": "agnes-2.5-flash",
+  "tencent-hy3-free": "jev",
+  "tencent_hy3_free": "jev",
+  "laguna-s-2.1": "laguna-s-2.1",
+  "jev": "jev",
+
+  // Nama Display & Aliases
   "bluefox-pro": "agnes-2.5-flash",
+  "bluefox_pro": "agnes-2.5-flash",
   "bluefox-standard": "jev",
+  "bluefox_standard": "jev",
+  "bluefox_standar": "jev",
   "bluefox-dilo": "laguna-s-2.1",
+  "bluefox_dilo": "laguna-s-2.1",
+  "dilo": "laguna-s-2.1",
   "tmpa_v2": "jev",
   "tmpa_v1": "laguna-s-2.1",
-  "dilo": "laguna-s-2.1",
+  "longcat-2.0-free": "laguna-s-2.1",
+  "deepseek-v4.1-flash-free": "agnes-2.5-flash",
+  "agnes-2.0-flash": "agnes-2.5-flash",
 };
 
 /**
