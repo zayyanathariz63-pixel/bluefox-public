@@ -37,6 +37,7 @@ interface CustomGenerateModalProps {
   onOpenMediaScreen?: (media: { type: 'image' | 'video'; url: string; name: string }) => void;
   initialPrompt?: string;
   initialApiType?: 'image' | 'video';
+  initialApiId?: string;
 }
 
 export function CustomGenerateModal({
@@ -45,7 +46,8 @@ export function CustomGenerateModal({
   onInsertToChat,
   onOpenMediaScreen,
   initialPrompt = '',
-  initialApiType
+  initialApiType,
+  initialApiId
 }: CustomGenerateModalProps) {
   const { lang } = useLanguage();
   const isId = lang === 'id';
@@ -92,11 +94,13 @@ export function CustomGenerateModal({
       setApis(fetchedApis);
       setDailyUsage(usage);
 
-      if (fetchedApis.length > 0 && !selectedApiId) {
-        if (initialApiType) {
+      if (fetchedApis.length > 0) {
+        if (initialApiId && fetchedApis.some(a => a.id === initialApiId)) {
+          setSelectedApiId(initialApiId);
+        } else if (initialApiType) {
           const matchType = fetchedApis.find(a => a.api_type === initialApiType);
           setSelectedApiId(matchType ? matchType.id : fetchedApis[0].id);
-        } else {
+        } else if (!selectedApiId) {
           setSelectedApiId(fetchedApis[0].id);
         }
       }
@@ -108,6 +112,9 @@ export function CustomGenerateModal({
   useEffect(() => {
     if (isOpen) {
       loadApisAndUsage();
+      if (initialApiId) {
+        setSelectedApiId(initialApiId);
+      }
       if (initialPrompt) {
         setPrompt(initialPrompt);
       }
@@ -118,7 +125,7 @@ export function CustomGenerateModal({
       setGeneratedResult(null);
       setIsGenerating(false);
     }
-  }, [isOpen, initialPrompt, initialApiType]);
+  }, [isOpen, initialPrompt, initialApiType, initialApiId]);
 
   const selectedApi = apis.find(a => a.id === selectedApiId);
 

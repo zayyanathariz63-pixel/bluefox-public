@@ -66,20 +66,94 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
-  const response = await fetch(edgeFunctionUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': anonKey,
-      'Authorization': `Bearer ${anonKey}`,
-    },
-    body: JSON.stringify(payload),
-    signal,
-  });
+  // 1. Ekstrak access token sesi aktif pengguna
+  let authToken = anonKey;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    let currentSession = sessionData?.session;
 
-  const data = await response.json();
+    // Jika token mendekati masa kedaluwarsa (< 60 detik) atau sudah kedaluwarsa, segarkan sesi
+    if (currentSession?.expires_at) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (currentSession.expires_at - nowSec < 60) {
+        console.log("🔄 Sesi Supabase mendekati kedaluwarsa, menyegarkan token...");
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        if (refreshed?.session) {
+          currentSession = refreshed.session;
+        }
+      }
+    }
+
+    if (currentSession?.access_token) {
+      authToken = currentSession.access_token;
+    } else if (typeof window !== 'undefined') {
+      // Coba cari token dari localStorage auth Supabase jika getSession belum tersinkron
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('sb-') && key.endsWith('-auth-token'))) {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (parsed?.access_token) {
+                authToken = parsed.access_token;
+                break;
+              }
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch (authErr) {
+    console.warn("⚠️ Gagal membaca access token sesi Supabase:", authErr);
+  }
+
+  // 2. Fungsi helper untuk mengeksekusi request HTTP ke Edge Function
+  const executeRequest = async (tokenToUse: string) => {
+    return await fetch(edgeFunctionUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': anonKey,
+        'Authorization': `Bearer ${tokenToUse}`,
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+  };
+
+  let response = await executeRequest(authToken);
+
+  // 3. Jika Edge Function mengembalikan 401 Unauthorized, coba refresh sesi 1 kali dan kirim ulang
+  if (response.status === 401) {
+    console.warn("⚠️ Edge Function merespon 401 Unauthorized, mencoba auto-refresh sesi Supabase...");
+    try {
+      const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+      if (!refreshErr && refreshed?.session?.access_token) {
+        console.log("✅ Berhasil menyegarkan sesi Supabase, mencoba ulang request Edge Function...");
+        authToken = refreshed.session.access_token;
+        response = await executeRequest(authToken);
+      }
+    } catch (retryCatch) {
+      console.warn("⚠️ Gagal auto-refresh sesi Supabase:", retryCatch);
+    }
+  }
+
+  // 4. Parse respons
+  let data: any = {};
+  const textResponse = await response.text();
+  try {
+    data = JSON.parse(textResponse);
+  } catch {
+    data = { message: textResponse };
+  }
+
   if (!response.ok || data?.error) {
-    throw new Error(data?.error || data?.message || `Edge function error (${response.status})`);
+    const errorMsg = data?.error || data?.message || `Edge function error (${response.status})`;
+    const errorObj = new Error(errorMsg);
+    (errorObj as any).status = response.status;
+    (errorObj as any).data = data;
+    throw errorObj;
   }
 
   return data;

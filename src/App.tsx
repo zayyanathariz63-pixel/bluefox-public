@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -16,6 +16,8 @@ import { QuotaExceededModal } from './components/QuotaExceededModal';
 import { UserGradientAvatar } from './components/UserGradientAvatar';
 import { FileHistoryModal } from './components/FileHistoryModal';
 import { CustomGenerateModal } from './components/CustomGenerateModal';
+import { CustomApiDrawer } from './components/CustomApiDrawer';
+import { BluefoxCustomApi, CustomApiKey } from './types';
 import { useLanguage } from './lib/i18n';
 import { 
   saveBase64ToLocalStorage, 
@@ -50,7 +52,8 @@ import {
   getLoggedInUser,
   setCurrentSessionId as setSupabaseSessionId
 } from './lib/supabase';
-import { getActiveCustomApi, recordCustomApiRequest } from './lib/customApi';
+import { getActiveCustomApi, getCustomApis, toggleCustomApiActive, recordCustomApiRequest } from './lib/customApi';
+import { getUserCustomApis } from './lib/bluefoxCustomApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
 import { executeDualEngineSearch, detectSearchIntent, SearchModeType, BLUEFOX_SYSTEM_PROMPT } from './lib/search';
@@ -244,11 +247,61 @@ export default function App() {
   const [isCustomGenerateOpen, setIsCustomGenerateOpen] = useState(false);
   const [customGeneratePrompt, setCustomGeneratePrompt] = useState('');
   const [customGenerateType, setCustomGenerateType] = useState<'image' | 'video' | undefined>(undefined);
+  const [customGenerateApiId, setCustomGenerateApiId] = useState<string | undefined>(undefined);
 
-  const handleOpenCustomGenerate = (prompt?: string, type?: 'image' | 'video') => {
+  // State for Custom API Bottom Drawer Popup (Muncul dari bawah)
+  const [isCustomApiDrawerOpen, setIsCustomApiDrawerOpen] = useState(false);
+  const [customChatApis, setCustomChatApis] = useState<CustomApiKey[]>(() => {
+    try {
+      return getCustomApis();
+    } catch {
+      return [];
+    }
+  });
+  const [userCustomApis, setUserCustomApis] = useState<BluefoxCustomApi[]>([]);
+
+  // Function to refresh all custom APIs
+  const refreshCustomApisList = useCallback(async () => {
+    try {
+      const localChat = getCustomApis();
+      setCustomChatApis(localChat);
+      const supabaseMedia = await getUserCustomApis();
+      setUserCustomApis(supabaseMedia);
+    } catch (e) {
+      console.warn('Gagal memuat daftar Custom API:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCustomApisList();
+    const handleUpdate = () => {
+      refreshCustomApisList();
+    };
+    window.addEventListener('tmpa_custom_apis_updated', handleUpdate);
+    return () => window.removeEventListener('tmpa_custom_apis_updated', handleUpdate);
+  }, [refreshCustomApisList]);
+
+  // Total custom API keys configured (minimal 1 API key terpasang agar menu Custom API muncul di select model)
+  const totalCustomKeys = customChatApis.filter(a => !!a.apiKey?.trim()).length + userCustomApis.length;
+  const hasCustomApiKey = totalCustomKeys >= 1;
+
+  const handleOpenCustomGenerate = (prompt?: string, type?: 'image' | 'video', apiId?: string) => {
     setCustomGeneratePrompt(prompt || '');
     setCustomGenerateType(type);
+    setCustomGenerateApiId(apiId);
     setIsCustomGenerateOpen(true);
+  };
+
+  const handleSelectCustomChatModel = (api: CustomApiKey) => {
+    if (!api.isActive) {
+      toggleCustomApiActive(api.id);
+    }
+    setCustomChatApis(getCustomApis());
+    setIsCustomApiDrawerOpen(false);
+    setShowActionToast(lang === 'id' 
+      ? `Model kustom "${api.name}" (${api.model}) diaktifkan untuk obrolan!` 
+      : `Custom model "${api.name}" (${api.model}) activated for chat!`);
+    setTimeout(() => setShowActionToast(null), 3500);
   };
 
   const handleInsertCustomGeneratedMedia = async (mediaItem: { type: 'image' | 'video'; url: string; prompt: string }) => {
@@ -323,6 +376,12 @@ export default function App() {
       setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Bluefox Pro (agnes-2.5-flash). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
       setTimeout(() => setVisionLockedNotice(null), 4000);
       return;
+    }
+    // Deactivate custom chat API when switching to standard Bluefox models
+    const activeCustom = getActiveCustomApi();
+    if (activeCustom) {
+      toggleCustomApiActive(activeCustom.id);
+      setCustomChatApis(getCustomApis());
     }
     setSelectedModel(modelId);
     try {
@@ -503,6 +562,12 @@ export default function App() {
   const [userTier, setUserTier] = useState<string>('Loading...');
   const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      refreshCustomApisList();
+    }
+  }, [user, refreshCustomApisList]);
   const [isSyncingSSO, setIsSyncingSSO] = useState(false);
   const [syncStatus, setSyncStatus] = useState('Mendeteksi parameter SSO...');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -2005,20 +2070,39 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException('Request aborted', 'AbortError');
         }
-        console.warn("⚠️ Direct Edge Function error, mencoba fallback /api/chat:", edgeErr?.message);
-        try {
-          response = await fetch("/api/chat", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            credentials: "include",
-            body: JSON.stringify(chatPayload),
-            signal: abortControllerRef.current.signal
-          });
-        } catch (fetchErr: any) {
+        console.warn("⚠️ Direct Edge Function error:", edgeErr?.message);
+
+        const isAuthError = edgeErr?.status === 401 || edgeErr?.status === 403 || /autentikasi|unauthorized|jwt|token/i.test(edgeErr?.message || '');
+        let fallbackHandled = false;
+
+        // Coba fallback ke /api/chat HANYA jika bukan auth error (karena 401 harus ditangani oleh Supabase, bukan /api/chat)
+        if (!isAuthError) {
+          try {
+            const chatRes = await fetch("/api/chat", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              credentials: "include",
+              body: JSON.stringify(chatPayload),
+              signal: abortControllerRef.current.signal
+            });
+            // Abaikan respons 405 (Method Not Allowed) atau 404 (Not Found) yang umum terjadi pada hosting statis seperti Vercel / Cloudflare Pages
+            if (chatRes.status !== 405 && chatRes.status !== 404) {
+              response = chatRes;
+              fallbackHandled = true;
+            } else {
+              console.warn(`⚠️ Rute /api/chat tidak aktif di host ini (HTTP ${chatRes.status}). Mengabaikan fallback static.`);
+            }
+          } catch (chatFetchErr) {
+            console.warn("⚠️ Fallback /api/chat gagal:", chatFetchErr);
+          }
+        }
+
+        // Jika /api/chat tidak tersedia, coba fallback ke Custom API pengguna jika sudah diatur
+        if (!fallbackHandled) {
           if (activeCustomApi && activeCustomApi.apiKey) {
-            console.warn("⚠️ Edge function gagal, mencoba fallback Custom API:", edgeErr?.message);
+            console.warn("⚠️ Mengalihkan ke Custom API pengguna:", activeCustomApi.name);
             const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
             response = await fetch(customEndpoint, {
               method: "POST",
@@ -2038,7 +2122,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               signal: abortControllerRef.current.signal
             });
           } else {
-            throw edgeErr;
+            // Gunakan status error asli dari Edge Function agar pesan error akurat (bukan 405 Method Not Allowed)
+            const errorStatus = edgeErr?.status || (isAuthError ? 401 : 500);
+            const errorPayload = {
+              success: false,
+              error: edgeErr?.message || (isAuthError ? "Autentikasi gagal" : "Edge function error"),
+              status: errorStatus
+            };
+            response = new Response(JSON.stringify(errorPayload), {
+              status: errorStatus,
+              headers: { "Content-Type": "application/json" }
+            });
           }
         }
       }
@@ -2155,10 +2249,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           errorCategory = isId ? 'Batas Permintaan Tercapai (HTTP 429 Rate Limit)' : 'Rate Limit Reached (HTTP 429 Rate Limit)';
           friendlyReason = isId ? 'Frekuensi penggunaan model AI sementara telah mencapai batas kuota server.' : 'AI model request frequency has reached the server rate limit.';
           suggestion = isId ? 'Mohon tunggu 1 hingga 2 menit sebelum mencoba mengirimkan pertanyaan kembali.' : 'Please wait 1 to 2 minutes before resubmitting your query.';
-        } else if (status === 401 || status === 403 || /jwt|unauthorized|auth|permission/i.test(rawError)) {
-          errorCategory = isId ? `Sesi Akun Kedaluwarsa (HTTP ${status})` : `Account Session Expired (HTTP ${status})`;
-          friendlyReason = isId ? 'Sesi autentikasi akun Anda telah kedaluwarsa atau otorisasi tidak valid.' : 'Your session authentication has expired or authorization is invalid.';
-          suggestion = isId ? 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali ke akun Anda.' : 'Please refresh the page or re-login to your account.';
+        } else if (status === 401 || status === 403 || /jwt|unauthorized|auth|autentikasi|permission/i.test(rawError)) {
+          errorCategory = isId ? `Sesi Autentikasi Kedaluwarsa (HTTP ${status || 401})` : `Authentication Expired (HTTP ${status || 401})`;
+          friendlyReason = isId ? 'Sesi otentikasi akun Anda telah kedaluwarsa atau belum terverifikasi dengan server Supabase.' : 'Your session authentication has expired or is not verified with the server.';
+          suggestion = isId ? 'Silakan muat ulang (refresh) halaman aplikasi atau masuk kembali (login) melalui halaman verifikasi untuk memperbarui sesi.' : 'Please refresh the page or re-login to renew your account session.';
         } else if (status === 502 || /bad gateway/i.test(rawError)) {
           errorCategory = isId ? 'Gerbang Bermasalah (HTTP 502 Bad Gateway)' : 'Bad Gateway (HTTP 502 Bad Gateway)';
           friendlyReason = rawError || (isId ? 'Server perantara (Edge/Gateway) menerima respons tidak valid dari model AI upstream.' : 'The gateway/edge server received an invalid upstream AI response.');
@@ -2584,7 +2678,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           {/* Model Selector Trigger */}
           <div className="flex items-center">
             {(() => {
-              const modelDisplayName = selectedModel === 'agnes-2.5-flash'
+              const activeCustomChat = getActiveCustomApi();
+              const modelDisplayName = activeCustomChat
+                ? `Custom: ${activeCustomChat.name}`
+                : selectedModel === 'agnes-2.5-flash'
                 ? 'bluefox pro' 
                 : selectedModel === 'tencent-hy3-free' 
                 ? 'bluefox standard' 
@@ -2599,8 +2696,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   title="Pilih Model AI & Smart Select"
                 >
                   <span className="flex items-center gap-1.5">
+                    {activeCustomChat && (
+                      <Sparkles size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
+                    )}
                     <strong className="text-blue-600 dark:text-blue-400 font-bold">{modelDisplayName}</strong>
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">({effortLabel})</span>
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">
+                      {activeCustomChat ? `(${activeCustomChat.model})` : `(${effortLabel})`}
+                    </span>
                   </span>
                   {isVisionActive && (
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
@@ -3246,6 +3348,45 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     </p>
                   </button>
                 </div>
+
+                {/* Custom API Choice (Muncul di paling bawah model selection setelah dilo jika user memasukkan minimal 1 API key) */}
+                {hasCustomApiKey && (
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <button 
+                      onClick={() => {
+                        setIsModelSelectorOpen(false);
+                        setIsCustomApiDrawerOpen(true);
+                      }}
+                      className="w-full flex items-center justify-between p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-purple-50/80 border-blue-200 hover:border-blue-400 hover:shadow-sm group text-left"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform shrink-0">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">
+                              Custom API
+                            </h4>
+                            <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow-xs">
+                              {totalCustomKeys} Model Terpasang
+                            </span>
+                            <span className="text-[10px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full hidden sm:inline-flex">
+                              Video • Image • Chat Biasa
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                            Akses model AI kustom yang Anda pasang sendiri (Video, Image, & Chat Biasa). Klik untuk membuka daftar model.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-blue-600 font-semibold text-xs shrink-0 pl-2">
+                        <span>Pilih Model</span>
+                        <ChevronUp size={16} className="group-hover:-translate-y-0.5 transition-transform" />
+                      </div>
+                    </button>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>
@@ -3888,9 +4029,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       <CustomGenerateModal
         isOpen={isCustomGenerateOpen}
-        onClose={() => setIsCustomGenerateOpen(false)}
+        onClose={() => {
+          setIsCustomGenerateOpen(false);
+          setCustomGenerateApiId(undefined);
+        }}
         initialPrompt={customGeneratePrompt}
         initialApiType={customGenerateType}
+        initialApiId={customGenerateApiId}
         onInsertToChat={handleInsertCustomGeneratedMedia}
         onOpenMediaScreen={(media) => {
           handleOpenMediaScreen({
@@ -3901,6 +4046,26 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             url: media.url
           });
         }}
+      />
+
+      {/* Drawer Popup Model Custom API dari bawah */}
+      <CustomApiDrawer
+        isOpen={isCustomApiDrawerOpen}
+        onClose={() => setIsCustomApiDrawerOpen(false)}
+        onSelectChatModel={handleSelectCustomChatModel}
+        onGenerateImage={(api) => {
+          setIsCustomApiDrawerOpen(false);
+          handleOpenCustomGenerate('', 'image', api?.id);
+        }}
+        onGenerateVideo={(api) => {
+          setIsCustomApiDrawerOpen(false);
+          handleOpenCustomGenerate('', 'video', api?.id);
+        }}
+        onOpenManageApis={() => {
+          setIsCustomApiDrawerOpen(false);
+          setIsSettingsOpen(true);
+        }}
+        user={user}
       />
 
       <ConnectorsModal
