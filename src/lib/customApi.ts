@@ -280,8 +280,8 @@ export function addCustomApi(data: {
     ? data.baseUrl.trim() 
     : (preset?.defaultBaseUrl || '');
 
-  // Jika dibuat aktif, buat API lainnya nonaktif (atau boleh multi-active, tapi defaultnya jadikan active yang baru)
-  const shouldBeActive = data.isActive !== undefined ? data.isActive : currentApis.length === 0;
+  // Jangan otomatis mengaktifkan API kustom baru kecuali diminta eksplisit
+  const shouldBeActive = data.isActive === true;
 
   const newApi: CustomApiKey = {
     id: 'api_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
@@ -300,6 +300,13 @@ export function addCustomApi(data: {
 
   saveCustomApis(updatedApis);
   return { success: true, api: newApi };
+}
+
+// Nonaktifkan seluruh Custom Chat API (saat beralih ke 3 model bawaan Bluefox)
+export function deactivateAllCustomApis(): void {
+  const currentApis = getCustomApis();
+  const updated = currentApis.map(api => ({ ...api, isActive: false }));
+  saveCustomApis(updated);
 }
 
 // Toggle status aktif/nonaktif API (Klik di kartu atau indikator hijau)

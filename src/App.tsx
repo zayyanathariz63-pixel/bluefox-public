@@ -53,7 +53,7 @@ import {
   getLoggedInUser,
   setCurrentSessionId as setSupabaseSessionId
 } from './lib/supabase';
-import { getActiveCustomApi, getCustomApis, toggleCustomApiActive, recordCustomApiRequest } from './lib/customApi';
+import { getActiveCustomApi, getCustomApis, toggleCustomApiActive, recordCustomApiRequest, deactivateAllCustomApis, saveCustomApis } from './lib/customApi';
 import { getUserCustomApis } from './lib/bluefoxCustomApi';
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
@@ -286,6 +286,17 @@ export default function App() {
   const totalCustomKeys = customChatApis.filter(a => !!a.apiKey?.trim()).length + userCustomApis.length;
   const hasCustomApiKey = totalCustomKeys >= 1;
 
+  // State for active Custom Chat API (jika pengguna memilih model kustom)
+  const [activeCustomChat, setActiveCustomChat] = useState<CustomApiKey | null>(() => {
+    try {
+      const mode = localStorage.getItem('tmpa_model_mode');
+      if (mode === 'bluefox') return null;
+      return getActiveCustomApi();
+    } catch {
+      return null;
+    }
+  });
+
   const handleOpenCustomGenerate = (prompt?: string, type?: 'image' | 'video', apiId?: string) => {
     setCustomGeneratePrompt(prompt || '');
     setCustomGenerateType(type);
@@ -294,11 +305,16 @@ export default function App() {
   };
 
   const handleSelectCustomChatModel = (api: CustomApiKey) => {
-    if (!api.isActive) {
-      toggleCustomApiActive(api.id);
-    }
-    setCustomChatApis(getCustomApis());
+    const apis = getCustomApis().map(a => ({ ...a, isActive: a.id === api.id }));
+    saveCustomApis(apis);
+    setActiveCustomChat({ ...api, isActive: true });
+    setCustomChatApis(apis);
+    try {
+      localStorage.setItem('tmpa_model_mode', 'custom');
+      localStorage.setItem('tmpa_active_custom_id', api.id);
+    } catch {}
     setIsCustomApiDrawerOpen(false);
+    setIsModelSelectorOpen(false);
     setShowActionToast(lang === 'id' 
       ? `Model kustom "${api.name}" (${api.model}) diaktifkan untuk obrolan!` 
       : `Custom model "${api.name}" (${api.model}) activated for chat!`);
@@ -378,17 +394,20 @@ export default function App() {
       setTimeout(() => setVisionLockedNotice(null), 4000);
       return;
     }
-    // Deactivate custom chat API when switching to standard Bluefox models
-    const activeCustom = getActiveCustomApi();
-    if (activeCustom) {
-      toggleCustomApiActive(activeCustom.id);
-      setCustomChatApis(getCustomApis());
-    }
+    // Nonaktifkan semua Custom Chat API saat beralih ke 3 model bawaan Bluefox
+    deactivateAllCustomApis();
+    setActiveCustomChat(null);
+    setCustomChatApis(getCustomApis());
     setSelectedModel(modelId);
     try {
       localStorage.setItem('tmpa_selected_model', modelId);
+      localStorage.setItem('tmpa_model_mode', 'bluefox');
     } catch {}
     setIsModelSelectorOpen(false);
+    setShowActionToast(lang === 'id' 
+      ? `Beralih ke model ${getModelDisplayName(modelId)}` 
+      : `Switched to ${getModelDisplayName(modelId)}`);
+    setTimeout(() => setShowActionToast(null), 2500);
   };
 
   const [dbLimits, setDbLimits] = useState<{ used5h: number; usedWeekly: number } | null>(null);
@@ -1814,9 +1833,15 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         activeUserId = authData?.user?.id;
       }
 
-      // Cek limit Custom API jika ada Custom API yang aktif (10 req/menit & 50 req/hari)
-      const activeCustomApi = getActiveCustomApi();
-      if (activeCustomApi) {
+      // Cek apakah pengguna menggunakan 3 model bawaan Bluefox atau Custom API
+      const isBluefoxNative = !activeCustomChat && (
+        selectedModel === 'agnes-2.5-flash' || 
+        selectedModel === 'tencent-hy3-free' || 
+        selectedModel === 'laguna-s-2.1'
+      );
+
+      // Cek limit Custom API HANYA jika sedang dalam mode Custom API
+      if (!isBluefoxNative && activeCustomChat) {
         const customLimitCheck = recordCustomApiRequest();
         if (!customLimitCheck.success) {
           setQuotaModalInfo({
@@ -2024,65 +2049,139 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           message: m.text
         }));
 
-      const rawModelId = activeCustomApi?.model || currentEffectiveModel || selectedModel || 'agnes-2.5-flash';
-      const resolvedModel = activeCustomApi?.model || DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || (
-        currentEffectiveModel === 'tencent-hy3-free' ? 'jev' : currentEffectiveModel
-      );
+      // =========================================================================
+      // 1. CEK IDENTITAS MODEL: 3 MODEL BAWAAN BLUEFOX VS MODEL CUSTOM API
+      // =========================================================================
+      let chatPayload: any;
 
-      // Target API ID mapping (Sesuai Edge Function bluefox-processor-):
-      // 1. Bluefox pro --> agnes-2.5-flash
-      // 2. Bluefox standard --> jev
-      // 3. Bluefox Dilo --> laguna-s-2.1
-      let targetApiId = 'agnes-2.5-flash';
-      if (activeCustomApi && activeCustomApi.apiKey) {
-        targetApiId = activeCustomApi.model || activeCustomApi.id || 'agnes-2.5-flash';
-      } else if (currentEffectiveModel === 'laguna-s-2.1' || selectedModel === 'laguna-s-2.1') {
-        targetApiId = 'laguna-s-2.1';
-      } else if (currentEffectiveModel === 'tencent-hy3-free' || selectedModel === 'tencent-hy3-free') {
-        targetApiId = 'jev';
+      if (isBluefoxNative) {
+        // ---------------------------------------------------------------------
+        // KASUS A: 3 MODEL BAWAAN BLUEFOX (Diverifikasi terlebih dahulu)
+        // Detail pemetaan Target API ID resmi:
+        // 1. Bluefox pro --> agnes-2.5-flash
+        // 2. Bluefox standard --> jev (power by tencent-hy3-free)
+        // 3. Bluefox Dilo --> laguna-s-2.1
+        // ---------------------------------------------------------------------
+        let bluefoxTargetApiId = 'agnes-2.5-flash';
+        let bluefoxResolvedModel = 'agnes-2.5-flash';
+
+        if (currentEffectiveModel === 'laguna-s-2.1' || selectedModel === 'laguna-s-2.1') {
+          bluefoxTargetApiId = 'laguna-s-2.1';
+          bluefoxResolvedModel = 'laguna-s-2.1';
+        } else if (currentEffectiveModel === 'tencent-hy3-free' || selectedModel === 'tencent-hy3-free') {
+          bluefoxTargetApiId = 'jev';
+          bluefoxResolvedModel = 'jev';
+        } else {
+          bluefoxTargetApiId = 'agnes-2.5-flash';
+          bluefoxResolvedModel = 'agnes-2.5-flash';
+        }
+
+        chatPayload = {
+          message: promptToSend,
+          prompt: promptToSend,
+          history: formattedHistory,
+          conversation_id: effectiveConvId,
+          session_id: effectiveConvId,
+          user_id: activeUserId || user?.id || null,
+          userId: activeUserId || user?.id || null,
+          api_id: bluefoxTargetApiId,
+          apiId: bluefoxTargetApiId,
+          target_api_id: bluefoxTargetApiId,
+          targetApiId: bluefoxTargetApiId,
+          API_ID: bluefoxTargetApiId,
+          target_api: bluefoxTargetApiId,
+          targetApi: bluefoxTargetApiId,
+          model: bluefoxResolvedModel,
+          model_id: currentEffectiveModel || selectedModel,
+          modelId: currentEffectiveModel || selectedModel,
+          id_model: currentEffectiveModel || selectedModel,
+          selected_model: selectedModel,
+          selected_model_id: selectedModel,
+          selectedModel: selectedModel,
+          raw_model: currentEffectiveModel || selectedModel,
+          raw_model_id: currentEffectiveModel || selectedModel,
+          resolved_model: bluefoxResolvedModel,
+          resolvedModel: bluefoxResolvedModel,
+          model_name: getModelDisplayName(selectedModel),
+          is_vision: isVisionNow,
+          isVision: isVisionNow,
+          reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          smart_select_level: smartSelectLevel,
+          smartSelectLevel: smartSelectLevel,
+          customInstruction: customInstruction || "",
+          custom_instruction: customInstruction || "",
+          system_prompt: BLUEFOX_SYSTEM_PROMPT,
+          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+          stream: false
+        };
       } else {
-        targetApiId = 'agnes-2.5-flash';
-      }
+        // ---------------------------------------------------------------------
+        // KASUS B: MODEL CUSTOM API (Hanya jika pengguna memilih model kustom)
+        // ---------------------------------------------------------------------
+        const customTarget = activeCustomChat || getActiveCustomApi();
+        const customModelName = customTarget?.model || 'gpt-4o';
+        const customApiId = customTarget?.id || 'custom-api';
 
-      const chatPayload: any = {
-        message: promptToSend,
-        prompt: promptToSend,
-        history: formattedHistory,
-        conversation_id: effectiveConvId,
-        session_id: effectiveConvId,
-        user_id: activeUserId || user?.id || null,
-        userId: activeUserId || user?.id || null,
-        api_id: targetApiId,
-        apiId: targetApiId,
-        target_api_id: targetApiId,
-        targetApiId: targetApiId,
-        API_ID: targetApiId,
-        target_api: targetApiId,
-        targetApi: targetApiId,
-        model: resolvedModel,
-        model_id: rawModelId,
-        modelId: rawModelId,
-        id_model: rawModelId,
-        selected_model: selectedModel,
-        selected_model_id: selectedModel,
-        selectedModel: selectedModel,
-        raw_model: rawModelId,
-        raw_model_id: rawModelId,
-        resolved_model: resolvedModel,
-        resolvedModel: resolvedModel,
-        model_name: getModelDisplayName(rawModelId),
-        is_vision: isVisionNow,
-        isVision: isVisionNow,
-        reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-        reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-        smart_select_level: smartSelectLevel,
-        smartSelectLevel: smartSelectLevel,
-        customInstruction: customInstruction || "",
-        custom_instruction: customInstruction || "",
-        system_prompt: BLUEFOX_SYSTEM_PROMPT,
-        systemPrompt: BLUEFOX_SYSTEM_PROMPT,
-        stream: false
-      };
+        chatPayload = {
+          message: promptToSend,
+          prompt: promptToSend,
+          history: formattedHistory,
+          conversation_id: effectiveConvId,
+          session_id: effectiveConvId,
+          user_id: activeUserId || user?.id || null,
+          userId: activeUserId || user?.id || null,
+          api_id: customModelName,
+          apiId: customModelName,
+          target_api_id: customModelName,
+          targetApiId: customModelName,
+          API_ID: customModelName,
+          target_api: customModelName,
+          targetApi: customModelName,
+          custom_api_id: customApiId,
+          model: customModelName,
+          model_id: customModelName,
+          modelId: customModelName,
+          id_model: customModelName,
+          selected_model: 'custom',
+          selected_model_id: customApiId,
+          selectedModel: 'custom',
+          raw_model: customModelName,
+          raw_model_id: customModelName,
+          resolved_model: customModelName,
+          resolvedModel: customModelName,
+          model_name: customTarget?.name || 'Custom Model',
+          customApi: customTarget ? {
+            id: customTarget.id,
+            name: customTarget.name,
+            provider: customTarget.provider,
+            baseUrl: customTarget.baseUrl,
+            apiKey: customTarget.apiKey,
+            model: customTarget.model,
+            model_id: customTarget.model
+          } : null,
+          custom_api: customTarget ? {
+            id: customTarget.id,
+            name: customTarget.name,
+            provider: customTarget.provider,
+            baseUrl: customTarget.baseUrl,
+            apiKey: customTarget.apiKey,
+            model: customTarget.model,
+            model_id: customTarget.model
+          } : null,
+          is_vision: isVisionNow,
+          isVision: isVisionNow,
+          reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+          smart_select_level: smartSelectLevel,
+          smartSelectLevel: smartSelectLevel,
+          customInstruction: customInstruction || "",
+          custom_instruction: customInstruction || "",
+          system_prompt: BLUEFOX_SYSTEM_PROMPT,
+          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+          stream: false
+        };
+      }
 
       if (onlyImageUrl) {
         chatPayload.image_url = onlyImageUrl;
@@ -2093,22 +2192,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           chatPayload.image_base64 = b64;
           chatPayload.base64_image = b64;
         }
-      }
-
-      if (activeCustomApi && activeCustomApi.apiKey) {
-        chatPayload.api_id = activeCustomApi.id;
-        chatPayload.apiId = activeCustomApi.id;
-        chatPayload.custom_api_id = activeCustomApi.id;
-        chatPayload.customApi = {
-          id: activeCustomApi.id,
-          name: activeCustomApi.name,
-          provider: activeCustomApi.provider,
-          baseUrl: activeCustomApi.baseUrl,
-          apiKey: activeCustomApi.apiKey,
-          model: activeCustomApi.model,
-          model_id: activeCustomApi.model
-        };
-        chatPayload.custom_api = chatPayload.customApi;
       }
 
       // Panggil Supabase Edge Function bluefox-processor- langsung (Sesuai instruksi: panggil edge function supabase)
@@ -2152,19 +2235,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           }
         }
 
-        // Jika /api/chat tidak tersedia, coba fallback ke Custom API pengguna jika sudah diatur
+        // Jika /api/chat tidak tersedia, coba fallback ke Custom API HANYA jika pengguna memilih Custom API
         if (!fallbackHandled) {
-          if (activeCustomApi && activeCustomApi.apiKey) {
-            console.warn("⚠️ Mengalihkan ke Custom API pengguna:", activeCustomApi.name);
-            const customEndpoint = (activeCustomApi.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
+          const customTarget = activeCustomChat || (!isBluefoxNative ? getActiveCustomApi() : null);
+          if (!isBluefoxNative && customTarget && customTarget.apiKey) {
+            console.warn("⚠️ Mengalihkan ke Custom API pengguna:", customTarget.name);
+            const customEndpoint = (customTarget.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "") + "/chat/completions";
             response = await fetch(customEndpoint, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${activeCustomApi.apiKey.trim()}`
+                "Authorization": `Bearer ${customTarget.apiKey.trim()}`
               },
               body: JSON.stringify({
-                model: activeCustomApi.model || "gpt-4o",
+                model: customTarget.model || "gpt-4o",
                 messages: [
                   { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
                   ...formattedHistory,
@@ -2175,7 +2259,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               signal: abortControllerRef.current.signal
             });
           } else {
-            // Gunakan status error asli dari Edge Function agar pesan error akurat (bukan 405 Method Not Allowed)
+            // Gunakan status error asli dari Edge Function agar pesan error akurat (bukan 405 Method Not Allowed / 404)
             const errorStatus = edgeErr?.status || (isAuthError ? 401 : 500);
             const errorPayload = {
               success: false,
@@ -2731,9 +2815,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           {/* Model Selector Trigger */}
           <div className="flex items-center">
             {(() => {
-              const activeCustomChat = getActiveCustomApi();
-              const modelDisplayName = activeCustomChat
-                ? `Custom: ${activeCustomChat.name}`
+              const currentCustomChat = activeCustomChat;
+              const modelDisplayName = currentCustomChat
+                ? `Custom: ${currentCustomChat.name}`
                 : selectedModel === 'agnes-2.5-flash'
                 ? 'bluefox pro' 
                 : selectedModel === 'tencent-hy3-free' 
@@ -2749,12 +2833,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   title="Pilih Model AI & Smart Select"
                 >
                   <span className="flex items-center gap-1.5">
-                    {activeCustomChat && (
+                    {currentCustomChat && (
                       <Sparkles size={12} className="text-purple-600 dark:text-purple-400 shrink-0" />
                     )}
                     <strong className="text-blue-600 dark:text-blue-400 font-bold">{modelDisplayName}</strong>
                     <span className="text-slate-500 dark:text-slate-400 font-medium">
-                      {activeCustomChat ? `(${activeCustomChat.model})` : `(${effortLabel})`}
+                      {currentCustomChat ? `(${currentCustomChat.model})` : `(${effortLabel})`}
                     </span>
                   </span>
                   {isVisionActive && (
@@ -3272,14 +3356,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   <button 
                     onClick={() => handleSelectModel('agnes-2.5-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
-                      selectedModel === 'agnes-2.5-flash'
+                      !activeCustomChat && selectedModel === 'agnes-2.5-flash'
                         ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm' 
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'agnes-2.5-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        !activeCustomChat && selectedModel === 'agnes-2.5-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Bot size={18} />
                       </div>
@@ -3317,14 +3401,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
                         ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'tencent-hy3-free'
+                        : !activeCustomChat && selectedModel === 'tencent-hy3-free'
                           ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
                           : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        !activeCustomChat && selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Cpu size={18} />
                       </div>
@@ -3362,14 +3446,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
                         ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'laguna-s-2.1'
+                        : !activeCustomChat && selectedModel === 'laguna-s-2.1'
                           ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
                           : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        !activeCustomChat && selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Layers size={18} />
                       </div>
@@ -3410,10 +3494,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         setIsModelSelectorOpen(false);
                         setIsCustomApiDrawerOpen(true);
                       }}
-                      className="w-full flex items-center justify-between p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-purple-50/80 border-blue-200 hover:border-blue-400 hover:shadow-sm group text-left"
+                      className={`w-full flex items-center justify-between p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative group text-left ${
+                        activeCustomChat 
+                          ? 'bg-purple-50/80 border-2 border-purple-600 shadow-sm'
+                          : 'bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-purple-50/80 border-blue-200 hover:border-blue-400 hover:shadow-sm'
+                      }`}
                     >
                       <div className="flex items-center gap-3.5">
-                        <div className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform shrink-0">
+                        <div className={`w-10 h-10 md:w-11 md:h-11 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform shrink-0 ${
+                          activeCustomChat 
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 text-white'
+                        }`}>
                           <Sparkles size={20} />
                         </div>
                         <div>
@@ -3421,20 +3513,28 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                             <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">
                               Custom API
                             </h4>
-                            <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow-xs">
-                              {totalCustomKeys} Model Terpasang
-                            </span>
+                            {activeCustomChat ? (
+                              <span className="text-[10px] font-bold bg-purple-600 text-white px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+                                <Check size={11} /> Aktif: {activeCustomChat.name} ({activeCustomChat.model})
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full shadow-xs">
+                                {totalCustomKeys} Model Terpasang
+                              </span>
+                            )}
                             <span className="text-[10px] font-medium text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full hidden sm:inline-flex">
                               Video • Image • Chat Biasa
                             </span>
                           </div>
                           <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                            Akses model AI kustom yang Anda pasang sendiri (Video, Image, & Chat Biasa). Klik untuk membuka daftar model.
+                            {activeCustomChat 
+                              ? `Model kustom "${activeCustomChat.name}" (${activeCustomChat.model}) sedang aktif untuk obrolan. Klik untuk beralih atau kelola model.`
+                              : 'Akses model AI kustom yang Anda pasang sendiri (Video, Image, & Chat Biasa). Klik untuk membuka daftar model.'}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-blue-600 font-semibold text-xs shrink-0 pl-2">
-                        <span>Pilih Model</span>
+                        <span>{activeCustomChat ? 'Ganti' : 'Pilih Model'}</span>
                         <ChevronUp size={16} className="group-hover:-translate-y-0.5 transition-transform" />
                       </div>
                     </button>
