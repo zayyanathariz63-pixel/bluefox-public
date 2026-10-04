@@ -2062,17 +2062,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         // 2. Bluefox standard --> jev (power by tencent-hy3-free)
         // 3. Bluefox Dilo --> laguna-s-2.1
         // ---------------------------------------------------------------------
-        let bluefoxTargetApiId = 'agnes-2.5-flash';
         let bluefoxResolvedModel = 'agnes-2.5-flash';
 
         if (currentEffectiveModel === 'laguna-s-2.1' || selectedModel === 'laguna-s-2.1') {
-          bluefoxTargetApiId = 'laguna-s-2.1';
           bluefoxResolvedModel = 'laguna-s-2.1';
         } else if (currentEffectiveModel === 'tencent-hy3-free' || selectedModel === 'tencent-hy3-free') {
-          bluefoxTargetApiId = 'jev';
           bluefoxResolvedModel = 'jev';
         } else {
-          bluefoxTargetApiId = 'agnes-2.5-flash';
           bluefoxResolvedModel = 'agnes-2.5-flash';
         }
 
@@ -2084,17 +2080,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           session_id: effectiveConvId,
           user_id: activeUserId || user?.id || null,
           userId: activeUserId || user?.id || null,
-          api_id: bluefoxTargetApiId,
-          apiId: bluefoxTargetApiId,
-          target_api_id: bluefoxTargetApiId,
-          targetApiId: bluefoxTargetApiId,
-          API_ID: bluefoxTargetApiId,
-          target_api: bluefoxTargetApiId,
-          targetApi: bluefoxTargetApiId,
+          is_bluefox_native: true,
           model: bluefoxResolvedModel,
-          model_id: currentEffectiveModel || selectedModel,
-          modelId: currentEffectiveModel || selectedModel,
-          id_model: currentEffectiveModel || selectedModel,
+          model_id: bluefoxResolvedModel,
+          modelId: bluefoxResolvedModel,
+          id_model: bluefoxResolvedModel,
           selected_model: selectedModel,
           selected_model_id: selectedModel,
           selectedModel: selectedModel,

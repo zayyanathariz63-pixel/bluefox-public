@@ -410,23 +410,14 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
           const anonKey = process.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U";
           console.log(`📡 [Supabase Edge Function] Memanggil bluefox-processor- untuk: "${message.slice(0, 40)}" (Model: ${requestedModelId})`);
 
-          // Target API ID mapping (Sesuai Edge Function bluefox-processor-):
-          // 1. Bluefox pro --> agnes-2.5-flash
-          // 2. Bluefox standard --> jev
-          // 3. Bluefox Dilo --> laguna-s-2.1
-          let targetApiId = "agnes-2.5-flash";
-          const mLower = (model || "").toLowerCase();
-          if (mLower.includes("laguna") || mLower.includes("dilo")) {
-            targetApiId = "laguna-s-2.1";
-          } else if (mLower.includes("standard") || mLower.includes("standar") || mLower.includes("tencent") || mLower.includes("jev")) {
-            targetApiId = "jev";
-          } else {
-            targetApiId = "agnes-2.5-flash";
-          }
-          if (customApi && customApi.apiKey) {
-            targetApiId = customApi.model || customApi.id || targetApiId;
-          }
-          const finalApiId = req.body?.api_id || req.body?.target_api_id || req.body?.targetApiId || req.body?.apiId || targetApiId;
+          const isBluefoxNativeModel = !customApi && (
+            requestedModelId === 'agnes-2.5-flash' || 
+            requestedModelId === 'jev' || 
+            requestedModelId === 'laguna-s-2.1' ||
+            model === 'agnes-2.5-flash' ||
+            model === 'tencent-hy3-free' ||
+            model === 'laguna-s-2.1'
+          );
 
           const edgePayload: any = {
             message,
@@ -435,17 +426,10 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             conversation_id: req.body?.conversation_id || null,
             session_id: req.body?.conversation_id || null,
             user_id: req.body?.user_id || null,
-            api_id: finalApiId,
-            apiId: finalApiId,
-            target_api_id: finalApiId,
-            targetApiId: finalApiId,
-            API_ID: finalApiId,
-            target_api: finalApiId,
-            targetApi: finalApiId,
             model: requestedModelId,
-            model_id: req.body?.model_id || requestedModelId,
-            modelId: req.body?.modelId || requestedModelId,
-            id_model: req.body?.id_model || requestedModelId,
+            model_id: requestedModelId,
+            modelId: requestedModelId,
+            id_model: requestedModelId,
             selected_model: model,
             is_vision: Boolean(isVision || is_vision || vision || imageUrl || image_url),
             imageUrl: imageUrl || image_url || null,
@@ -456,11 +440,16 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             smartSelectLevel: chosenLevel,
             custom_instruction: customInstruction,
             customInstruction: customInstruction,
-            customApi: customApi || null,
-            custom_api: customApi || null,
             system_prompt: systemPrompt,
             stream: false
           };
+
+          if (!isBluefoxNativeModel && (customApi || req.body?.api_id)) {
+            const finalApiId = req.body?.api_id || customApi?.id || customApi?.model;
+            edgePayload.api_id = finalApiId;
+            edgePayload.customApi = customApi || null;
+            edgePayload.custom_api = customApi || null;
+          }
 
           const edgeRes = await fetch(edgeUrl, {
             method: "POST",

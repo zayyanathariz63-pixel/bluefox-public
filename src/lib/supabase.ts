@@ -66,35 +66,65 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
-  // Pastikan ID model dan Target API ID selalu terisi sesuai spesifikasi Edge Function:
+  // Pastikan ID model selalu terisi sesuai spesifikasi Edge Function:
   // 1. Bluefox pro --> agnes-2.5-flash
   // 2. Bluefox standard --> jev
   // 3. Bluefox Dilo --> laguna-s-2.1
   const safePayload: any = { ...(payload || {}) };
-  const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'agnes-2.5-flash';
-  if (!safePayload.model_id) safePayload.model_id = fallbackModel;
-  if (!safePayload.modelId) safePayload.modelId = fallbackModel;
-  if (!safePayload.id_model) safePayload.id_model = fallbackModel;
-  if (!safePayload.model) safePayload.model = fallbackModel;
 
-  // Resolve Target API ID
-  const resolveTargetApiId = (inputModel?: string): string => {
-    if (!inputModel) return 'agnes-2.5-flash';
-    const m = inputModel.toLowerCase();
-    if (m.includes('laguna') || m.includes('dilo')) return 'laguna-s-2.1';
-    if (m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev')) return 'jev';
-    if (m.includes('pro') || m.includes('agnes')) return 'agnes-2.5-flash';
-    return inputModel;
-  };
+  // Deteksi apakah request ini untuk 3 model bawaan Bluefox
+  const isBluefoxModel = 
+    safePayload.is_bluefox_native === true ||
+    safePayload.isBluefoxNative === true ||
+    safePayload.model === 'agnes-2.5-flash' || 
+    safePayload.model === 'jev' || 
+    safePayload.model === 'laguna-s-2.1' ||
+    safePayload.model === 'tencent-hy3-free' ||
+    safePayload.model_id === 'agnes-2.5-flash' || 
+    safePayload.model_id === 'jev' || 
+    safePayload.model_id === 'laguna-s-2.1' ||
+    safePayload.model_id === 'tencent-hy3-free' ||
+    safePayload.selected_model === 'agnes-2.5-flash' ||
+    safePayload.selected_model === 'tencent-hy3-free' ||
+    safePayload.selected_model === 'laguna-s-2.1';
 
-  const resolvedApiId = safePayload.api_id || safePayload.target_api_id || safePayload.targetApiId || safePayload.apiId || resolveTargetApiId(safePayload.model || safePayload.model_id);
-  safePayload.api_id = resolvedApiId;
-  safePayload.apiId = resolvedApiId;
-  safePayload.target_api_id = resolvedApiId;
-  safePayload.targetApiId = resolvedApiId;
-  safePayload.API_ID = resolvedApiId;
-  safePayload.target_api = resolvedApiId;
-  safePayload.targetApi = resolvedApiId;
+  if (isBluefoxModel) {
+    // PENTING: Model bawaan Bluefox BUKAN Custom API!
+    // JANGAN kirim api_id / target_api_id agar Edge Function tidak mencari ke tabel bluefox_custom_api!
+    delete safePayload.api_id;
+    delete safePayload.apiId;
+    delete safePayload.target_api_id;
+    delete safePayload.targetApiId;
+    delete safePayload.API_ID;
+    delete safePayload.target_api;
+    delete safePayload.targetApi;
+    delete safePayload.customApi;
+    delete safePayload.custom_api;
+    delete safePayload.custom_api_id;
+
+    // Normalisasi ID model resmi
+    let normalized = 'agnes-2.5-flash';
+    const m = (safePayload.model_id || safePayload.model || safePayload.selected_model || '').toLowerCase();
+    if (m.includes('laguna') || m.includes('dilo')) {
+      normalized = 'laguna-s-2.1';
+    } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev')) {
+      normalized = 'jev';
+    } else {
+      normalized = 'agnes-2.5-flash';
+    }
+
+    safePayload.model = normalized;
+    safePayload.model_id = normalized;
+    safePayload.modelId = normalized;
+    safePayload.id_model = normalized;
+  } else {
+    // Mode Custom API: hanya isi jika ada custom target nyata
+    const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'agnes-2.5-flash';
+    if (!safePayload.model_id) safePayload.model_id = fallbackModel;
+    if (!safePayload.modelId) safePayload.modelId = fallbackModel;
+    if (!safePayload.id_model) safePayload.id_model = fallbackModel;
+    if (!safePayload.model) safePayload.model = fallbackModel;
+  }
 
   // 1. Ekstrak access token sesi aktif pengguna
   let authToken = anonKey;
