@@ -426,6 +426,8 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             conversation_id: req.body?.conversation_id || null,
             session_id: req.body?.conversation_id || null,
             user_id: req.body?.user_id || null,
+            is_bluefox_native: isBluefoxNativeModel,
+            isBluefoxNative: isBluefoxNativeModel,
             model: requestedModelId,
             model_id: requestedModelId,
             modelId: requestedModelId,
@@ -444,9 +446,13 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
             stream: false
           };
 
-          if (!isBluefoxNativeModel && (customApi || req.body?.api_id)) {
-            const finalApiId = req.body?.api_id || customApi?.id || customApi?.model;
+          if (!isBluefoxNativeModel) {
+            const finalApiId = req.body?.target_api_id || req.body?.api_id || customApi?.id || 'custom-api';
+            edgePayload.target_api_id = finalApiId;
+            edgePayload.targetApiId = finalApiId;
             edgePayload.api_id = finalApiId;
+            edgePayload.apiId = finalApiId;
+            edgePayload.custom_api_id = finalApiId;
             edgePayload.customApi = customApi || null;
             edgePayload.custom_api = customApi || null;
           }

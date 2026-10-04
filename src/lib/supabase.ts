@@ -113,13 +113,27 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
       normalized = 'agnes-2.5-flash';
     }
 
+    safePayload.is_bluefox_native = true;
+    safePayload.isBluefoxNative = true;
     safePayload.model = normalized;
     safePayload.model_id = normalized;
     safePayload.modelId = normalized;
     safePayload.id_model = normalized;
+    safePayload.resolved_model = normalized;
+    safePayload.resolvedModel = normalized;
   } else {
-    // Mode Custom API: hanya isi jika ada custom target nyata
-    const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'agnes-2.5-flash';
+    // Mode Custom API: Tetapkan target_api_id secara eksplisit dan is_bluefox_native: false
+    safePayload.is_bluefox_native = false;
+    safePayload.isBluefoxNative = false;
+
+    const customTargetId = safePayload.target_api_id || safePayload.targetApiId || safePayload.api_id || safePayload.apiId || safePayload.custom_api_id || safePayload.customApi?.id || 'custom-api';
+    safePayload.target_api_id = customTargetId;
+    safePayload.targetApiId = customTargetId;
+    safePayload.api_id = customTargetId;
+    safePayload.apiId = customTargetId;
+    safePayload.custom_api_id = customTargetId;
+
+    const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'gpt-4o';
     if (!safePayload.model_id) safePayload.model_id = fallbackModel;
     if (!safePayload.modelId) safePayload.modelId = fallbackModel;
     if (!safePayload.id_model) safePayload.id_model = fallbackModel;

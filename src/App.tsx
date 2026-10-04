@@ -1834,14 +1834,26 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // Cek apakah pengguna menggunakan 3 model bawaan Bluefox atau Custom API
-      const isBluefoxNative = !activeCustomChat && (
+      const isCustomModeActive = localStorage.getItem('tmpa_model_mode') === 'custom';
+      const currentModelName = (isCustomModeActive && activeCustomChat?.model)
+        ? activeCustomChat.model.trim()
+        : (selectedModel || 'agnes-2.5-flash').trim();
+
+      const isBluefoxNative = !isCustomModeActive || (
+        currentModelName === 'agnes-2.5-flash' || 
+        currentModelName === 'tencent-hy3-free' || 
+        currentModelName === 'laguna-s-2.1' ||
+        currentModelName === 'bluefox_pro' ||
+        currentModelName === 'bluefox_standard' ||
+        currentModelName === 'bluefox_dilo' ||
+        currentModelName === 'jev' ||
         selectedModel === 'agnes-2.5-flash' || 
         selectedModel === 'tencent-hy3-free' || 
         selectedModel === 'laguna-s-2.1'
       );
 
       // Cek limit Custom API HANYA jika sedang dalam mode Custom API
-      if (!isBluefoxNative && activeCustomChat) {
+      if (!isBluefoxNative && isCustomModeActive && activeCustomChat) {
         const customLimitCheck = recordCustomApiRequest();
         if (!customLimitCheck.success) {
           setQuotaModalInfo({
@@ -2050,26 +2062,63 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }));
 
       // =========================================================================
-      // 1. CEK IDENTITAS MODEL: 3 MODEL BAWAAN BLUEFOX VS MODEL CUSTOM API
+      // STRICT VERIFICATION: 3 MODEL BAWAAN BLUEFOX VS MODEL CUSTOM API
+      // 1. Identifikasi apakah nama model yang dipilih cocok dengan 3 model bawaan Bluefox:
+      //    - agnes-2.5-flash (Bluefox Pro)
+      //    - tencent-hy3-free (Bluefox Standard)
+      //    - laguna-s-2.1 (Bluefox Dilo)
       // =========================================================================
+      const isCustomMode = localStorage.getItem('tmpa_model_mode') === 'custom';
+      
+      // Ambil nama model yang dipilih user
+      const rawChosenName = (isCustomMode && activeCustomChat?.model)
+        ? activeCustomChat.model.trim()
+        : (currentEffectiveModel || selectedModel || 'agnes-2.5-flash').trim();
+
+      // Cek kecocokan ketat terhadap 3 model bawaan Bluefox
+      const isAgnesMatch = 
+        rawChosenName === 'agnes-2.5-flash' || 
+        rawChosenName === 'bluefox_pro' || 
+        rawChosenName === 'agnes-2.0-flash' ||
+        currentEffectiveModel === 'agnes-2.5-flash' ||
+        selectedModel === 'agnes-2.5-flash';
+
+      const isTencentMatch = 
+        rawChosenName === 'tencent-hy3-free' || 
+        rawChosenName === 'bluefox_standard' || 
+        rawChosenName === 'jev' || 
+        rawChosenName === 'tmpa_v1' ||
+        currentEffectiveModel === 'tencent-hy3-free' ||
+        selectedModel === 'tencent-hy3-free';
+
+      const isLagunaMatch = 
+        rawChosenName === 'laguna-s-2.1' || 
+        rawChosenName === 'bluefox_dilo' || 
+        rawChosenName === 'dilo' || 
+        rawChosenName === 'longcat-2.0-free' ||
+        currentEffectiveModel === 'laguna-s-2.1' ||
+        selectedModel === 'laguna-s-2.1';
+
+      // Jika user memilih salah satu dari 3 model bawaan (atau mode bukan custom)
+      const isNativeBluefox = !isCustomMode || (isAgnesMatch || isTencentMatch || isLagunaMatch);
+
       let chatPayload: any;
 
-      if (isBluefoxNative) {
+      if (isNativeBluefox) {
         // ---------------------------------------------------------------------
-        // KASUS A: 3 MODEL BAWAAN BLUEFOX (Diverifikasi terlebih dahulu)
-        // Detail pemetaan Target API ID resmi:
+        // KASUS A: 3 MODEL BAWAAN BLUEFOX (is_bluefox_native: true)
+        // Pemetaan Internal Model ID resmi:
         // 1. Bluefox pro --> agnes-2.5-flash
-        // 2. Bluefox standard --> jev (power by tencent-hy3-free)
+        // 2. Bluefox standard --> jev
         // 3. Bluefox Dilo --> laguna-s-2.1
         // ---------------------------------------------------------------------
-        let bluefoxResolvedModel = 'agnes-2.5-flash';
-
-        if (currentEffectiveModel === 'laguna-s-2.1' || selectedModel === 'laguna-s-2.1') {
-          bluefoxResolvedModel = 'laguna-s-2.1';
-        } else if (currentEffectiveModel === 'tencent-hy3-free' || selectedModel === 'tencent-hy3-free') {
-          bluefoxResolvedModel = 'jev';
+        let internalModelId = 'agnes-2.5-flash';
+        if (isLagunaMatch) {
+          internalModelId = 'laguna-s-2.1';
+        } else if (isTencentMatch) {
+          internalModelId = 'jev';
         } else {
-          bluefoxResolvedModel = 'agnes-2.5-flash';
+          internalModelId = 'agnes-2.5-flash';
         }
 
         chatPayload = {
@@ -2081,17 +2130,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           user_id: activeUserId || user?.id || null,
           userId: activeUserId || user?.id || null,
           is_bluefox_native: true,
-          model: bluefoxResolvedModel,
-          model_id: bluefoxResolvedModel,
-          modelId: bluefoxResolvedModel,
-          id_model: bluefoxResolvedModel,
+          isBluefoxNative: true,
+          model: internalModelId,
+          model_id: internalModelId,
+          modelId: internalModelId,
+          id_model: internalModelId,
           selected_model: selectedModel,
           selected_model_id: selectedModel,
           selectedModel: selectedModel,
           raw_model: currentEffectiveModel || selectedModel,
           raw_model_id: currentEffectiveModel || selectedModel,
-          resolved_model: bluefoxResolvedModel,
-          resolvedModel: bluefoxResolvedModel,
+          resolved_model: internalModelId,
+          resolvedModel: internalModelId,
           model_name: getModelDisplayName(selectedModel),
           is_vision: isVisionNow,
           isVision: isVisionNow,
@@ -2107,11 +2157,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         };
       } else {
         // ---------------------------------------------------------------------
-        // KASUS B: MODEL CUSTOM API (Hanya jika pengguna memilih model kustom)
+        // KASUS B: CUSTOM API REQUEST
+        // Tetapkan ID API kustom secara eksplisit ke field target_api_id
         // ---------------------------------------------------------------------
         const customTarget = activeCustomChat || getActiveCustomApi();
-        const customModelName = customTarget?.model || 'gpt-4o';
-        const customApiId = customTarget?.id || 'custom-api';
+        const customApiId = customTarget?.id || localStorage.getItem('tmpa_active_custom_id') || 'custom-api';
+        const customModelName = customTarget?.model || rawChosenName || 'gpt-4o';
 
         chatPayload = {
           message: promptToSend,
@@ -2121,13 +2172,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           session_id: effectiveConvId,
           user_id: activeUserId || user?.id || null,
           userId: activeUserId || user?.id || null,
-          api_id: customModelName,
-          apiId: customModelName,
-          target_api_id: customModelName,
-          targetApiId: customModelName,
-          API_ID: customModelName,
-          target_api: customModelName,
-          targetApi: customModelName,
+          is_bluefox_native: false,
+          isBluefoxNative: false,
+          target_api_id: customApiId,
+          targetApiId: customApiId,
+          api_id: customApiId,
+          apiId: customApiId,
           custom_api_id: customApiId,
           model: customModelName,
           model_id: customModelName,
