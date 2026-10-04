@@ -66,6 +66,36 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
+  // Pastikan ID model dan Target API ID selalu terisi sesuai spesifikasi Edge Function:
+  // 1. Bluefox pro --> agnes-2.5-flash
+  // 2. Bluefox standard --> jev
+  // 3. Bluefox Dilo --> laguna-s-2.1
+  const safePayload: any = { ...(payload || {}) };
+  const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'agnes-2.5-flash';
+  if (!safePayload.model_id) safePayload.model_id = fallbackModel;
+  if (!safePayload.modelId) safePayload.modelId = fallbackModel;
+  if (!safePayload.id_model) safePayload.id_model = fallbackModel;
+  if (!safePayload.model) safePayload.model = fallbackModel;
+
+  // Resolve Target API ID
+  const resolveTargetApiId = (inputModel?: string): string => {
+    if (!inputModel) return 'agnes-2.5-flash';
+    const m = inputModel.toLowerCase();
+    if (m.includes('laguna') || m.includes('dilo')) return 'laguna-s-2.1';
+    if (m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev')) return 'jev';
+    if (m.includes('pro') || m.includes('agnes')) return 'agnes-2.5-flash';
+    return inputModel;
+  };
+
+  const resolvedApiId = safePayload.api_id || safePayload.target_api_id || safePayload.targetApiId || safePayload.apiId || resolveTargetApiId(safePayload.model || safePayload.model_id);
+  safePayload.api_id = resolvedApiId;
+  safePayload.apiId = resolvedApiId;
+  safePayload.target_api_id = resolvedApiId;
+  safePayload.targetApiId = resolvedApiId;
+  safePayload.API_ID = resolvedApiId;
+  safePayload.target_api = resolvedApiId;
+  safePayload.targetApi = resolvedApiId;
+
   // 1. Ekstrak access token sesi aktif pengguna
   let authToken = anonKey;
   try {
@@ -117,7 +147,7 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
         'apikey': anonKey,
         'Authorization': `Bearer ${tokenToUse}`,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(safePayload),
       signal,
     });
   };

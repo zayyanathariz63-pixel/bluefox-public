@@ -36,6 +36,7 @@ import {
   supabaseKey,
   invokeBluefoxProcessor,
   DEFAULT_MODELS,
+  getModelDisplayName,
   createNewSession,
   fetchUserSessions,
   getUserSessions,
@@ -2023,9 +2024,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           message: m.text
         }));
 
-      const resolvedModel = DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || (
+      const rawModelId = activeCustomApi?.model || currentEffectiveModel || selectedModel || 'agnes-2.5-flash';
+      const resolvedModel = activeCustomApi?.model || DEFAULT_MODELS[currentEffectiveModel] || DEFAULT_MODELS[selectedModel] || (
         currentEffectiveModel === 'tencent-hy3-free' ? 'jev' : currentEffectiveModel
       );
+
+      // Target API ID mapping (Sesuai Edge Function bluefox-processor-):
+      // 1. Bluefox pro --> agnes-2.5-flash
+      // 2. Bluefox standard --> jev
+      // 3. Bluefox Dilo --> laguna-s-2.1
+      let targetApiId = 'agnes-2.5-flash';
+      if (activeCustomApi && activeCustomApi.apiKey) {
+        targetApiId = activeCustomApi.model || activeCustomApi.id || 'agnes-2.5-flash';
+      } else if (currentEffectiveModel === 'laguna-s-2.1' || selectedModel === 'laguna-s-2.1') {
+        targetApiId = 'laguna-s-2.1';
+      } else if (currentEffectiveModel === 'tencent-hy3-free' || selectedModel === 'tencent-hy3-free') {
+        targetApiId = 'jev';
+      } else {
+        targetApiId = 'agnes-2.5-flash';
+      }
 
       const chatPayload: any = {
         message: promptToSend,
@@ -2033,7 +2050,27 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         history: formattedHistory,
         conversation_id: effectiveConvId,
         session_id: effectiveConvId,
+        user_id: activeUserId || user?.id || null,
+        userId: activeUserId || user?.id || null,
+        api_id: targetApiId,
+        apiId: targetApiId,
+        target_api_id: targetApiId,
+        targetApiId: targetApiId,
+        API_ID: targetApiId,
+        target_api: targetApiId,
+        targetApi: targetApiId,
         model: resolvedModel,
+        model_id: rawModelId,
+        modelId: rawModelId,
+        id_model: rawModelId,
+        selected_model: selectedModel,
+        selected_model_id: selectedModel,
+        selectedModel: selectedModel,
+        raw_model: rawModelId,
+        raw_model_id: rawModelId,
+        resolved_model: resolvedModel,
+        resolvedModel: resolvedModel,
+        model_name: getModelDisplayName(rawModelId),
         is_vision: isVisionNow,
         isVision: isVisionNow,
         reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
@@ -2059,11 +2096,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       if (activeCustomApi && activeCustomApi.apiKey) {
+        chatPayload.api_id = activeCustomApi.id;
+        chatPayload.apiId = activeCustomApi.id;
+        chatPayload.custom_api_id = activeCustomApi.id;
         chatPayload.customApi = {
+          id: activeCustomApi.id,
+          name: activeCustomApi.name,
           provider: activeCustomApi.provider,
           baseUrl: activeCustomApi.baseUrl,
           apiKey: activeCustomApi.apiKey,
-          model: activeCustomApi.model
+          model: activeCustomApi.model,
+          model_id: activeCustomApi.model
         };
         chatPayload.custom_api = chatPayload.customApi;
       }
