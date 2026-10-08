@@ -3,13 +3,310 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>tmpa chat</title>
+    <title>bluefox</title>
     <meta name="description" content="A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration." />
-    <meta property="og:title" content="tmpa chat" />
+    <meta property="og:title" content="bluefox" />
     <meta property="og:description" content="A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration." />
+    <style>
+      /* Fallback & Prerender styles for bots, crawlers, and destroy.spritefusion.com */
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #0f172a;
+        color: #f8fafc;
+        min-height: 100vh;
+      }
+      .prerender-container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 20px 48px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+      .prerender-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 24px;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 16px;
+      }
+      .prerender-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .prerender-logo {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        font-weight: bold;
+      }
+      .prerender-brand-name {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+      }
+      .prerender-nav {
+        display: flex;
+        gap: 12px;
+      }
+      .prerender-btn {
+        padding: 8px 16px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        text-decoration: none;
+        background: #334155;
+        color: #f1f5f9;
+        border: 1px solid #475569;
+        display: inline-block;
+      }
+      .prerender-hero {
+        text-align: center;
+        padding: 40px 20px 20px;
+        background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%);
+        border: 1px solid #1e293b;
+        border-radius: 24px;
+      }
+      .prerender-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 9999px;
+        background: #1e1b4b;
+        color: #a5b4fc;
+        border: 1px solid #4338ca;
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 16px;
+      }
+      .prerender-title {
+        font-size: 38px;
+        font-weight: 800;
+        margin: 0 0 16px;
+        letter-spacing: -1px;
+        line-height: 1.2;
+      }
+      .prerender-subtitle {
+        font-size: 16px;
+        color: #94a3b8;
+        max-width: 680px;
+        margin: 0 auto 28px;
+        line-height: 1.6;
+      }
+      .prerender-models {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+      }
+      .prerender-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 18px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .prerender-card-pro {
+        border-color: #8b5cf6;
+        background: linear-gradient(180deg, #241442 0%, #1e293b 100%);
+      }
+      .prerender-card-tag {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        padding: 4px 8px;
+        border-radius: 6px;
+        display: inline-block;
+        width: fit-content;
+      }
+      .prerender-chat-box {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 20px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .prerender-bubble {
+        padding: 14px 18px;
+        border-radius: 14px;
+        font-size: 14px;
+        line-height: 1.5;
+        max-width: 80%;
+      }
+      .prerender-user-bubble {
+        background: #3b82f6;
+        color: #ffffff;
+        align-self: flex-end;
+      }
+      .prerender-bot-bubble {
+        background: #0f172a;
+        border: 1px solid #334155;
+        color: #e2e8f0;
+        align-self: flex-start;
+      }
+      .prerender-footer {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 32px 20px;
+        border-top: 1px solid #1e293b;
+        color: #64748b;
+        font-size: 13px;
+        text-align: center;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="prerender-container">
+        <!-- Header -->
+        <header class="prerender-header">
+          <div class="prerender-brand">
+            <div class="prerender-logo">🦊</div>
+            <div>
+              <div class="prerender-brand-name">Bluefox AI</div>
+              <div style="font-size: 11px; color: #94a3b8;">High-Intelligence Engine</div>
+            </div>
+          </div>
+          <nav class="prerender-nav">
+            <a href="#models" class="prerender-btn">Models</a>
+            <a href="#chat" class="prerender-btn" style="background: #3b82f6; border-color: #2563eb;">Start Chat</a>
+          </nav>
+        </header>
+
+        <!-- Hero Section -->
+        <section class="prerender-hero">
+          <div class="prerender-badge">⚡ Multi-Model Intelligence Platform</div>
+          <h1 class="prerender-title">Bluefox AI Workspace</h1>
+          <p class="prerender-subtitle">
+            A sleek, professional AI chat platform featuring trigger commands, theme customization, 
+            real-time web search grounding, and support for high-intelligence reasoning models.
+          </p>
+          <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <a href="#chat" class="prerender-btn" style="background: #3b82f6; padding: 12px 24px; font-size: 15px; border-color: #2563eb;">Start Chatting Now</a>
+            <a href="#models" class="prerender-btn" style="padding: 12px 24px; font-size: 15px;">Explore 3 Native Models</a>
+          </div>
+        </section>
+
+        <!-- Native Models Section -->
+        <section id="models">
+          <h2 style="font-size: 22px; font-weight: 700; margin: 0 0 16px; text-align: center;">Choose Your AI Model</h2>
+          <div class="prerender-models">
+            <!-- Model 1: Bluefox Pro -->
+            <article class="prerender-card prerender-card-pro">
+              <div>
+                <span class="prerender-card-tag" style="background: #4c1d95; color: #ddd6fe;">PRO MODEL</span>
+                <h3 style="font-size: 20px; font-weight: 700; margin: 12px 0 6px;">Bluefox Pro</h3>
+                <p style="font-size: 12px; color: #c4b5fd; font-family: monospace; margin: 0 0 10px;">agnes-2.5-flash</p>
+                <p style="font-size: 13px; color: #cbd5e1; line-height: 1.5; margin: 0;">
+                  Flagship analytical reasoning engine. Excels at deep mathematics, multi-step coding, complex logic, and structured problem solving.
+                </p>
+              </div>
+              <a href="#chat" class="prerender-btn" style="background: #7c3aed; border-color: #6d28d9; text-align: center;">Use Bluefox Pro</a>
+            </article>
+
+            <!-- Model 2: Bluefox Standard -->
+            <article class="prerender-card">
+              <div>
+                <span class="prerender-card-tag" style="background: #1e3a8a; color: #bfdbfe;">STANDARD MODEL</span>
+                <h3 style="font-size: 20px; font-weight: 700; margin: 12px 0 6px;">Bluefox Standard</h3>
+                <p style="font-size: 12px; color: #93c5fd; font-family: monospace; margin: 0 0 10px;">tencent-hy3-free</p>
+                <p style="font-size: 13px; color: #cbd5e1; line-height: 1.5; margin: 0;">
+                  High-speed everyday conversational AI. Fast turnarounds, general knowledge, summarizing, drafting emails, and productivity tasks.
+                </p>
+              </div>
+              <a href="#chat" class="prerender-btn" style="background: #2563eb; border-color: #1d4ed8; text-align: center;">Use Bluefox Standard</a>
+            </article>
+
+            <!-- Model 3: Bluefox Dilo -->
+            <article class="prerender-card">
+              <div>
+                <span class="prerender-card-tag" style="background: #0369a1; color: #bae6fd;">DILO BALANCED</span>
+                <h3 style="font-size: 20px; font-weight: 700; margin: 12px 0 6px;">Bluefox Dilo</h3>
+                <p style="font-size: 12px; color: #7dd3fc; font-family: monospace; margin: 0 0 10px;">laguna-s-2.1</p>
+                <p style="font-size: 13px; color: #cbd5e1; line-height: 1.5; margin: 0;">
+                  Creative brainstorming, storytelling, engaging persona responses, and balanced multimodal conversational tasks.
+                </p>
+              </div>
+              <a href="#chat" class="prerender-btn" style="background: #0284c7; border-color: #0369a1; text-align: center;">Use Bluefox Dilo</a>
+            </article>
+          </div>
+        </section>
+
+        <!-- Simulated Chat Bubble Section -->
+        <section id="chat" class="prerender-chat-box">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 12px;">
+            <div style="font-size: 14px; font-weight: 600; color: #94a3b8;">Active Conversation • Bluefox Pro (agnes-2.5-flash)</div>
+            <div style="font-size: 12px; color: #10b981; font-weight: 600;">● Online</div>
+          </div>
+          <div class="prerender-bubble prerender-user-bubble">
+            How does Bluefox AI handle custom APIs and native models with zero latency?
+          </div>
+          <div class="prerender-bubble prerender-bot-bubble">
+            Bluefox AI routes native model queries directly to high-throughput endpoints (<strong>agnes-2.5-flash</strong>, <strong>tencent-hy3-free</strong>, and <strong>laguna-s-2.1</strong>) while offering dedicated gateways for custom user keys (OpenAI, Anthropic, Gemini, DeepSeek). Real-time streaming and edge processing ensure instant responses with full Markdown formatting!
+          </div>
+          <div style="background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="color: #64748b; font-size: 14px;">Ask Bluefox anything... (@web for live search)</span>
+            <button class="prerender-btn" style="background: #3b82f6; border: none; cursor: pointer;">Send</button>
+          </div>
+        </section>
+
+        <!-- Features Grid -->
+        <section style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 18px;">
+            <h4 style="font-size: 15px; font-weight: 700; margin: 0 0 8px; color: #60a5fa;">🌐 Dual-Engine Web Search</h4>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">Live web information retrieval with sources bottom sheet and citations.</p>
+          </div>
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 18px;">
+            <h4 style="font-size: 15px; font-weight: 700; margin: 0 0 8px; color: #a78bfa;">🔑 Custom API Keys</h4>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">Bring your own API keys for custom models with strict parameter isolation.</p>
+          </div>
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 18px;">
+            <h4 style="font-size: 15px; font-weight: 700; margin: 0 0 8px; color: #34d399;">⚡ Ultra Low Latency</h4>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">Direct Supabase edge processor pipeline and streaming responses.</p>
+          </div>
+          <div style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; padding: 18px;">
+            <h4 style="font-size: 15px; font-weight: 700; margin: 0 0 8px; color: #f472b6;">🎮 Interactive Games</h4>
+            <p style="font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5;">Destructible canvas integration with Sprite Fusion mini-game.</p>
+          </div>
+        </section>
+
+        <!-- Footer with Destroy Badge -->
+        <footer class="prerender-footer">
+          <a 
+            href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            title="Destroy this website"
+            style="display: inline-block; transition: transform 0.2s;"
+          >
+            <img 
+              src="https://destroy.spritefusion.com/badge.svg" 
+              alt="Destroy this website" 
+              width="180" 
+              height="40" 
+              style="display: block; border-radius: 8px;"
+            />
+          </a>
+          <div>© 2026 Bluefox AI • Powered by bluefox.tmpa.my.id. All rights reserved.</div>
+        </footer>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
