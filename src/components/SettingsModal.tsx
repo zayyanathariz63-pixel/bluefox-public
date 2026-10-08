@@ -563,6 +563,28 @@ export function SettingsModal({
                     <p className="text-sm text-slate-500 mt-0.5">{t.deleteDataDesc}</p>
                   </div>
                 </button>
+
+                {/* Destroy This Website Widget */}
+                <div className="pt-6 pb-2 flex flex-col items-center justify-center gap-2 border-t border-slate-200/80 mt-6">
+                  <span className="text-[11px] font-medium text-slate-400">
+                    {lang === 'id' ? 'Mini Game Interaktif' : 'Interactive Mini Game'}
+                  </span>
+                  <a 
+                    href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-block transition-transform hover:scale-105 active:scale-95"
+                    title="Destroy this website"
+                  >
+                    <img 
+                      src="https://destroy.spritefusion.com/badge.svg" 
+                      alt="Destroy this website" 
+                      width="180" 
+                      height="40" 
+                      className="h-9 w-auto rounded-lg shadow-2xs"
+                    />
+                  </a>
+                </div>
               </div>
             </div>
           )}

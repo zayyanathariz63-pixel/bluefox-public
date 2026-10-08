@@ -135,8 +135,23 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 px-6 border-t border-slate-200 text-center text-xs text-slate-400 bg-white">
-        © 2026 Bluefox AI. All rights reserved.
+      <footer className="py-8 px-6 border-t border-slate-200 text-center text-xs text-slate-400 bg-white flex flex-col items-center justify-center gap-3">
+        <a 
+          href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="inline-block transition-transform hover:scale-105 active:scale-95"
+          title="Destroy this website"
+        >
+          <img 
+            src="https://destroy.spritefusion.com/badge.svg" 
+            alt="Destroy this website" 
+            width="180" 
+            height="40" 
+            className="h-10 w-auto rounded-lg shadow-2xs"
+          />
+        </a>
+        <p>© 2026 Bluefox AI. All rights reserved.</p>
       </footer>
     </div>
   );

@@ -3305,6 +3305,25 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   </div>
                 </div>
                 
+                {/* Destroy This Website Badge */}
+                <div className="flex justify-center pt-1 pb-0.5">
+                  <a 
+                    href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-block transition-transform hover:scale-105 active:scale-95"
+                    title="Destroy this website"
+                  >
+                    <img 
+                      src="https://destroy.spritefusion.com/badge.svg" 
+                      alt="Destroy this website" 
+                      width="180" 
+                      height="40" 
+                      className="h-8 w-auto rounded-lg shadow-2xs"
+                    />
+                  </a>
+                </div>
+                
                 <button 
                   onClick={handleLogout}
                   className="flex items-center w-full gap-2 px-4 py-2.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-sm font-semibold cursor-pointer border border-transparent hover:border-rose-200"
