@@ -183,6 +183,14 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   }
 
   // 2. Fungsi helper untuk mengeksekusi request HTTP ke Edge Function
+  const payloadString = JSON.stringify(safePayload);
+  console.log('[EDGE FUNCTION DISPATCH]', {
+    endpoint: edgeFunctionUrl,
+    keys: Object.keys(safePayload),
+    bodySizeBytes: new Blob([payloadString]).size,
+    sample: payloadString.slice(0, 350)
+  });
+
   const executeRequest = async (tokenToUse: string) => {
     return await fetch(edgeFunctionUrl, {
       method: 'POST',
@@ -191,7 +199,7 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
         'apikey': anonKey,
         'Authorization': `Bearer ${tokenToUse}`,
       },
-      body: JSON.stringify(safePayload),
+      body: payloadString,
       signal,
     });
   };
