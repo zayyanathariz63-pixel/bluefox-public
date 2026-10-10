@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
 import { executeDualEngineSearch, BLUEFOX_SYSTEM_PROMPT } from "./src/lib/search";
 
 async function startServer() {
@@ -209,9 +208,8 @@ async function startServer() {
         customApi = null
       } = payload as any;
 
-      const openRouterKey = process.env.OPENROUTER_API_KEY;
-      const geminiKey = process.env.GEMINI_API_KEY;
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
+      const naraApiKey = process.env.NARA_API_KEY || process.env.BYNARA_API_KEY || "";
 
       const DEFAULT_MODELS: Record<string, string> = {
         "bluefox-pro": "agnes-2.5-flash",
@@ -490,83 +488,58 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
         }
       }
 
-      // 2. Fallback: Gemini jika Edge Function mengalami kendala
-      if (!successfullyGenerated && geminiKey) {
+      // 2. Pemanggilan Langsung ke Nara Router (https://router.bynara.id/v1)
+      if (!successfullyGenerated) {
         try {
-          const ai = new GoogleGenAI({ 
-            apiKey: geminiKey,
-            httpOptions: {
-              headers: {
-                'User-Agent': 'aistudio-build',
-              }
-            }
+          const naraEndpoint = "https://router.bynara.id/v1/chat/completions";
+          console.log(`📡 [Nara Router] Memanggil ${naraEndpoint} untuk model: ${requestedModelId} ("${message.slice(0, 40)}...")`);
+
+          const naraHeaders: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+          if (naraApiKey && naraApiKey.trim()) {
+            naraHeaders["Authorization"] = `Bearer ${naraApiKey.trim()}`;
+          }
+
+          const naraRes = await fetch(naraEndpoint, {
+            method: "POST",
+            headers: naraHeaders,
+            body: JSON.stringify({
+              model: requestedModelId,
+              messages: formattedMessages,
+              temperature: isCreative ? 0.95 : (isVerifyAi || isDeepVerify ? 0.3 : 0.7),
+              stream: false
+            }),
+            signal: abortController.signal
           });
-          const chatContents: any[] = [];
-          
-          for (const msg of formattedMessages) {
-            if (msg.role !== "system") {
-              const parts: any[] = [{ text: msg.content }];
-              chatContents.push({
-                role: msg.role === 'user' ? 'user' : 'model',
-                parts
-              });
-            }
-          }
 
-          // Handle inline image attachment if present
-          const targetImg = imageUrl || image_url;
-          if (targetImg && typeof targetImg === 'string' && targetImg.includes('base64,')) {
-            const mimeMatch = targetImg.match(/data:([^;]+);base64,/);
-            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-            const base64Data = targetImg.split('base64,')[1];
-            if (chatContents.length > 0) {
-              const lastTurn = chatContents[chatContents.length - 1];
-              if (lastTurn.role === 'user') {
-                lastTurn.parts.unshift({
-                  inlineData: {
-                    mimeType,
-                    data: base64Data
-                  }
-                });
-              }
-            }
-          }
+          if (naraRes.ok) {
+            const naraData = await naraRes.json();
+            const replyText = 
+              naraData.choices?.[0]?.message?.content || 
+              naraData.choices?.[0]?.text || 
+              naraData.reply || 
+              naraData.text || 
+              naraData.response || 
+              "";
 
-          const geminiModelsToTry = ['gemini-2.5-flash', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
-          for (const gModel of geminiModelsToTry) {
-            if (abortController.signal.aborted) break;
-            try {
-              const streamResult = await ai.models.generateContentStream({
-                model: gModel,
-                contents: chatContents,
-                config: {
-                  systemInstruction: systemPrompt,
-                  temperature: isCreative ? 0.95 : (isVerifyAi || isDeepVerify ? 0.3 : 0.7),
-                }
-              });
-
-              for await (const chunk of streamResult) {
-                if (abortController.signal.aborted) {
-                  console.log("🛑 Aborted during Gemini stream loop.");
-                  break;
-                }
-                const chunkText = chunk.text;
-                if (chunkText) {
-                  accumulatedText += chunkText;
-                  sendChunk(chunkText);
+            if (replyText && replyText.trim()) {
+              accumulatedText = replyText;
+              if (isSse) {
+                const words = replyText.match(/\S+\s*/g) || [replyText];
+                for (const word of words) {
+                  if (abortController.signal.aborted) break;
+                  sendChunk(word);
                 }
               }
-
-              if (accumulatedText.trim().length > 0) {
-                successfullyGenerated = true;
-                break;
-              }
-            } catch (innerGeminiErr: any) {
-              console.warn(`⚠️ Model ${gModel} error:`, innerGeminiErr?.message || innerGeminiErr);
+              successfullyGenerated = true;
             }
+          } else {
+            const errText = await naraRes.text();
+            console.warn(`⚠️ Nara Router mengembalikan status ${naraRes.status}:`, errText);
           }
-        } catch (geminiErr: any) {
-          console.warn("⚠️ Gemini stream gagal/fallback:", geminiErr?.message || geminiErr);
+        } catch (naraErr: any) {
+          console.warn("⚠️ Nara Router error:", naraErr?.message || naraErr);
         }
       }
 

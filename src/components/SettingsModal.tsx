@@ -4,13 +4,23 @@ import {
   ArrowLeft, User, Activity, Shield, Settings2, Link2, 
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
-  HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2
+  HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2,
+  Share2, GitFork, Pencil
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { getModelDisplayName } from '../lib/supabase';
 import { processAndCompressImage } from '../lib/imageCompressor';
+import { 
+  getSharedChatsRegistry, 
+  updateSharedChatMode, 
+  revokeSharedChat, 
+  getDefaultShareMode, 
+  setDefaultShareMode, 
+  ShareMode,
+  SharedChatRecord
+} from '../lib/shareChat';
 import { 
   getStorageUsageStats, 
   clearAllStoredMedia, 
@@ -60,7 +70,7 @@ interface SettingsModalProps {
   onOpenCustomGenerate?: (prompt?: string, type?: 'image' | 'video') => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete' | 'share_chat';
 
 export function SettingsModal({ 
   isOpen, 
@@ -83,6 +93,11 @@ export function SettingsModal({
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Share chat state
+  const [sharedRegistry, setSharedRegistry] = useState<Record<string, SharedChatRecord>>(() => getSharedChatsRegistry());
+  const [defaultShareMode, setDefaultShareModeState] = useState<ShareMode>(() => getDefaultShareMode());
+  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
 
   // Storage & Delete states
   const [storageStats, setStorageStats] = useState<StorageUsageStats>(() => getStorageUsageStats());
@@ -540,6 +555,32 @@ export function SettingsModal({
                   </div>
                 </button>
 
+                {/* 6.5 Share chat */}
+                <button
+                  onClick={() => {
+                    setCurrentView('share_chat');
+                    setSharedRegistry(getSharedChatsRegistry());
+                  }}
+                  className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-blue-50">
+                    <Share2 size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                        Share chat
+                      </h3>
+                      <span className="text-[11px] font-semibold uppercase bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-mono">
+                        Read · Remix · Edit
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {lang === 'id' ? 'Kelola mode akses & tautan obrolan yang Anda bagikan' : 'Manage access modes and your shared chat links'}
+                    </p>
+                  </div>
+                </button>
+
                 {/* 7. Delete (Interactive) */}
                 <button
                   onClick={() => {
@@ -615,6 +656,7 @@ export function SettingsModal({
                   {currentView === 'custom_api' && t.customApi}
                   {currentView === 'language' && t.language}
                   {currentView === 'delete' && 'Delete'}
+                  {currentView === 'share_chat' && (lang === 'id' ? 'Share chat' : 'Share chat')}
                 </span>
               </div>
 
@@ -1991,6 +2033,233 @@ export function SettingsModal({
                         </div>
                       </div>
 
+                    </div>
+                  </div>
+                )}
+
+                {/* View: SHARE CHAT SETTINGS */}
+                {currentView === 'share_chat' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div>
+                      <h4 className="text-xl font-bold text-slate-900">
+                        {lang === 'id' ? 'Pengaturan Share Chat' : 'Share Chat Settings'}
+                      </h4>
+                      <p className="text-sm text-slate-500 mt-1">
+                        {lang === 'id'
+                          ? 'Atur mode akses default (Read, Remix, Edit) dan kelola seluruh tautan obrolan yang telah Anda bagikan.'
+                          : 'Configure default access mode (Read, Remix, Edit) and manage all your shared conversation links.'}
+                      </p>
+                    </div>
+
+                    {/* Mode Default Selection Card */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-4">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                          <Share2 size={18} />
+                        </div>
+                        <div>
+                          <h5 className="text-sm font-bold text-slate-900">
+                            {lang === 'id' ? 'Mode Default Saat Membagikan' : 'Default Sharing Mode'}
+                          </h5>
+                          <p className="text-xs text-slate-500">
+                            {lang === 'id' ? 'Pilihan mode awal saat membuka popup bagikan' : 'Initial mode applied when opening the share popup'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                        {/* Option 1: Read */}
+                        <div 
+                          onClick={() => {
+                            setDefaultShareMode('read');
+                            setDefaultShareModeState('read');
+                          }}
+                          className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                            defaultShareMode === 'read'
+                              ? 'border-blue-500 bg-blue-50/70 text-blue-900 ring-1 ring-blue-500/20'
+                              : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Eye size={16} className={defaultShareMode === 'read' ? 'text-blue-600' : 'text-slate-400'} />
+                            <span className="font-bold text-xs">Read</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-tight">
+                            {lang === 'id' ? 'Hanya baca, tanpa simpan & input hilang' : 'Read only, no saving, prompt hidden'}
+                          </p>
+                        </div>
+
+                        {/* Option 2: Remix */}
+                        <div 
+                          onClick={() => {
+                            setDefaultShareMode('remix');
+                            setDefaultShareModeState('remix');
+                          }}
+                          className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                            defaultShareMode === 'remix'
+                              ? 'border-purple-500 bg-purple-50/70 text-purple-900 ring-1 ring-purple-500/20'
+                              : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <GitFork size={16} className={defaultShareMode === 'remix' ? 'text-purple-600' : 'text-slate-400'} />
+                            <span className="font-bold text-xs">Remix</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-tight">
+                            {lang === 'id' ? 'Lanjutkan konteks, buat sesi cabang baru' : 'Fork context into new branch session'}
+                          </p>
+                        </div>
+
+                        {/* Option 3: Edit */}
+                        <div 
+                          onClick={() => {
+                            setDefaultShareMode('edit');
+                            setDefaultShareModeState('edit');
+                          }}
+                          className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                            defaultShareMode === 'edit'
+                              ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 ring-1 ring-emerald-500/20'
+                              : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Pencil size={16} className={defaultShareMode === 'edit' ? 'text-emerald-600' : 'text-slate-400'} />
+                            <span className="font-bold text-xs">Edit</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 leading-tight">
+                            {lang === 'id' ? 'Simpan penuh ke akun pengguna langsung' : 'Save full session into user account'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Shared Chats Registry List */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-sm font-bold text-slate-800">
+                          {lang === 'id' ? 'Daftar Obrolan yang Pernah Dibagikan' : 'Active Shared Chats'}
+                        </h5>
+                        <span className="text-xs text-slate-400 font-mono">
+                          {Object.keys(sharedRegistry).length} {lang === 'id' ? 'tautan aktif' : 'active links'}
+                        </span>
+                      </div>
+
+                      {Object.keys(sharedRegistry).length === 0 ? (
+                        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-3">
+                          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                            <Share2 size={24} />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-700">
+                              {lang === 'id' ? 'Belum Ada Obrolan yang Dibagikan' : 'No Shared Chats Yet'}
+                            </p>
+                            <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1 leading-relaxed">
+                              {lang === 'id' 
+                                ? 'Saat AI menjawab sesi chat untuk pertama kali, tombol Bagikan akan muncul di sebelah tombol unduh pada bilah atas.' 
+                                : 'When the AI answers in a chat session for the first time, the Share button will appear next to the download button in the top bar.'}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {Object.values(sharedRegistry).map((item) => (
+                            <div 
+                              key={item.sessionId}
+                              className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3 transition-all hover:border-slate-300"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <h6 className="font-bold text-sm text-slate-900 truncate">
+                                    {item.title}
+                                  </h6>
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    <span className="text-[10px] font-mono text-slate-400">
+                                      ID: {item.sessionId.slice(0, 14)}...
+                                    </span>
+                                    <span className="text-[10px] text-slate-400">·</span>
+                                    <span className="text-[10px] text-slate-500">
+                                      {new Date(item.createdAt).toLocaleDateString(lang === 'id' ? 'id-ID' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Current Mode Badge */}
+                                <span className={`text-[10px] font-mono uppercase font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                                  item.mode === 'read'
+                                    ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                                    : item.mode === 'remix'
+                                    ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                    : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                }`}>
+                                  Mode: {item.mode.toUpperCase()}
+                                </span>
+                              </div>
+
+                              {/* Mode Switcher Buttons */}
+                              <div className="flex items-center gap-1.5 pt-1">
+                                <span className="text-[11px] font-semibold text-slate-400 mr-1">
+                                  {lang === 'id' ? 'Ubah Mode:' : 'Change Mode:'}
+                                </span>
+                                {(['read', 'remix', 'edit'] as ShareMode[]).map((m) => (
+                                  <button
+                                    key={m}
+                                    onClick={() => {
+                                      updateSharedChatMode(item.sessionId, m);
+                                      setSharedRegistry(getSharedChatsRegistry());
+                                    }}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                                      item.mode === m
+                                        ? m === 'read'
+                                          ? 'bg-blue-600 text-white shadow-xs'
+                                          : m === 'remix'
+                                          ? 'bg-purple-600 text-white shadow-xs'
+                                          : 'bg-emerald-600 text-white shadow-xs'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {m === 'read' ? 'Read' : m === 'remix' ? 'Remix' : 'Edit'}
+                                  </button>
+                                ))}
+                              </div>
+
+                              {/* Link & Action Buttons */}
+                              <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+                                <input
+                                  type="text"
+                                  readOnly
+                                  value={item.url || `https://bluefox.tmpa.my.id/share-${item.sessionId}`}
+                                  className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-slate-600 truncate focus:outline-none"
+                                />
+
+                                <button
+                                  onClick={() => {
+                                    const targetUrl = item.url || `https://bluefox.tmpa.my.id/share-${item.sessionId}`;
+                                    navigator.clipboard.writeText(targetUrl);
+                                    setCopiedShareId(item.sessionId);
+                                    setTimeout(() => setCopiedShareId(null), 2000);
+                                  }}
+                                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                                  title={lang === 'id' ? 'Salin tautan' : 'Copy link'}
+                                >
+                                  {copiedShareId === item.sessionId ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                                  <span>{copiedShareId === item.sessionId ? (lang === 'id' ? 'Tersalin' : 'Copied') : (lang === 'id' ? 'Salin' : 'Copy')}</span>
+                                </button>
+
+                                <button
+                                  onClick={() => {
+                                    revokeSharedChat(item.sessionId);
+                                    setSharedRegistry(getSharedChatsRegistry());
+                                  }}
+                                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
+                                  title={lang === 'id' ? 'Cabut / Hapus tautan ini' : 'Revoke this share link'}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

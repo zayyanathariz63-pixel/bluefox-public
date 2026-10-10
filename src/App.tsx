@@ -5,10 +5,11 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
+import { ShareChatModal } from './components/ShareChatModal';
 import { ConnectorsModal } from './components/ConnectorsModal';
 import { IntegrationsPage } from './components/IntegrationsPage';
 import { MediaScreenViewer } from './components/MediaScreenViewer';
@@ -66,6 +67,7 @@ import {
   SMART_SELECT_STEPS 
 } from './lib/reasoning';
 import { safeSaveSessionsToLocal, autoPurgeMediaIfStorageFull } from './lib/storageManager';
+import { ShareMode, parseSharedDataFromUrl, getSharedChatsRegistry } from './lib/shareChat';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -556,10 +558,17 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [sharedAccessMode, setSharedAccessMode] = useState<ShareMode | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
       const hasExistingSession = localStorage.getItem('tmpa_chat_sessions') || localStorage.getItem('tmpa_last_active_session_id') || localStorage.getItem('tmpa_user_profile');
-      const isSpecialRoute = window.location.pathname.startsWith('/screen-') || window.location.pathname.startsWith('/verify') || window.location.pathname.startsWith('/integrations');
+      const isSpecialRoute = window.location.pathname.startsWith('/screen-') || 
+        window.location.pathname.startsWith('/share-') ||
+        window.location.hash.includes('share-') ||
+        window.location.search.includes('share=') ||
+        window.location.pathname.startsWith('/verify') || 
+        window.location.pathname.startsWith('/integrations');
       if (hasExistingSession || isSpecialRoute) return false;
     }
     return true;
@@ -570,6 +579,10 @@ export default function App() {
       const currentPath = window.location.pathname;
       if (currentPath.startsWith('/verify')) return 'verify';
       if (currentPath.startsWith('/settings/integrations') || currentPath.startsWith('/integrations')) return 'integrations';
+      const isShareRoute = currentPath.startsWith('/share-') || 
+        window.location.hash.includes('share-') ||
+        window.location.search.includes('share=');
+      if (isShareRoute) return 'chat';
       const lastSessionId = localStorage.getItem('tmpa_last_active_session_id');
       const localSessions = localStorage.getItem('tmpa_chat_sessions');
       if (lastSessionId || (localSessions && localSessions !== '[]') || currentPath.startsWith('/screen-')) {
@@ -592,6 +605,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('Mendeteksi parameter SSO...');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMenuLoadMoreOpen, setIsMenuLoadMoreOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isUserStoppedRef = useRef(false);
@@ -1424,6 +1438,102 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [chatSessions]);
 
+  // Deteksi rute URL /share-(ID) untuk mode: Read, Remix, Edit
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleCheckSharedRoute = async () => {
+      const { sessionId, mode, snapshotData } = parseSharedDataFromUrl();
+      if (!sessionId) return;
+
+      console.log('🔗 [Share Route Detected]', { sessionId, mode, hasSnapshot: Boolean(snapshotData) });
+
+      // Pastikan tampilan diarahkan langsung ke percakapan dan tutup splash
+      setShowSplash(false);
+      setAppState('chat');
+
+      const resolvedMode: ShareMode = mode || 'read';
+
+      // 1. Ekstrak pesan dari snapshotData, registry lokal, chatSessions, atau Supabase
+      let loadedMessages: Message[] = [];
+      let sessionTitle = 'Obrolan Dibagikan';
+      let sessionModel: SupportedModel = selectedModel;
+
+      if (snapshotData && Array.isArray(snapshotData.messages) && snapshotData.messages.length > 0) {
+        loadedMessages = snapshotData.messages;
+        if (snapshotData.title) sessionTitle = snapshotData.title;
+        if (snapshotData.model) sessionModel = snapshotData.model;
+      } else {
+        const registry = getSharedChatsRegistry();
+        const recorded = registry[sessionId];
+        if (recorded && recorded.messagesSnapshot && recorded.messagesSnapshot.length > 0) {
+          loadedMessages = recorded.messagesSnapshot;
+          sessionTitle = recorded.title;
+        } else {
+          const localMatch = chatSessions.find(s => s.id === sessionId);
+          if (localMatch && localMatch.messages && localMatch.messages.length > 0) {
+            loadedMessages = localMatch.messages;
+            sessionTitle = localMatch.title;
+          } else {
+            try {
+              const res = await openChatRoom(sessionId);
+              if (res && Array.isArray(res) && res.length > 0) {
+                loadedMessages = res.map((m: any) => ({
+                  id: m.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                  role: (m.sender === 'user' || m.role === 'user') ? 'user' : 'model',
+                  text: m.content || m.message || m.text || '',
+                }));
+              }
+            } catch (err) {
+              console.warn('Gagal memuat pesan share dari Supabase:', err);
+            }
+          }
+        }
+      }
+
+      if (loadedMessages.length > 0) {
+        setMessages(loadedMessages);
+      }
+
+      if (resolvedMode === 'read') {
+        // Mode Read: Hanya bisa baca, input prompt hilang, sesi tidak disimpan di chat user
+        setSharedAccessMode('read');
+        setCurrentSessionId(sessionId);
+      } else if (resolvedMode === 'remix') {
+        // Mode Remix: Semua konteks window terbawa ke bawah, sesi awal tidak disimpan ke list sampai user chat
+        setSharedAccessMode('remix');
+        setCurrentSessionId(`remix_${sessionId}`);
+      } else if (resolvedMode === 'edit') {
+        // Mode Edit: Melanjutkan sesi chat sepenuhnya, langsung tersimpan di riwayat user walaupun belum mengetik
+        setSharedAccessMode(null);
+        setCurrentSessionId(sessionId);
+
+        setChatSessions((prev) => {
+          const exists = prev.some(s => s.id === sessionId);
+          if (exists) return prev;
+          const newSession: ChatSession = {
+            id: sessionId,
+            title: sessionTitle,
+            model: sessionModel,
+            updatedAt: Date.now(),
+            messages: loadedMessages,
+            isPinned: false,
+          };
+          const updated = [newSession, ...prev];
+          safeSaveSessionsToLocal(updated);
+          try {
+            localStorage.setItem('tmpa_last_active_session_id', sessionId);
+          } catch {}
+          return updated;
+        });
+      }
+    };
+
+    handleCheckSharedRoute();
+    window.addEventListener('popstate', handleCheckSharedRoute);
+    return () => window.removeEventListener('popstate', handleCheckSharedRoute);
+  }, []);
+
   const handleEditMessage = (id: string, newText: string) => {
     const editIndex = messages.findIndex(m => m.id === id);
     if (editIndex === -1) return;
@@ -1937,7 +2047,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // Pastikan sessionId konsisten untuk seluruh percakapan aktif
-      if (!currentSessionId) {
+      if (sharedAccessMode === 'remix') {
+        const forkedId = getValidUUID(null);
+        effectiveConvId = forkedId;
+        setCurrentSessionId(forkedId);
+        setSupabaseSessionId(forkedId);
+        setSharedAccessMode(null);
+        try {
+          localStorage.setItem('tmpa_last_active_session_id', forkedId);
+        } catch {}
+      } else if (!currentSessionId) {
         try {
           const sessionTitle = userText.length > 30 ? userText.substring(0, 30) + '...' : (userText || 'Percakapan Baru');
           const sessionResult = await createNewSession(sessionTitle, effectiveConvId);
@@ -2892,10 +3011,22 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             })()}
           </div>
 
-          <div className="relative shrink-0">
+          <div className="relative shrink-0 flex items-center gap-1">
+            {/* Fitur Bagikan ketika AI menjawab sesi chat untuk pertama kali di sebelah tombol download */}
+            {messages.some(m => m.role === 'model' && m.text.trim().length > 0) && (
+              <button
+                onClick={() => setIsShareModalOpen(true)}
+                className="h-9 px-2.5 sm:px-3 rounded-xl flex items-center gap-1.5 text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95"
+                title={lang === 'id' ? "Bagikan Obrolan" : "Share Chat"}
+              >
+                <Share2 size={15} />
+                <span className="hidden sm:inline">{lang === 'id' ? "Bagikan" : "Share"}</span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-              className="w-10 h-10 -mr-2 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
               title={lang === 'id' ? "Export Konversasi" : "Export Chat"}
             >
               <Download size={18} />
@@ -3053,21 +3184,57 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         </div>
       )}
 
-      {/* Input Form */}
+      {/* Input Form / Read Mode Indicator */}
       <footer className="bg-white dark:bg-slate-950 border-t border-slate-200/80 dark:border-slate-800/80 pt-2 shrink-0 relative z-20">
-        <ChatInput 
-          onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
-          isLoading={isLoading} 
-          onStop={stopGeneration} 
-          connectors={connectors}
-          onToggleConnector={toggleConnector}
-          onShowAllConnectors={() => setIsConnectorsModalOpen(true)}
-          onAutoEnableVision={handleEnableVision}
-          onDisableVision={handleDisableVision}
-          isVisionActive={isVisionActive}
-          disabled={isUsageLimitReached}
-          onOpenCustomGenerate={handleOpenCustomGenerate}
-        />
+        {sharedAccessMode === 'read' ? (
+          <div className="py-5 px-4 flex flex-col items-center justify-center gap-2.5 max-w-xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-semibold shadow-xs">
+              <Eye size={15} />
+              <span>
+                {lang === 'id' 
+                  ? 'Mode Baca (Read) — Anda hanya dapat membaca obrolan ini. Input prompt disembunyikan dan sesi tidak disimpan ke akun Anda.' 
+                  : 'Read Mode — You can only read this conversation. Prompt input is hidden and session is not saved.'}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setSharedAccessMode(null);
+                startNewChat();
+              }}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+            >
+              {lang === 'id' ? 'Mulai Percakapan Baru Saya Sendiri' : 'Start My Own New Conversation'}
+            </button>
+          </div>
+        ) : (
+          <>
+            {sharedAccessMode === 'remix' && (
+              <div className="px-4 pb-1.5 max-w-4xl mx-auto flex items-center justify-between">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-[11px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                  <span>
+                    {lang === 'id'
+                      ? 'Mode Remix: Semua konteks percakapan terbawa ke bawah. Kirim pesan untuk membuat dan menyimpan sesi cabang baru Anda.'
+                      : 'Remix Mode: Full conversation context retained. Send a message to fork and save into your own session.'}
+                  </span>
+                </div>
+              </div>
+            )}
+            <ChatInput 
+              onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
+              isLoading={isLoading} 
+              onStop={stopGeneration} 
+              connectors={connectors}
+              onToggleConnector={toggleConnector}
+              onShowAllConnectors={() => setIsConnectorsModalOpen(true)}
+              onAutoEnableVision={handleEnableVision}
+              onDisableVision={handleDisableVision}
+              isVisionActive={isVisionActive}
+              disabled={isUsageLimitReached}
+              onOpenCustomGenerate={handleOpenCustomGenerate}
+            />
+          </>
+        )}
       </footer>
 
       {/* Slide-down Model Selector Overlay (Half-screen Dropdown from the Top) */}
@@ -3099,22 +3266,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 </button>
 
                 <div className="space-y-1 mb-3">
-                  <button 
-                    onClick={() => { setAppState('landing'); setIsSidebarOpen(false); }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Home size={18} className="text-slate-600" />
-                    <span>{lang === 'id' ? 'Halaman Utama' : 'Home'}</span>
-                  </button>
-
-                  <button 
-                    onClick={() => { window.location.href = "https://tmpa.my.id"; }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Globe size={18} className="text-blue-600" />
-                    <span>{t.mainWebsite}</span>
-                  </button>
-
+                  {/* 1. Store (di bawah new chat) */}
                   <button 
                     onClick={() => {
                       setShowActionToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...');
@@ -3126,30 +3278,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     <span>{t.store}</span>
                   </button>
 
-                  <button 
-                    onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Layers size={18} className="text-emerald-600" />
-                    <span>{t.mcpIntegrations}</span>
-                  </button>
-
+                  {/* 2. File history (di bawah store) */}
                   <button 
                     onClick={() => { setIsFileHistoryOpen(true); setIsSidebarOpen(false); }} 
                     className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                   >
                     <ImageIcon size={18} className="text-cyan-600" />
-                    <span>{t.fileHistory || 'File History'}</span>
+                    <span>{t.fileHistory || (lang === 'id' ? 'File history' : 'File history')}</span>
                   </button>
 
-                  <button 
-                    onClick={() => { handleOpenCustomGenerate(); setIsSidebarOpen(false); }} 
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Sparkles size={18} className="text-purple-600" />
-                    <span>{lang === 'id' ? 'Custom API (Media)' : 'Custom API (Media)'}</span>
-                  </button>
-
+                  {/* 3. Setting (di bawah file history) */}
                   <button 
                     onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} 
                     className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
@@ -3157,6 +3295,40 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     <Settings size={18} className="text-purple-600" />
                     <span>{t.settings}</span>
                   </button>
+
+                  {/* 4. Load more (di bawah setting) */}
+                  <button 
+                    onClick={() => setIsMenuLoadMoreOpen(prev => !prev)} 
+                    className="w-full flex items-center justify-between px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isMenuLoadMoreOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                      <span>Load more</span>
+                    </div>
+                  </button>
+
+                  {/* Isi Load more: Website utama dan MCP */}
+                  {isMenuLoadMoreOpen && (
+                    <div className="pl-3.5 space-y-1 pt-1 pb-1 border-l-2 border-slate-200 ml-4">
+                      {/* Website utama */}
+                      <button 
+                        onClick={() => { window.location.href = "https://tmpa.my.id"; }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                      >
+                        <Globe size={16} className="text-blue-600" />
+                        <span>{lang === 'id' ? 'Website utama' : 'Main Website'}</span>
+                      </button>
+
+                      {/* MCP */}
+                      <button 
+                        onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
+                        className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                      >
+                        <Layers size={16} className="text-emerald-600" />
+                        <span>MCP</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="my-1 border-t border-slate-200" />
@@ -3303,25 +3475,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       )}
                     </div>
                   </div>
-                </div>
-                
-                {/* Destroy This Website Badge */}
-                <div className="flex justify-center pt-1 pb-0.5">
-                  <a 
-                    href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-block transition-transform hover:scale-105 active:scale-95"
-                    title="Destroy this website"
-                  >
-                    <img 
-                      src="https://destroy.spritefusion.com/badge.svg" 
-                      alt="Destroy this website" 
-                      width="180" 
-                      height="40" 
-                      className="h-8 w-auto rounded-lg shadow-2xs"
-                    />
-                  </a>
                 </div>
                 
                 <button 
@@ -4313,6 +4466,19 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       <FileHistoryModal
         isOpen={isFileHistoryOpen}
         onClose={() => setIsFileHistoryOpen(false)}
+      />
+
+      <ShareChatModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        session={chatSessions.find(s => s.id === currentSessionId) || {
+          id: currentSessionId || `session_${Date.now()}`,
+          title: messages.find(m => m.role === 'user')?.text.slice(0, 45) || (lang === 'id' ? 'Obrolan Bluefox' : 'Bluefox Chat'),
+          model: selectedModel,
+          updatedAt: Date.now(),
+          messages: messages,
+        }}
+        lang={lang}
       />
     </div>
       )}

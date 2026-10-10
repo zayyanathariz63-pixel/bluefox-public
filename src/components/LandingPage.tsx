@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { motion } from 'motion/react';
-import { ArrowRight, Shield, Zap, Sparkles, Search, Share2, Check } from 'lucide-react';
+import { ArrowRight, Shield, Zap, Sparkles, Search } from 'lucide-react';
 import { useLanguage } from '../lib/i18n';
 
 const LOGO_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png';
@@ -8,38 +7,6 @@ const LOGO_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/pub
 export function LandingPage({ onStart }: { onStart: () => void }) {
   const { lang } = useLanguage();
   const isId = lang === 'id';
-  const [copied, setCopied] = useState(false);
-
-  const handleShare = async () => {
-    const shareData = {
-      title: 'Bluefox AI',
-      text: isId 
-        ? 'Coba Bluefox AI - Asisten AI Cerdas Multi-Model & Real-time Web Search!' 
-        : 'Try Bluefox AI - Smart Multi-Model AI Assistant with Real-time Web Search!',
-      url: window.location.href,
-    };
-
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share(shareData);
-        return;
-      } catch (err: any) {
-        // User cancelled or share dismissed
-        if (err?.name === 'AbortError') return;
-      }
-    }
-
-    // Fallback: Copy URL to clipboard
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(window.location.href);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch {
-      // Ignored
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 overflow-x-hidden relative app-clean-grid">
@@ -57,33 +24,12 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
           </div>
         </div>
         
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={handleShare}
-            className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold bg-white hover:bg-slate-100 text-slate-700 px-3.5 py-2 rounded-xl transition-all border border-slate-200/90 shadow-2xs active:scale-95 cursor-pointer"
-            title={isId ? 'Bagikan tautan halaman' : 'Share page URL'}
-            aria-label="Share"
-          >
-            {copied ? (
-              <>
-                <Check size={15} className="text-emerald-600" />
-                <span className="text-emerald-600">{isId ? 'Tersalin' : 'Copied'}</span>
-              </>
-            ) : (
-              <>
-                <Share2 size={15} className="text-slate-600" />
-                <span>{isId ? 'Bagikan' : 'Share'}</span>
-              </>
-            )}
-          </button>
-
-          <button 
-            onClick={onStart}
-            className="text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-          >
-            {isId ? 'Mulai Chat' : 'Start Chat'}
-          </button>
-        </div>
+        <button 
+          onClick={onStart}
+          className="text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
+        >
+          {isId ? 'Mulai Chat' : 'Start Chat'}
+        </button>
       </header>
 
       {/* Hero Section */}
