@@ -1,7 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Share2, Eye, GitFork, Pencil, Copy, Check, ExternalLink, ShieldCheck } from 'lucide-react';
-import { ShareMode, buildShareUrl, saveSharedChatRecord, getSharedChatsRegistry, getDefaultShareMode } from '../lib/shareChat';
+import { X, Share2, Copy, Check, ExternalLink, HelpCircle } from 'lucide-react';
+import { 
+  ShareMode, 
+  buildShareUrl, 
+  saveSharedChatRecord, 
+  getSharedChatsRegistry, 
+  getDefaultShareMode,
+  generateShareSessionId,
+  isValidShareSessionId
+} from '../lib/shareChat';
 import { ChatSession } from '../types';
 
 interface ShareChatModalProps {
@@ -21,20 +29,28 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
   const defaultMode = getDefaultShareMode();
   
   const [selectedMode, setSelectedMode] = useState<ShareMode>(defaultMode);
+  const [shareId, setShareId] = useState<string>('');
   const [generatedUrl, setGeneratedUrl] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
   const [isApplied, setIsApplied] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen && session) {
-      // Periksa apakah sesi ini sudah pernah dibagikan sebelumnya
+      // Periksa apakah sesi ini sudah pernah dibagikan sebelumnya dengan ID acak yang valid (16-32 karakter)
       const registry = getSharedChatsRegistry();
-      const existing = registry[session.id];
+      const existing = Object.values(registry).find(
+        r => (r.sessionId === session.id || r.id === session.id) && isValidShareSessionId(r.id)
+      );
+
       if (existing) {
+        setShareId(existing.id);
         setSelectedMode(existing.mode);
         setGeneratedUrl(existing.url);
         setIsApplied(true);
       } else {
+        // Hasilkan ID acak kombinasi huruf dan angka (16-32 karakter, default 24 karakter)
+        const newRandomId = generateShareSessionId(24);
+        setShareId(newRandomId);
         setSelectedMode(defaultMode);
         setGeneratedUrl('');
         setIsApplied(false);
@@ -45,10 +61,13 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
 
   if (!isOpen || !session) return null;
 
+  const currentShareId = shareId || session.id;
+
   const handleApply = () => {
     // Siapkan snapshot data untuk portability
     const snapshotPayload = {
-      id: session.id,
+      id: currentShareId,
+      sessionId: session.id,
       title: session.title,
       model: session.model,
       mode: selectedMode,
@@ -56,11 +75,11 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
       messages: session.messages,
     };
 
-    const fullUrl = buildShareUrl(session.id, selectedMode, snapshotPayload);
+    const fullUrl = buildShareUrl(currentShareId, selectedMode, snapshotPayload);
 
-    // Simpan ke registry share chat
+    // Simpan ke registry share chat dengan ID acak 16-32 karakter
     saveSharedChatRecord({
-      id: session.id,
+      id: currentShareId,
       sessionId: session.id,
       title: session.title,
       mode: selectedMode,
@@ -155,113 +174,112 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
           </div>
 
           <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
-            {/* Format URL Indicator */}
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs">
-              <span className="text-slate-400 font-mono text-[11px] block mb-1">
-                {isId ? 'Format URL Tautan:' : 'Link URL Format:'}
-              </span>
-              <div className="font-mono text-blue-600 dark:text-blue-400 font-semibold truncate">
-                bluefox.tmpa.my.id/share-{session.id}
+            {/* Format URL Indicator dengan ID Acak 16-32 Karakter */}
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-700/60 text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-slate-400 font-mono text-[11px]">
+                  {isId ? 'Format URL Tautan:' : 'Link URL Format:'}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 bg-slate-200/60 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                  ID: {currentShareId.length} char
+                </span>
+              </div>
+              <div className="font-mono text-blue-600 dark:text-blue-400 font-semibold truncate select-all">
+                bluefox.tmpa.my.id/share-{currentShareId}
               </div>
             </div>
 
-            {/* Mode User Selection */}
+            {/* Mode User Selection - Minimalist Cards */}
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-2.5">
                 {isId ? 'Pilih Mode Akses Pengguna:' : 'Select User Access Mode:'}
               </label>
 
-              <div className="space-y-2.5">
-                {/* 1. READ MODE */}
+              <div className="space-y-2">
+                {/* 1. READ CARD (Minimalist) */}
                 <div 
                   onClick={() => { setSelectedMode('read'); setIsApplied(false); }}
-                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                  className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                     selectedMode === 'read'
-                      ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 dark:border-blue-500 shadow-xs ring-1 ring-blue-500/30'
-                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300'
+                      ? 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-500 dark:border-blue-500 shadow-2xs ring-1 ring-blue-500/20'
+                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
-                  <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                    selectedMode === 'read' 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
-                    <Eye size={18} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">Read (Hanya Baca)</span>
-                      <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                        Read Only
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">Read</span>
+                      <span className="text-slate-400 text-xs font-normal">—</span>
+                      <span className="text-xs text-slate-600 dark:text-slate-300 leading-tight">
+                        {isId 
+                          ? 'Hanya membaca, input prompt disembunyikan & sesi tidak tersimpan' 
+                          : 'Read-only view, prompt input hidden & session is not saved'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                      {isId 
-                        ? 'Pengguna hanya bisa membaca obrolan. Sesi tidak disimpan di riwayat chat pengguna dan input prompt disembunyikan.' 
-                        : 'User can only read the conversation. Session will not be saved and prompt input is hidden.'}
-                    </p>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                    selectedMode === 'read'
+                      ? 'border-blue-600 bg-blue-600'
+                      : 'border-slate-300 dark:border-slate-600 bg-transparent'
+                  }`}>
+                    {selectedMode === 'read' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
 
-                {/* 2. REMIX MODE */}
+                {/* 2. REMIX CARD (Minimalist) */}
                 <div 
                   onClick={() => { setSelectedMode('remix'); setIsApplied(false); }}
-                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                  className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                     selectedMode === 'remix'
-                      ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 dark:border-purple-500 shadow-xs ring-1 ring-purple-500/30'
-                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300'
+                      ? 'bg-purple-50/70 dark:bg-purple-950/30 border-purple-500 dark:border-purple-500 shadow-2xs ring-1 ring-purple-500/20'
+                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
-                  <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                    selectedMode === 'remix' 
-                      ? 'bg-purple-600 text-white' 
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
-                    <GitFork size={18} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">Remix (Lanjutkan Sesi Baru)</span>
-                      <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
-                        Fork Context
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">Remix</span>
+                      <span className="text-slate-400 text-xs font-normal">—</span>
+                      <span className="text-xs text-slate-600 dark:text-slate-300 leading-tight">
+                        {isId 
+                          ? 'Melanjutkan sesi dengan konteks penuh & bercabang saat kirim pesan' 
+                          : 'Continue with full context, forks into user session upon sending'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                      {isId 
-                        ? 'Melanjutkan sesi chat dengan seluruh konteks percakapan. Saat pengguna mulai mengetik, obrolan akan menjadi sesi baru milik mereka tanpa mengubah tautan asli.' 
-                        : 'Continue the chat session with full context window. When the user chats, a new private branch session is created without modifying the shared link.'}
-                    </p>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                    selectedMode === 'remix'
+                      ? 'border-purple-600 bg-purple-600'
+                      : 'border-slate-300 dark:border-slate-600 bg-transparent'
+                  }`}>
+                    {selectedMode === 'remix' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
 
-                {/* 3. EDIT MODE */}
+                {/* 3. EDIT CARD (Minimalist) */}
                 <div 
                   onClick={() => { setSelectedMode('edit'); setIsApplied(false); }}
-                  className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 ${
+                  className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                     selectedMode === 'edit'
-                      ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-500 shadow-xs ring-1 ring-emerald-500/30'
-                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300'
+                      ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-500 dark:border-emerald-500 shadow-2xs ring-1 ring-emerald-500/20'
+                      : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300 dark:hover:border-slate-600'
                   }`}
                 >
-                  <div className={`p-2 rounded-xl shrink-0 mt-0.5 ${
-                    selectedMode === 'edit' 
-                      ? 'bg-emerald-600 text-white' 
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-                  }`}>
-                    <Pencil size={18} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">Edit (Simpan Penuh & Lanjutkan)</span>
-                      <span className="text-[10px] uppercase font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
-                        Full Save
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">Edit</span>
+                      <span className="text-slate-400 text-xs font-normal">—</span>
+                      <span className="text-xs text-slate-600 dark:text-slate-300 leading-tight">
+                        {isId 
+                          ? 'Menyimpan sesi penuh ke akun pengguna & langsung siap dilanjutkan' 
+                          : 'Full session saved immediately to account & ready to continue'}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                      {isId 
-                        ? 'Menyimpan sesi chat sepenuhnya ke riwayat pengguna (bahkan sebelum pengguna mengetik pesan baru), siap dilanjutkan dan diedit penuh.' 
-                        : 'Completely import and persist the session into user account, editable and active right away.'}
-                    </p>
+                  </div>
+                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition-all ${
+                    selectedMode === 'edit'
+                      ? 'border-emerald-600 bg-emerald-600'
+                      : 'border-slate-300 dark:border-slate-600 bg-transparent'
+                  }`}>
+                    {selectedMode === 'edit' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
               </div>
@@ -317,6 +335,23 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
                 </div>
               </motion.div>
             )}
+
+            {/* Tulisan "Apa itu share chat" -> Mengarah ke faq.tmpa.my.id */}
+            <div className="pt-1 flex items-center justify-center">
+              <a
+                href="https://faq.tmpa.my.id"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors group cursor-pointer"
+                title="FAQ Bluefox AI"
+              >
+                <HelpCircle size={14} className="text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+                <span className="underline decoration-slate-300 dark:decoration-slate-700 underline-offset-4 group-hover:decoration-blue-500">
+                  {isId ? 'Apa itu share chat?' : 'What is share chat?'}
+                </span>
+                <ExternalLink size={11} className="opacity-60 group-hover:opacity-100 transition-opacity" />
+              </a>
+            </div>
           </div>
 
           {/* Footer Action Buttons */}

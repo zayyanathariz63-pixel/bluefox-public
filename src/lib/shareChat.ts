@@ -15,6 +15,40 @@ export interface SharedChatRecord {
 const STORAGE_KEY = 'tmpa_shared_chats_registry';
 const DEFAULT_MODE_KEY = 'tmpa_shared_default_mode';
 
+export const MIN_SHARE_ID_LENGTH = 16;
+export const MAX_SHARE_ID_LENGTH = 32;
+
+/**
+ * Menghasilkan Session ID Share Chat acak yang terdiri dari angka dan huruf (alphanumeric),
+ * dengan panjang minimal 16 karakter dan maksimal 32 karakter (default 24 karakter).
+ */
+export function generateShareSessionId(length: number = 24): string {
+  const targetLen = Math.max(MIN_SHARE_ID_LENGTH, Math.min(MAX_SHARE_ID_LENGTH, length));
+  const chars = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = '';
+  
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+    const array = new Uint8Array(targetLen);
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < targetLen; i++) {
+      result += chars[array[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < targetLen; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+  }
+  return result;
+}
+
+/**
+ * Memvalidasi apakah sebuah ID memenuhi kriteria ID Share Chat (alphanumeric 16-32 karakter)
+ */
+export function isValidShareSessionId(id: string): boolean {
+  if (!id || typeof id !== 'string') return false;
+  return id.length >= MIN_SHARE_ID_LENGTH && id.length <= MAX_SHARE_ID_LENGTH && /^[a-zA-Z0-9]+$/.test(id);
+}
+
 /**
  * Mendapatkan seluruh riwayat chat yang telah dibagikan
  */
@@ -30,13 +64,34 @@ export function getSharedChatsRegistry(): Record<string, SharedChatRecord> {
 }
 
 /**
+ * Mendapatkan daftar unik catatan share chat tanpa duplikasi key
+ */
+export function getUniqueSharedChatsList(): SharedChatRecord[] {
+  const registry = getSharedChatsRegistry();
+  const seen = new Set<string>();
+  const list: SharedChatRecord[] = [];
+  for (const record of Object.values(registry)) {
+    const key = record.id || record.sessionId;
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      list.push(record);
+    }
+  }
+  return list;
+}
+
+/**
  * Menyimpan atau memperbarui konfigurasi share chat
  */
 export function saveSharedChatRecord(record: SharedChatRecord): void {
   if (typeof window === 'undefined') return;
   try {
     const registry = getSharedChatsRegistry();
-    registry[record.sessionId] = record;
+    // Simpan berdasarkan ID share (alphanumeric 16-32 karakter) dan sessionId
+    registry[record.id] = record;
+    if (record.sessionId && record.sessionId !== record.id) {
+      registry[record.sessionId] = record;
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(registry));
   } catch (err) {
     console.error('Failed to save shared chat record', err);
@@ -44,17 +99,30 @@ export function saveSharedChatRecord(record: SharedChatRecord): void {
 }
 
 /**
- * Memperbarui mode akses share chat tertentu
+ * Memperbarui mode akses share chat tertentu berdasarkan share ID atau session ID
  */
-export function updateSharedChatMode(sessionId: string, newMode: ShareMode): SharedChatRecord | null {
+export function updateSharedChatMode(idOrSessionId: string, newMode: ShareMode): SharedChatRecord | null {
   if (typeof window === 'undefined') return null;
   try {
     const registry = getSharedChatsRegistry();
-    if (!registry[sessionId]) return null;
-    registry[sessionId].mode = newMode;
-    registry[sessionId].updatedAt = Date.now();
+    let targetRecord: SharedChatRecord | null = registry[idOrSessionId] || null;
+    
+    if (!targetRecord) {
+      targetRecord = Object.values(registry).find(r => r.id === idOrSessionId || r.sessionId === idOrSessionId) || null;
+    }
+    
+    if (!targetRecord) return null;
+    
+    targetRecord.mode = newMode;
+    targetRecord.updatedAt = Date.now();
+    
+    registry[targetRecord.id] = targetRecord;
+    if (targetRecord.sessionId) {
+      registry[targetRecord.sessionId] = targetRecord;
+    }
+    
     localStorage.setItem(STORAGE_KEY, JSON.stringify(registry));
-    return registry[sessionId];
+    return targetRecord;
   } catch (err) {
     console.error('Failed to update shared chat mode', err);
     return null;
@@ -64,11 +132,21 @@ export function updateSharedChatMode(sessionId: string, newMode: ShareMode): Sha
 /**
  * Menghapus/mencabut link share chat
  */
-export function revokeSharedChat(sessionId: string): void {
+export function revokeSharedChat(idOrSessionId: string): void {
   if (typeof window === 'undefined') return;
   try {
     const registry = getSharedChatsRegistry();
-    delete registry[sessionId];
+    const targetRecord = registry[idOrSessionId] || Object.values(registry).find(r => r.id === idOrSessionId || r.sessionId === idOrSessionId);
+    
+    if (targetRecord) {
+      delete registry[targetRecord.id];
+      if (targetRecord.sessionId) {
+        delete registry[targetRecord.sessionId];
+      }
+    } else {
+      delete registry[idOrSessionId];
+    }
+    
     localStorage.setItem(STORAGE_KEY, JSON.stringify(registry));
   } catch (err) {
     console.error('Failed to revoke shared chat', err);
@@ -194,8 +272,9 @@ export function parseSharedDataFromUrl(): {
   // Jika mode belum ditentukan, coba baca dari registry lokal
   if (sessionId && !mode) {
     const registry = getSharedChatsRegistry();
-    if (registry[sessionId]?.mode) {
-      mode = registry[sessionId].mode;
+    const match = registry[sessionId] || Object.values(registry).find(r => r.id === sessionId || r.sessionId === sessionId);
+    if (match?.mode) {
+      mode = match.mode;
     }
   }
 

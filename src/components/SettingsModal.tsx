@@ -14,6 +14,7 @@ import { getModelDisplayName } from '../lib/supabase';
 import { processAndCompressImage } from '../lib/imageCompressor';
 import { 
   getSharedChatsRegistry, 
+  getUniqueSharedChatsList,
   updateSharedChatMode, 
   revokeSharedChat, 
   getDefaultShareMode, 
@@ -2144,7 +2145,7 @@ export function SettingsModal({
                         </span>
                       </div>
 
-                      {Object.keys(sharedRegistry).length === 0 ? (
+                      {getUniqueSharedChatsList().length === 0 ? (
                         <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center space-y-3">
                           <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
                             <Share2 size={24} />
@@ -2162,9 +2163,11 @@ export function SettingsModal({
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {Object.values(sharedRegistry).map((item) => (
+                          {getUniqueSharedChatsList().map((item) => {
+                            const effectiveId = item.id || item.sessionId;
+                            return (
                             <div 
-                              key={item.sessionId}
+                              key={effectiveId}
                               className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-3 transition-all hover:border-slate-300"
                             >
                               <div className="flex items-start justify-between gap-3">
@@ -2174,7 +2177,7 @@ export function SettingsModal({
                                   </h6>
                                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                                     <span className="text-[10px] font-mono text-slate-400">
-                                      ID: {item.sessionId.slice(0, 14)}...
+                                      ID: {effectiveId.slice(0, 16)}...
                                     </span>
                                     <span className="text-[10px] text-slate-400">·</span>
                                     <span className="text-[10px] text-slate-500">
@@ -2204,7 +2207,7 @@ export function SettingsModal({
                                   <button
                                     key={m}
                                     onClick={() => {
-                                      updateSharedChatMode(item.sessionId, m);
+                                      updateSharedChatMode(effectiveId, m);
                                       setSharedRegistry(getSharedChatsRegistry());
                                     }}
                                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
@@ -2227,27 +2230,27 @@ export function SettingsModal({
                                 <input
                                   type="text"
                                   readOnly
-                                  value={item.url || `https://bluefox.tmpa.my.id/share-${item.sessionId}`}
+                                  value={item.url || `https://bluefox.tmpa.my.id/share-${effectiveId}`}
                                   className="flex-1 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-slate-600 truncate focus:outline-none"
                                 />
 
                                 <button
                                   onClick={() => {
-                                    const targetUrl = item.url || `https://bluefox.tmpa.my.id/share-${item.sessionId}`;
+                                    const targetUrl = item.url || `https://bluefox.tmpa.my.id/share-${effectiveId}`;
                                     navigator.clipboard.writeText(targetUrl);
-                                    setCopiedShareId(item.sessionId);
+                                    setCopiedShareId(effectiveId);
                                     setTimeout(() => setCopiedShareId(null), 2000);
                                   }}
                                   className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
                                   title={lang === 'id' ? 'Salin tautan' : 'Copy link'}
                                 >
-                                  {copiedShareId === item.sessionId ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
-                                  <span>{copiedShareId === item.sessionId ? (lang === 'id' ? 'Tersalin' : 'Copied') : (lang === 'id' ? 'Salin' : 'Copy')}</span>
+                                  {copiedShareId === effectiveId ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+                                  <span>{copiedShareId === effectiveId ? (lang === 'id' ? 'Tersalin' : 'Copied') : (lang === 'id' ? 'Salin' : 'Copy')}</span>
                                 </button>
 
                                 <button
                                   onClick={() => {
-                                    revokeSharedChat(item.sessionId);
+                                    revokeSharedChat(effectiveId);
                                     setSharedRegistry(getSharedChatsRegistry());
                                   }}
                                   className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0"
@@ -2257,7 +2260,8 @@ export function SettingsModal({
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          );
+                        })}
                         </div>
                       )}
                     </div>

@@ -1465,12 +1465,12 @@ export default function App() {
         if (snapshotData.model) sessionModel = snapshotData.model;
       } else {
         const registry = getSharedChatsRegistry();
-        const recorded = registry[sessionId];
+        const recorded = registry[sessionId] || Object.values(registry).find(r => r.id === sessionId || r.sessionId === sessionId);
         if (recorded && recorded.messagesSnapshot && recorded.messagesSnapshot.length > 0) {
           loadedMessages = recorded.messagesSnapshot;
           sessionTitle = recorded.title;
         } else {
-          const localMatch = chatSessions.find(s => s.id === sessionId);
+          const localMatch = chatSessions.find(s => s.id === sessionId || (recorded && s.id === recorded.sessionId));
           if (localMatch && localMatch.messages && localMatch.messages.length > 0) {
             loadedMessages = localMatch.messages;
             sessionTitle = localMatch.title;
