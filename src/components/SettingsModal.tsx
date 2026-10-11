@@ -587,7 +587,7 @@ export function SettingsModal({
                   </div>
                 </button>
 
-                {/* 6.6 Remote Control (Telegram Integration) */}
+                {/* 6.6 Remote Control */}
                 <button
                   onClick={() => setCurrentView('remote_control')}
                   className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
@@ -600,12 +600,9 @@ export function SettingsModal({
                       <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
                         Remote Control
                       </h3>
-                      <span className="text-[11px] font-semibold uppercase bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-mono">
-                        Telegram
-                      </span>
                     </div>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {lang === 'id' ? 'Integrasi jembatan Telegram Bot & kontrol dua arah' : 'Telegram Bot bridge & two-way remote control'}
+                      {lang === 'id' ? 'Kelola bot dan kontrol sesi jarak jauh' : 'Manage bots and remote session control'}
                     </p>
                   </div>
                 </button>

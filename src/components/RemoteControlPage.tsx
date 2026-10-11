@@ -12,12 +12,11 @@ import {
   ExternalLink,
   RefreshCw,
   MessageSquare,
-  Shield,
-  Radio,
   X,
   AlertCircle,
-  HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  Search,
+  Link2
 } from 'lucide-react';
 import {
   TelegramBotRecord,
@@ -25,7 +24,7 @@ import {
   createTelegramBot,
   updateTelegramBotName,
   deleteTelegramBot,
-  EDGE_FUNCTION_WEBHOOK_URL
+  searchAndLinkChatId
 } from '../lib/telegramBots';
 import { useLanguage } from '../lib/i18n';
 
@@ -53,10 +52,15 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
   const [botTokenInput, setBotTokenInput] = useState<string>('');
   const [botUsernameInput, setBotUsernameInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [creationStepText, setCreationStepText] = useState<string>('');
   const [createdBotResult, setCreatedBotResult] = useState<{
     bot: TelegramBotRecord;
     telegramLink: string;
+    detectedChatId?: number | null;
   } | null>(null);
+
+  // Checking Chat ID state
+  const [checkingChatIdBotId, setCheckingChatIdBotId] = useState<string | null>(null);
 
   // Modal Edit Bot
   const [editingBot, setEditingBot] = useState<TelegramBotRecord | null>(null);
@@ -86,9 +90,11 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
 
   const handleCreateBot = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!botNameInput.trim()) return;
+    if (!botNameInput.trim() || !botTokenInput.trim()) return;
 
     setIsSubmitting(true);
+    setCreationStepText(isId ? 'Mengambil token & mencari ID Chat...' : 'Checking token & searching Chat ID...');
+
     try {
       const result = await createTelegramBot({
         bot_name: botNameInput.trim(),
@@ -104,6 +110,7 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
       setCreatedBotResult({
         bot: result.bot,
         telegramLink: result.telegramLink,
+        detectedChatId: result.detectedChatId
       });
 
       setBots(prev => [result.bot, ...prev]);
@@ -114,6 +121,26 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
       console.error('Gagal membuat bot telegram:', err);
     } finally {
       setIsSubmitting(false);
+      setCreationStepText('');
+    }
+  };
+
+  const handleSearchChatIdForBot = async (bot: TelegramBotRecord) => {
+    setCheckingChatIdBotId(bot.id);
+    try {
+      const res = await searchAndLinkChatId(bot);
+      if (res.ok && res.chatId) {
+        setBots(prev =>
+          prev.map(b => (b.id === bot.id ? { ...b, telegram_chat_id: res.chatId } : b))
+        );
+        if (createdBotResult && createdBotResult.bot.id === bot.id) {
+          setCreatedBotResult(prev =>
+            prev ? { ...prev, detectedChatId: res.chatId } : null
+          );
+        }
+      }
+    } finally {
+      setCheckingChatIdBotId(null);
     }
   };
 
@@ -165,18 +192,13 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
             <ArrowLeft size={20} />
           </button>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                Remote Control
-              </h1>
-              <span className="text-[10px] font-mono uppercase bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-bold px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
-                Telegram Integration
-              </span>
-            </div>
+            <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+              Remote Control
+            </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
               {isId
-                ? 'Jembatan komunikasi antara Web Bluefox dan Telegram Bot Client'
-                : 'Bridge communication between Bluefox Web and Telegram Bot Client'}
+                ? 'Kelola bot dan kontrol sesi jarak jauh'
+                : 'Manage bots and remote session control'}
             </p>
           </div>
         </div>
@@ -206,33 +228,11 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-6xl mx-auto w-full space-y-6">
-        {/* Architecture & Status Banner */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-blue-50 to-indigo-50/60 dark:from-blue-950/30 dark:to-slate-900 border border-blue-200/80 dark:border-blue-800/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Radio size={16} className="text-blue-600 dark:text-blue-400 animate-pulse" />
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                {isId ? 'Sinkronisasi Dua Arah Aktif' : 'Two-Way Synchronization Active'}
-              </h2>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
-              {isId
-                ? 'Setiap pesan yang dikirim dari Telegram Bot dimasukkan ke riwayat percakapan Web Bluefox secara real-time. Anda dapat membaca riwayat atau melanjutkan sesi di kedua platform.'
-                : 'Every message sent from the Telegram Bot is synced into Bluefox Web history in real-time. You can read and continue sessions across both platforms.'}
-            </p>
-          </div>
-
-          <div className="shrink-0 flex items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700/80">
-            <span className="w-2 h-2 rounded-full bg-emerald-500" />
-            <span>Edge Function: quick-handler</span>
-          </div>
-        </div>
-
         {/* Bot Cards Grid */}
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              {isId ? 'Daftar Bot Telegram Terhubung' : 'Connected Telegram Bots'} ({bots.length})
+              {isId ? 'Daftar Bot Terhubung' : 'Connected Bots'} ({bots.length})
             </h2>
           </div>
 
@@ -250,12 +250,12 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
               </div>
               <div className="space-y-1">
                 <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {isId ? 'Belum Ada Bot Telegram' : 'No Telegram Bots Yet'}
+                  {isId ? 'Belum Ada Bot' : 'No Bots Yet'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto leading-relaxed">
                   {isId
-                    ? 'Buat bot pertama Anda untuk menghubungkan percakapan Bluefox langsung dengan Telegram Bot Client.'
-                    : 'Create your first bot to bridge Bluefox conversations directly with Telegram.'}
+                    ? 'Buat bot pertama Anda untuk menghubungkan percakapan Bluefox dengan bot client.'
+                    : 'Create your first bot to connect Bluefox conversations with a bot client.'}
                 </p>
               </div>
               <button
@@ -273,6 +273,8 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {bots.map(bot => {
                 const tgLink = `https://t.me/${bot.telegram_bot_username}?start=${bot.session_id}`;
+                const isCheckingChat = checkingChatIdBotId === bot.id;
+
                 return (
                   <div
                     key={bot.id}
@@ -344,7 +346,7 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                       {/* Bot Meta Information */}
                       <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2 text-xs">
                         <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-                          <span>{isId ? 'Status Bot' : 'Bot Status'}</span>
+                          <span>{isId ? 'Status' : 'Status'}</span>
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
                               bot.is_active
@@ -356,8 +358,31 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                           </span>
                         </div>
 
+                        {/* Telegram Links Chat ID */}
                         <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
-                          <span>{isId ? 'Session ID' : 'Session ID'}</span>
+                          <span>Chat ID (Links)</span>
+                          {bot.telegram_chat_id ? (
+                            <span className="font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                              {bot.telegram_chat_id}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleSearchChatIdForBot(bot)}
+                              disabled={isCheckingChat}
+                              className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              {isCheckingChat ? (
+                                <RefreshCw size={10} className="animate-spin" />
+                              ) : (
+                                <Search size={10} />
+                              )}
+                              <span>{isId ? 'Cari ID Chat' : 'Find Chat ID'}</span>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                          <span>Session ID</span>
                           <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 truncate max-w-[140px]">
                             {bot.session_id}
                           </span>
@@ -371,7 +396,7 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                         <button
                           onClick={() => copyToClipboard(tgLink, bot.id)}
                           className="flex-1 py-2 px-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                          title={isId ? 'Salin Tautan Telegram' : 'Copy Telegram Link'}
+                          title={isId ? 'Salin Tautan' : 'Copy Link'}
                         >
                           {copiedLink === bot.id ? (
                             <Check size={13} className="text-emerald-500 stroke-[3]" />
@@ -394,10 +419,10 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                           target="_blank"
                           rel="noopener noreferrer"
                           className="py-2 px-3 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                          title={isId ? 'Mulai di Telegram' : 'Start on Telegram'}
+                          title={isId ? 'Buka Link' : 'Open Link'}
                         >
                           <Send size={13} />
-                          <span>Telegram</span>
+                          <span>Link</span>
                           <ExternalLink size={10} className="opacity-70" />
                         </a>
                       </div>
@@ -449,10 +474,10 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                   </div>
                   <div>
                     <h3 className="font-bold text-base text-slate-900 dark:text-white leading-tight">
-                      {isId ? 'Tambah Bot Telegram Baru' : 'Add New Telegram Bot'}
+                      {isId ? 'Tambah Bot Baru' : 'Add New Bot'}
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      {isId ? 'Konfigurasi jembatan Remote Control' : 'Configure Remote Control bridge'}
+                      {isId ? 'Ambil token, cari ID Chat, dan simpan data bot' : 'Fetch token, find Chat ID, and save bot records'}
                     </p>
                   </div>
                 </div>
@@ -474,18 +499,59 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                       <CheckCircle2 size={24} />
                     </div>
                     <h4 className="font-bold text-sm text-emerald-800 dark:text-emerald-300">
-                      {isId ? 'Bot Berhasil Dibuat dan Didaftarkan' : 'Bot Created & Registered'}
+                      {isId ? 'Bot Berhasil Dibuat' : 'Bot Created Successfully'}
                     </h4>
                     <p className="text-xs text-emerald-700 dark:text-emerald-400 max-w-sm mx-auto leading-relaxed">
                       {isId
-                        ? 'Sesi baru telah ditambahkan ke daftar percakapan web dan webhook Telegram telah disiapkan.'
-                        : 'A new session has been added to the web chat list and Telegram webhook is ready.'}
+                        ? 'Token telah diproses dan disimpan ke tabel telegram_bots dan telegram_links.'
+                        : 'Token processed and stored in telegram_bots and telegram_links tables.'}
                     </p>
+                  </div>
+
+                  {/* Chat ID Link Status */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-700/80 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
+                        <Link2 size={14} className="text-blue-500" />
+                        <span>Status telegram_links:</span>
+                      </div>
+                      {createdBotResult.detectedChatId ? (
+                        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded">
+                          ID: {createdBotResult.detectedChatId} (Tersimpan)
+                        </span>
+                      ) : (
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded">
+                          {isId ? 'Belum Ada Pesan Masuk' : 'No Incoming Message Yet'}
+                        </span>
+                      )}
+                    </div>
+
+                    {!createdBotResult.detectedChatId && (
+                      <div className="pt-1 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                        <span>
+                          {isId
+                            ? 'Kirim /start ke bot di Telegram agar ID chat terdeteksi otomatis.'
+                            : 'Send /start to your bot in Telegram to detect chat ID automatically.'}
+                        </span>
+                        <button
+                          onClick={() => handleSearchChatIdForBot(createdBotResult.bot)}
+                          disabled={checkingChatIdBotId === createdBotResult.bot.id}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+                        >
+                          {checkingChatIdBotId === createdBotResult.bot.id ? (
+                            <RefreshCw size={11} className="animate-spin" />
+                          ) : (
+                            <Search size={11} />
+                          )}
+                          <span>{isId ? 'Cek Chat ID' : 'Check Chat ID'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                      {isId ? 'Tautan Kustom Telegram:' : 'Custom Telegram Link:'}
+                      {isId ? 'Tautan Kustom Bot:' : 'Custom Bot Link:'}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -542,18 +608,19 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                     />
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       {isId
-                        ? 'Nama kustom yang ditampilkan di Dashboard & daftar percakapan Bluefox.'
-                        : 'Custom name displayed in Bluefox Dashboard & conversation list.'}
+                        ? 'Nama kustom yang ditampilkan di antarmuka Bluefox.'
+                        : 'Custom name displayed in Bluefox interface.'}
                     </p>
                   </div>
 
                   {/* Input telegram_bot_token */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                      {isId ? 'Token API Telegram BotFather' : 'BotFather Telegram API Token'}
+                      {isId ? 'Token API Bot (telegram_bot_token) *' : 'Bot API Token (telegram_bot_token) *'}
                     </label>
                     <input
                       type="password"
+                      required
                       value={botTokenInput}
                       onChange={e => setBotTokenInput(e.target.value)}
                       placeholder="1234567890:ABCdefGHIjklMNOpqrSTUvwxYZ"
@@ -561,15 +628,15 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                     />
                     <p className="text-[11px] text-slate-500 dark:text-slate-400">
                       {isId
-                        ? 'Diperlukan untuk mendaftarkan webhook ke quick-handler. Dapatkan dari @BotFather.'
-                        : 'Required to register webhook to quick-handler. Obtain from @BotFather.'}
+                        ? 'Website akan mengambil token ini untuk memverifikasi bot dan mencarikan ID chat.'
+                        : 'Website will fetch this token to verify bot and search for user Chat ID.'}
                     </p>
                   </div>
 
                   {/* Input telegram_bot_username */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                      {isId ? 'Username Bot Telegram' : 'Telegram Bot Username'}
+                      {isId ? 'Username Bot (Opsional)' : 'Bot Username (Optional)'}
                     </label>
                     <div className="relative">
                       <span className="absolute left-3.5 top-2.5 text-slate-400 font-mono text-xs">@</span>
@@ -583,18 +650,6 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Info Notice */}
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
-                    <div className="font-semibold text-slate-700 dark:text-slate-300">
-                      {isId ? 'Otomatisasi Sistem:' : 'System Actions:'}
-                    </div>
-                    <ul className="list-disc list-inside space-y-0.5 pl-1">
-                      <li>{isId ? 'Membuat sesi baru di session_bluefox' : 'Creates new session in session_bluefox'}</li>
-                      <li>{isId ? 'Mendaftarkan webhook ke Edge Function quick-handler' : 'Registers webhook to Edge Function quick-handler'}</li>
-                      <li>{isId ? 'Menyimpan konfigurasi aktif di telegram_bots' : 'Saves active configuration in telegram_bots'}</li>
-                    </ul>
-                  </div>
-
                   <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-200 dark:border-slate-800">
                     <button
                       type="button"
@@ -606,16 +661,16 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                     </button>
                     <button
                       type="submit"
-                      disabled={isSubmitting || !botNameInput.trim()}
+                      disabled={isSubmitting || !botNameInput.trim() || !botTokenInput.trim()}
                       className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex items-center gap-2"
                     >
                       {isSubmitting ? (
                         <>
                           <RefreshCw size={14} className="animate-spin" />
-                          <span>{isId ? 'Memproses...' : 'Processing...'}</span>
+                          <span>{creationStepText || (isId ? 'Memproses...' : 'Processing...')}</span>
                         </>
                       ) : (
-                        <span>{isId ? 'Buat & Daftarkan Bot' : 'Create & Register Bot'}</span>
+                        <span>{isId ? 'Buat Bot' : 'Create Bot'}</span>
                       )}
                     </button>
                   </div>
@@ -734,7 +789,7 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                 </div>
                 <div>
                   <h3 className="font-bold text-base text-slate-900 dark:text-white leading-tight">
-                    {isId ? 'Hapus Bot Telegram' : 'Delete Telegram Bot'}
+                    {isId ? 'Hapus Bot' : 'Delete Bot'}
                   </h3>
                   <p className="text-xs text-slate-500">{deletingBot.bot_name}</p>
                 </div>
@@ -743,8 +798,8 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
               <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 text-xs text-slate-600 dark:text-slate-300 space-y-2 leading-relaxed">
                 <p>
                   {isId
-                    ? 'Apakah Anda yakin ingin menghapus atau menonaktifkan bot ini dari Dashboard Bluefox?'
-                    : 'Are you sure you want to delete or deactivate this bot from Bluefox Dashboard?'}
+                    ? 'Apakah Anda yakin ingin menghapus atau menonaktifkan bot ini?'
+                    : 'Are you sure you want to delete or deactivate this bot?'}
                 </p>
                 <div className="p-2.5 rounded-lg bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-800/40 text-[11px] text-rose-700 dark:text-rose-300">
                   <span className="font-bold">
@@ -752,8 +807,8 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                   </span>
                   <br />
                   {isId
-                    ? 'Jika pengguna di Telegram mencoba mengirim pesan ke bot yang sudah dihapus/dinonaktifkan, Supabase Edge Function HARUS MENGABAIKAN (ignore) pesan tersebut (tidak disimpan ke message_bluefox, tidak memanggil AI, dan tidak membalas).'
-                    : 'If Telegram users send messages to deleted/inactive bots, Edge Function will IGNORE them (no storage in message_bluefox, no AI invocation, no replies).'}
+                    ? 'Pesan yang dikirim ke bot yang telah dihapus atau dinonaktifkan akan diabaikan.'
+                    : 'Messages sent to deleted or inactive bots will be ignored.'}
                 </div>
               </div>
 
@@ -782,3 +837,4 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
     </div>
   );
 };
+export default RemoteControlPage;
