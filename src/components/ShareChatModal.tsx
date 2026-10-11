@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Share2, Copy, Check, ExternalLink, HelpCircle } from 'lucide-react';
+import { X, Share2, Copy, Check, ExternalLink, HelpCircle, MessageSquare, Bot, User } from 'lucide-react';
 import { 
   ShareMode, 
   buildShareUrl, 
@@ -189,6 +189,50 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
               </div>
             </div>
 
+            {/* Conversation Snippet Preview (First 2 messages) */}
+            {session.messages && session.messages.length > 0 && (
+              <div className="rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-850/50 p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
+                    <MessageSquare size={13} className="text-blue-500" />
+                    <span>{isId ? 'Preview Percakapan (2 Pesan Pertama)' : 'Conversation Preview (First 2 Messages)'}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {session.messages.length} {isId ? 'pesan' : 'messages'}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {session.messages.slice(0, 2).map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl text-xs flex gap-2.5 items-start ${
+                        msg.role === 'user'
+                          ? 'bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                          : 'bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                        msg.role === 'user'
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                          : 'bg-blue-600 text-white'
+                      }`}>
+                        {msg.role === 'user' ? <User size={11} /> : <Bot size={11} />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-semibold text-slate-400 mb-0.5">
+                          {msg.role === 'user' ? (isId ? 'Pesan Pengguna' : 'User Query') : 'Bluefox AI'}
+                        </div>
+                        <p className="line-clamp-2 text-slate-700 dark:text-slate-200 leading-relaxed font-sans">
+                          {msg.text || (msg.media ? (isId ? '[Lampiran Media]' : '[Media Attachment]') : '...')}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Mode User Selection - Minimalist Cards */}
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block mb-2.5">
@@ -336,10 +380,10 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
               </motion.div>
             )}
 
-            {/* Tulisan "Apa itu share chat" -> Mengarah ke faq.tmpa.my.id */}
+            {/* Tulisan "Apa itu share chat" -> Mengarah ke faq.tmpa.my.id/ai-fitur/share-chat */}
             <div className="pt-1 flex items-center justify-center">
               <a
-                href="https://faq.tmpa.my.id"
+                href="https://faq.tmpa.my.id/ai-fitur/share-chat"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 transition-colors group cursor-pointer"

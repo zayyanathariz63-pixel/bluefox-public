@@ -28,6 +28,7 @@ import {
   supabase, 
   exchangeSsoTicket, 
   listenToRealtimeMessages, 
+  listenToBluefoxSessionMessages,
   sendMessageToSupabase, 
   loadChatHistory,
   getValidUUID,
@@ -1290,8 +1291,37 @@ export default function App() {
       }
     });
 
+    // Mendengarkan Pesan Masuk dua arah dari message_bluefox (sinkronisasi Web <-> Telegram Bot)
+    const unsubscribeBluefox = listenToBluefoxSessionMessages(convId, (row) => {
+      console.log("[Realtime Bluefox] Pesan baru dari Telegram/Web:", row);
+      if (row.user_message) {
+        setMessages(prev => {
+          const exists = prev.some(m => m.role === 'user' && m.text.trim() === row.user_message.trim());
+          if (exists) return prev;
+          return [...prev, {
+            id: `${row.id}_u`,
+            role: 'user',
+            text: row.user_message
+          }];
+        });
+      }
+      if (row.ai_response) {
+        setMessages(prev => {
+          const exists = prev.some(m => m.role === 'model' && m.text.trim() === row.ai_response.trim());
+          if (exists) return prev;
+          return [...prev, {
+            id: `${row.id}_a`,
+            role: 'model',
+            text: row.ai_response
+          }];
+        });
+        setIsLoading(false);
+      }
+    });
+
     return () => {
       unsubscribe();
+      unsubscribeBluefox();
     };
   }, [appState, currentSessionId]);
 
@@ -4390,6 +4420,22 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           setCurrentSessionId(null);
         }}
         onOpenCustomGenerate={handleOpenCustomGenerate}
+        onOpenSession={(sessionId) => {
+          loadSession(sessionId);
+        }}
+        onAddSession={(newSession) => {
+          const formattedSession: ChatSession = {
+            id: newSession.id,
+            title: newSession.title,
+            messages: [],
+            updatedAt: Date.now(),
+            model: selectedModel,
+          };
+          setChatSessions(prev => {
+            if (prev.some(s => s.id === newSession.id)) return prev;
+            return [formattedSession, ...prev];
+          });
+        }}
       />
 
       <CustomGenerateModal

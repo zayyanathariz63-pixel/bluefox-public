@@ -634,6 +634,46 @@ export async function openChatRoom(sessionId: string) {
 export const loadChatMessages = openChatRoom;
 export const loadChatSession = openChatRoom;
 
+/**
+ * Mendengarkan pesan baru secara Realtime pada tabel message_bluefox
+ * untuk sinkronisasi dua arah Web <-> Telegram Bot
+ */
+export function listenToBluefoxSessionMessages(
+  sessionId: string,
+  onNewMessageTurn: (row: any) => void
+) {
+  const validSessionId = getValidUUID(sessionId);
+  if (!validSessionId || !hasValidConfig) return () => {};
+
+  try {
+    const channel = supabase
+      .channel(`bluefox_msg_${validSessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'message_bluefox',
+          filter: `session_id=eq.${validSessionId}`
+        },
+        (payload) => {
+          const row = payload.new;
+          if (row) {
+            onNewMessageTurn(row);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (err) {
+    console.warn('Gagal subscribe realtime message_bluefox:', err);
+    return () => {};
+  }
+}
+
 // 6. Memperbarui Judul Sesi Percakapan di session_bluefox
 export async function updateSessionTitleInSupabase(sessionId: string, newTitle: string) {
   const validSessionId = getValidUUID(sessionId);

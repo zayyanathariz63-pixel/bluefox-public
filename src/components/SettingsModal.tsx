@@ -5,10 +5,11 @@ import {
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
   HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2,
-  Share2, GitFork, Pencil
+  Share2, GitFork, Pencil, Radio
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
+import { RemoteControlPage } from './RemoteControlPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { getModelDisplayName } from '../lib/supabase';
 import { processAndCompressImage } from '../lib/imageCompressor';
@@ -69,9 +70,11 @@ interface SettingsModalProps {
   user?: any;
   userTier?: string;
   onOpenCustomGenerate?: (prompt?: string, type?: 'image' | 'video') => void;
+  onOpenSession?: (sessionId: string) => void;
+  onAddSession?: (session: { id: string; title: string }) => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete' | 'share_chat';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'custom_api' | 'integrations' | 'language' | 'delete' | 'share_chat' | 'remote_control';
 
 export function SettingsModal({ 
   isOpen, 
@@ -87,7 +90,9 @@ export function SettingsModal({
   onDeleteAccount,
   user,
   userTier,
-  onOpenCustomGenerate
+  onOpenCustomGenerate,
+  onOpenSession,
+  onAddSession
 }: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
@@ -582,6 +587,29 @@ export function SettingsModal({
                   </div>
                 </button>
 
+                {/* 6.6 Remote Control (Telegram Integration) */}
+                <button
+                  onClick={() => setCurrentView('remote_control')}
+                  className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-blue-50">
+                    <Radio size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                        Remote Control
+                      </h3>
+                      <span className="text-[11px] font-semibold uppercase bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-mono">
+                        Telegram
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {lang === 'id' ? 'Integrasi jembatan Telegram Bot & kontrol dua arah' : 'Telegram Bot bridge & two-way remote control'}
+                    </p>
+                  </div>
+                </button>
+
                 {/* 7. Delete (Interactive) */}
                 <button
                   onClick={() => {
@@ -638,8 +666,22 @@ export function SettingsModal({
             </div>
           )}
 
+          {/* Subview Remote Control (Telegram Integration) */}
+          {currentView === 'remote_control' && (
+            <RemoteControlPage
+              onBack={() => setCurrentView('menu')}
+              onOpenSession={(sessId) => {
+                onClose();
+                if (onOpenSession) onOpenSession(sessId);
+              }}
+              onAddSession={(newSess) => {
+                if (onAddSession) onAddSession(newSess);
+              }}
+            />
+          )}
+
           {/* Subview Content */}
-          {currentView !== 'menu' && currentView !== 'connected_apps' && currentView !== 'integrations' && (
+          {currentView !== 'menu' && currentView !== 'connected_apps' && currentView !== 'integrations' && currentView !== 'remote_control' && (
             <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col w-full h-full text-slate-900">
               {/* Header inside sub-screen */}
               <div className="border-b border-slate-200 bg-white/95 backdrop-blur-md py-4 px-4 sm:px-6 sticky top-0 z-10 flex items-center shadow-xs">
