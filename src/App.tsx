@@ -656,7 +656,17 @@ export default function App() {
   };
 
   const sortSessions = (sessions: ChatSession[]) => {
-    return [...sessions].sort((a, b) => {
+    // Deduplikasi ketat berdasarkan ID sesi agar tidak ada sesi duplikat di sidebar
+    const seen = new Set<string>();
+    const unique: ChatSession[] = [];
+    for (const s of sessions) {
+      if (!s || !s.id) continue;
+      if (!seen.has(s.id)) {
+        seen.add(s.id);
+        unique.push(s);
+      }
+    }
+    return unique.sort((a, b) => {
       if (a.isPinned && !b.isPinned) return -1;
       if (!a.isPinned && b.isPinned) return 1;
       return (b.updatedAt || 0) - (a.updatedAt || 0);
@@ -736,6 +746,22 @@ export default function App() {
     } else {
       setMessages([]);
     }
+
+    // Pastikan ID sesi ini terdaftar di chatSessions agar tidak terbagi dua saat pengguna mengirim chat
+    setChatSessions((prev) => {
+      if (prev.some(s => s.id === sessionId)) return prev;
+      return sortSessions([
+        {
+          id: sessionId,
+          title: session?.title || 'Percakapan',
+          messages: session?.messages || [],
+          updatedAt: Date.now(),
+          model: (session?.model as any) || 'agnes-2.5-flash',
+          isPinned: false
+        },
+        ...prev
+      ]);
+    });
   };
 
   // Sinkronisasi Sesi & Seluruh Isi Chat Lintas Perangkat langsung dari Supabase (tanpa membajak room aktif)
@@ -2628,10 +2654,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         const rawThinking = result.thinking || result.reasoning || result.reasoning_content || result.thought || '';
         if (rawThinking && !fullReply.includes('<think>')) {
           fullReply = `<think>${rawThinking}</think>\n\n${fullReply}`;
-        }
-        if (result.conversation_id) {
-          effectiveConvId = result.conversation_id;
-          setCurrentSessionId(effectiveConvId);
         }
 
         // If edge response already returns sources, use them

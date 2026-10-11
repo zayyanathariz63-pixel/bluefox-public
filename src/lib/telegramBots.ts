@@ -22,7 +22,8 @@ export interface TelegramLinkRecord {
 
 const LOCAL_STORAGE_BOTS_KEY = 'bluefox_telegram_bots_v1';
 const LOCAL_STORAGE_LINKS_KEY = 'bluefox_telegram_links_v1';
-export const EDGE_FUNCTION_WEBHOOK_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/quick-handler';
+export const EDGE_FUNCTION_BASE_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook';
+export const MAX_TELEGRAM_BOTS_PER_USER = 5;
 
 /**
  * Generate standard UUID v4
@@ -125,7 +126,6 @@ export async function fetchTelegramChatIdFromUpdates(token: string): Promise<{
     }
 
     if (Array.isArray(data?.result) && data.result.length > 0) {
-      // Ambil update terbaru dari belakang (reverse order)
       for (let i = data.result.length - 1; i >= 0; i--) {
         const u = data.result[i];
         const chat = u.message?.chat || u.my_chat_member?.chat || u.callback_query?.message?.chat || u.channel_post?.chat;
@@ -217,20 +217,28 @@ export async function fetchTelegramLinks(): Promise<TelegramLinkRecord[]> {
 }
 
 /**
- * Mendaftarkan Webhook ke Telegram API
+ * Mendaftarkan Webhook ke Telegram API menggunakan recordId UUID dari tabel telegram_bots
  */
-export async function registerTelegramWebhook(token: string): Promise<{ ok: boolean; description?: string }> {
+export async function registerTelegramWebhook(token: string, recordId: string): Promise<{ ok: boolean; description?: string }> {
   try {
     const cleanToken = token.trim();
     if (!cleanToken) return { ok: false, description: 'Token tidak boleh kosong' };
+    if (!recordId) return { ok: false, description: 'Record ID tidak valid' };
 
-    const webhookApiUrl = `https://api.telegram.org/bot${cleanToken}/setWebhook?url=${encodeURIComponent(EDGE_FUNCTION_WEBHOOK_URL)}`;
-    const response = await fetch(webhookApiUrl);
-    const data = await response.json();
+    const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook?id=${recordId}`;
+    const telegramWebhookApi = `https://api.telegram.org/bot${cleanToken}/setWebhook?url=${encodeURIComponent(edgeFunctionUrl)}`;
+    const response = await fetch(telegramWebhookApi);
+    const result = await response.json();
+
+    if (result?.ok) {
+      console.info("Bot berhasil dibuat dan webhook Telegram aktif secara otomatis.");
+    } else {
+      console.error("Gagal mendaftarkan webhook ke Telegram:", result?.description);
+    }
 
     return {
-      ok: Boolean(data?.ok),
-      description: data?.description || (data?.ok ? 'Webhook berhasil didaftarkan' : 'Gagal mendaftarkan webhook')
+      ok: Boolean(result?.ok),
+      description: result?.description || (result?.ok ? 'Webhook berhasil didaftarkan' : 'Gagal mendaftarkan webhook')
     };
   } catch (error: any) {
     console.error('Error saat mendaftarkan webhook telegram:', error);
@@ -306,8 +314,13 @@ export async function createTelegramBot(params: {
   telegramLink: string;
   detectedChatId?: number | null;
 }> {
+  // 0. Cek batas maksimal 5 bot per akun
+  const existingBots = await fetchTelegramBots();
+  if (existingBots.length >= MAX_TELEGRAM_BOTS_PER_USER) {
+    throw new Error('Batas maksimal 5 bot per akun telah tercapai (5/5). Anda tidak dapat membuat lebih dari 5 bot.');
+  }
+
   const { data: { user } } = await supabase.auth.getUser();
-  const botId = generateUUID();
   const sessionId = generateUUID();
   const now = new Date().toISOString();
   const token = params.telegram_bot_token.trim();
@@ -352,13 +365,39 @@ export async function createTelegramBot(params: {
     console.warn('Gagal menyimpan sesi ke session_bluefox:', err);
   }
 
-  // 5. Daftarkan webhook Telegram Bot ke Edge Function
-  if (token) {
-    await registerTelegramWebhook(token);
+  // 5. Simpan data bot baru ke tabel telegram_bots di Supabase
+  // Supabase akan otomatis men-generate UUID 'id' untuk baris ini
+  let recordId: string = generateUUID();
+  try {
+    const { data, error } = await supabase
+      .from('telegram_bots')
+      .insert({
+        user_id: user?.id,
+        bot_name: params.bot_name.trim(),
+        telegram_bot_token: token,
+        telegram_bot_username: detectedUsername,
+        session_id: sessionId,
+        is_active: true
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('Gagal menyimpan bot ke database:', error.message);
+    } else if (data?.id) {
+      recordId = data.id;
+    }
+  } catch (err: any) {
+    console.error('Exception saat menyimpan bot ke database:', err?.message);
+  }
+
+  // 6. Daftarkan URL Webhook ke Telegram secara otomatis menggunakan recordId UUID tersebut
+  if (token && recordId) {
+    await registerTelegramWebhook(token, recordId);
   }
 
   const newBot: TelegramBotRecord = {
-    id: botId,
+    id: recordId,
     user_id: user?.id,
     bot_name: params.bot_name.trim(),
     telegram_bot_token: token,
@@ -370,29 +409,9 @@ export async function createTelegramBot(params: {
     telegram_chat_id: foundChatId
   };
 
-  // 6. Simpan data bot ke telegram_bots di Supabase
-  try {
-    const { error } = await supabase.from('telegram_bots').insert([{
-      id: botId,
-      user_id: user?.id,
-      bot_name: params.bot_name.trim(),
-      telegram_bot_token: token,
-      telegram_bot_username: detectedUsername,
-      session_id: sessionId,
-      is_active: true,
-      created_at: now,
-      updated_at: now
-    }]);
-    if (error) {
-      console.warn('Error insert telegram_bots ke Supabase, fallback ke lokal:', error.message);
-    }
-  } catch (err) {
-    console.warn('Exception insert telegram_bots:', err);
-  }
-
   // Simpan ke local storage
   const currentBots = getLocalBots();
-  saveLocalBots([newBot, ...currentBots]);
+  saveLocalBots([newBot, ...currentBots.filter(b => b.id !== recordId)]);
 
   const telegramLink = `https://t.me/${detectedUsername}?start=${sessionId}`;
 
@@ -405,6 +424,38 @@ export async function createTelegramBot(params: {
     telegramLink,
     detectedChatId: foundChatId
   };
+}
+
+/**
+ * Toggle Status Aktif Bot (Aktifkan / Nonaktifkan)
+ * Jika dinonaktifkan (is_active: false): bot akan diam dan tidak membalas.
+ * Jika diaktifkan (is_active: true): bot aktif kembali.
+ */
+export async function toggleBotActiveStatus(botId: string, currentActive: boolean): Promise<boolean> {
+  const newActiveState = !currentActive;
+  const now = new Date().toISOString();
+
+  try {
+    const { error } = await supabase
+      .from('telegram_bots')
+      .update({
+        is_active: newActiveState,
+        updated_at: now
+      })
+      .eq('id', botId);
+
+    if (error) {
+      console.warn('Gagal mengubah status is_active di Supabase:', error.message);
+    }
+  } catch (err) {
+    console.warn('Exception toggleBotActiveStatus:', err);
+  }
+
+  const current = getLocalBots();
+  const updated = current.map(b => b.id === botId ? { ...b, is_active: newActiveState, updated_at: now } : b);
+  saveLocalBots(updated);
+
+  return newActiveState;
 }
 
 /**

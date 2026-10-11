@@ -16,7 +16,9 @@ import {
   AlertCircle,
   CheckCircle2,
   Search,
-  Link2
+  Link2,
+  Power,
+  PowerOff
 } from 'lucide-react';
 import {
   TelegramBotRecord,
@@ -24,7 +26,9 @@ import {
   createTelegramBot,
   updateTelegramBotName,
   deleteTelegramBot,
-  searchAndLinkChatId
+  searchAndLinkChatId,
+  toggleBotActiveStatus,
+  MAX_TELEGRAM_BOTS_PER_USER
 } from '../lib/telegramBots';
 import { useLanguage } from '../lib/i18n';
 
@@ -61,6 +65,8 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
 
   // Checking Chat ID state
   const [checkingChatIdBotId, setCheckingChatIdBotId] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [togglingBotId, setTogglingBotId] = useState<string | null>(null);
 
   // Modal Edit Bot
   const [editingBot, setEditingBot] = useState<TelegramBotRecord | null>(null);
@@ -92,7 +98,17 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
     e.preventDefault();
     if (!botNameInput.trim() || !botTokenInput.trim()) return;
 
+    if (bots.length >= MAX_TELEGRAM_BOTS_PER_USER) {
+      setCreateError(
+        isId
+          ? 'Batas maksimal 5 bot per akun telah tercapai (5/5). Anda tidak dapat membuat lebih dari 5 bot.'
+          : 'Maximum limit of 5 bots per account reached (5/5).'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
+    setCreateError(null);
     setCreationStepText(isId ? 'Mengambil token & mencari ID Chat...' : 'Checking token & searching Chat ID...');
 
     try {
@@ -113,15 +129,32 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
         detectedChatId: result.detectedChatId
       });
 
-      setBots(prev => [result.bot, ...prev]);
+      setBots(prev => [result.bot, ...prev.filter(b => b.id !== result.bot.id)]);
       setBotNameInput('');
       setBotTokenInput('');
       setBotUsernameInput('');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Gagal membuat bot telegram:', err);
+      setCreateError(
+        err?.message ||
+        (isId ? 'Gagal membuat bot. Periksa token Anda.' : 'Failed to create bot. Check your token.')
+      );
     } finally {
       setIsSubmitting(false);
       setCreationStepText('');
+    }
+  };
+
+  const handleToggleActiveBot = async (bot: TelegramBotRecord) => {
+    setActiveMenuBotId(null);
+    setTogglingBotId(bot.id);
+    try {
+      const newActive = await toggleBotActiveStatus(bot.id, bot.is_active);
+      setBots(prev => prev.map(b => b.id === bot.id ? { ...b, is_active: newActive } : b));
+    } catch (err) {
+      console.error('Gagal mengubah status aktif bot:', err);
+    } finally {
+      setTogglingBotId(null);
     }
   };
 
@@ -204,6 +237,14 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5">
+          {/* Counter Maksimal 5 Bot */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-xs font-semibold text-slate-700 dark:text-slate-300">
+            <span>{isId ? 'Bot:' : 'Bots:'}</span>
+            <span className={bots.length >= MAX_TELEGRAM_BOTS_PER_USER ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-blue-600 dark:text-blue-400 font-bold'}>
+              {bots.length} / {MAX_TELEGRAM_BOTS_PER_USER}
+            </span>
+          </div>
+
           <button
             onClick={loadBots}
             disabled={isLoading}
@@ -215,10 +256,25 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
 
           <button
             onClick={() => {
+              if (bots.length >= MAX_TELEGRAM_BOTS_PER_USER) {
+                alert(
+                  isId
+                    ? 'Batas maksimal 5 bot per akun telah tercapai (5/5). Anda tidak dapat membuat lebih dari 5 bot.'
+                    : 'Maximum limit of 5 bots per account reached (5/5).'
+                );
+                return;
+              }
+              setCreateError(null);
               setCreatedBotResult(null);
               setIsCreateModalOpen(true);
             }}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-md active:scale-95 cursor-pointer"
+            disabled={bots.length >= MAX_TELEGRAM_BOTS_PER_USER}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-all shadow-md active:scale-95 ${
+              bots.length >= MAX_TELEGRAM_BOTS_PER_USER
+                ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-70'
+                : 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white cursor-pointer'
+            }`}
+            title={bots.length >= MAX_TELEGRAM_BOTS_PER_USER ? (isId ? 'Maksimal 5 bot tercapai' : 'Max 5 bots reached') : undefined}
           >
             <Plus size={16} />
             <span>+ New Bot</span>
@@ -284,7 +340,11 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                     <div>
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-800/60 shrink-0">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center border shrink-0 ${
+                            bot.is_active
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800/60'
+                              : 'bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60'
+                          }`}>
                             <Send size={18} />
                           </div>
                           <div className="min-w-0">
@@ -316,13 +376,41 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                                 onClick={() => setActiveMenuBotId(null)}
                               />
                               <div className="absolute right-0 top-8 w-44 bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700/80 rounded-xl shadow-xl z-30 py-1 overflow-hidden text-xs">
+                                {/* Opsi Nonaktifkan / Aktifkan Bot (Sesuai Permintaan) */}
+                                <button
+                                  onClick={() => handleToggleActiveBot(bot)}
+                                  disabled={togglingBotId === bot.id}
+                                  className={`w-full text-left px-3.5 py-2 flex items-center gap-2 cursor-pointer transition-colors ${
+                                    bot.is_active
+                                      ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                                      : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                  }`}
+                                >
+                                  {togglingBotId === bot.id ? (
+                                    <RefreshCw size={13} className="animate-spin" />
+                                  ) : bot.is_active ? (
+                                    <PowerOff size={13} />
+                                  ) : (
+                                    <Power size={13} />
+                                  )}
+                                  <span>
+                                    {bot.is_active
+                                      ? isId
+                                        ? 'Nonaktifkan bot'
+                                        : 'Deactivate bot'
+                                      : isId
+                                      ? 'Aktifkan bot'
+                                      : 'Activate bot'}
+                                  </span>
+                                </button>
+
                                 <button
                                   onClick={() => {
                                     setActiveMenuBotId(null);
                                     setEditingBot(bot);
                                     setEditBotNameInput(bot.bot_name);
                                   }}
-                                  className="w-full text-left px-3.5 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer transition-colors"
+                                  className="w-full text-left px-3.5 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-100 dark:border-slate-800"
                                 >
                                   <Edit2 size={13} className="text-blue-500" />
                                   <span>{isId ? 'Edit Nama Bot' : 'Edit Bot Name'}</span>
@@ -351,10 +439,16 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                             className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase ${
                               bot.is_active
                                 ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'
+                                : 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
                             }`}
                           >
-                            {bot.is_active ? 'Active' : 'Inactive'}
+                            {bot.is_active
+                              ? isId
+                                ? 'Aktif'
+                                : 'Active'
+                              : isId
+                              ? 'Nonaktif (Diam)'
+                              : 'Inactive (Silent)'}
                           </span>
                         </div>
 
@@ -593,6 +687,31 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
               ) : (
                 /* Form Input View */
                 <form onSubmit={handleCreateBot} className="py-4 space-y-4 overflow-y-auto">
+                  {/* Warning / Error Message */}
+                  {createError && (
+                    <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-700 dark:text-rose-300">
+                      <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+                      <div className="flex-1 leading-relaxed">
+                        <span className="font-semibold block">{isId ? 'Terjadi Kesalahan:' : 'Error:'}</span>
+                        {createError}
+                      </div>
+                    </div>
+                  )}
+
+                  {bots.length >= MAX_TELEGRAM_BOTS_PER_USER && (
+                    <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                      <AlertCircle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                      <div className="flex-1 leading-relaxed">
+                        <span className="font-bold block">
+                          {isId ? 'Batas Maksimal Bot Tercapai (5/5)' : 'Maximum Bot Limit Reached (5/5)'}
+                        </span>
+                        {isId
+                          ? 'Setiap akun dibatasi hingga 5 bot. Hapus salah satu bot yang ada terlebih dahulu untuk menambahkan bot baru.'
+                          : 'Each account is limited to 5 bots. Delete an existing bot to create a new one.'}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Input bot_name */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
