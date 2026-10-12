@@ -217,34 +217,90 @@ export async function fetchTelegramLinks(): Promise<TelegramLinkRecord[]> {
 }
 
 /**
- * Mendaftarkan Webhook ke Telegram API menggunakan recordId UUID dari tabel telegram_bots
+ * Mendaftarkan / Memperbarui Webhook ke Telegram API menggunakan recordId UUID dari tabel telegram_bots
  */
-export async function registerTelegramWebhook(token: string, recordId: string): Promise<{ ok: boolean; description?: string }> {
+export async function registerTelegramWebhook(botToken: string, recordId: string): Promise<{
+  ok: boolean;
+  description?: string;
+  edgeFunctionUrl?: string;
+  result?: any;
+}> {
   try {
-    const cleanToken = token.trim();
+    const cleanToken = botToken.trim();
     if (!cleanToken) return { ok: false, description: 'Token tidak boleh kosong' };
     if (!recordId) return { ok: false, description: 'Record ID tidak valid' };
 
-    const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook?id=${recordId}`;
+    // Pastikan nama function sesuai dengan edge function Telegram kamu (misal: telegram-webhook)
+    // Dan pastikan variabel recordId digabung di belakang URL menggunakan ?id=
+    const functionName = "telegram-webhook"; // Sesuaikan dengan nama edge function kamu di Supabase
+    const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/${functionName}?id=${recordId}`;
+
     const telegramWebhookApi = `https://api.telegram.org/bot${cleanToken}/setWebhook?url=${encodeURIComponent(edgeFunctionUrl)}`;
+
+    // Kirim request fetch ke Telegram API
     const response = await fetch(telegramWebhookApi);
     const result = await response.json();
+    console.log("Hasil setWebhook:", result);
 
     if (result?.ok) {
-      console.info("Bot berhasil dibuat dan webhook Telegram aktif secara otomatis.");
+      console.info("Bot berhasil dibuat dan webhook Telegram aktif secara otomatis:", edgeFunctionUrl);
     } else {
       console.error("Gagal mendaftarkan webhook ke Telegram:", result?.description);
     }
 
     return {
       ok: Boolean(result?.ok),
-      description: result?.description || (result?.ok ? 'Webhook berhasil didaftarkan' : 'Gagal mendaftarkan webhook')
+      description: result?.description || (result?.ok ? 'Webhook berhasil didaftarkan' : 'Gagal mendaftarkan webhook'),
+      edgeFunctionUrl,
+      result
     };
   } catch (error: any) {
     console.error('Error saat mendaftarkan webhook telegram:', error);
     return {
       ok: false,
       description: error?.message || 'Gagal menghubungi server Telegram'
+    };
+  }
+}
+
+/**
+ * Mengambil informasi webhook langsung dari Telegram (getWebhookInfo)
+ * untuk memverifikasi apakah URL sudah sesuai (?id=...) atau masih mengarah ke yang lama (quick-handler)
+ */
+export async function checkTelegramWebhookInfo(botToken: string): Promise<{
+  ok: boolean;
+  url?: string;
+  hasCustomCertificate?: boolean;
+  pendingUpdateCount?: number;
+  lastErrorMessage?: string;
+  description?: string;
+}> {
+  try {
+    const cleanToken = botToken.trim();
+    if (!cleanToken) return { ok: false, description: 'Token tidak boleh kosong' };
+
+    const response = await fetch(`https://api.telegram.org/bot${cleanToken}/getWebhookInfo`);
+    const data = await response.json();
+    console.log("Hasil getWebhookInfo:", data);
+
+    if (data?.ok && data?.result) {
+      return {
+        ok: true,
+        url: data.result.url || '',
+        hasCustomCertificate: data.result.has_custom_certificate,
+        pendingUpdateCount: data.result.pending_update_count,
+        lastErrorMessage: data.result.last_error_message
+      };
+    }
+
+    return {
+      ok: false,
+      description: data?.description || 'Gagal mengambil getWebhookInfo'
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      description: err?.message || 'Gagal menghubungi Telegram API'
     };
   }
 }

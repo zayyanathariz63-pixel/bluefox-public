@@ -18,7 +18,8 @@ import {
   Search,
   Link2,
   Power,
-  PowerOff
+  PowerOff,
+  AlertTriangle
 } from 'lucide-react';
 import {
   TelegramBotRecord,
@@ -28,6 +29,8 @@ import {
   deleteTelegramBot,
   searchAndLinkChatId,
   toggleBotActiveStatus,
+  registerTelegramWebhook,
+  checkTelegramWebhookInfo,
   MAX_TELEGRAM_BOTS_PER_USER
 } from '../lib/telegramBots';
 import { useLanguage } from '../lib/i18n';
@@ -68,6 +71,12 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
   const [createError, setCreateError] = useState<string | null>(null);
   const [togglingBotId, setTogglingBotId] = useState<string | null>(null);
 
+  // Webhook Sync & Inspection state
+  const [syncingWebhookBotId, setSyncingWebhookBotId] = useState<string | null>(null);
+  const [checkingWebhookBotId, setCheckingWebhookBotId] = useState<string | null>(null);
+  const [liveWebhookInfo, setLiveWebhookInfo] = useState<Record<string, { url?: string; isQuickHandler?: boolean; isCorrect?: boolean; lastChecked?: number }>>({});
+  const [webhookNotification, setWebhookNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
   // Modal Edit Bot
   const [editingBot, setEditingBot] = useState<TelegramBotRecord | null>(null);
   const [editBotNameInput, setEditBotNameInput] = useState<string>('');
@@ -85,6 +94,22 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
     try {
       const data = await fetchTelegramBots();
       setBots(data);
+
+      // Otomatis cek status webhook telegram untuk setiap bot
+      for (const b of data) {
+        if (b.telegram_bot_token) {
+          checkTelegramWebhookInfo(b.telegram_bot_token).then((res) => {
+            if (res.ok && res.url !== undefined) {
+              const isQuickHandler = res.url.includes('quick-handler');
+              const isCorrect = res.url.includes('telegram-webhook') && res.url.includes(`id=${b.id}`);
+              setLiveWebhookInfo(prev => ({
+                ...prev,
+                [b.id]: { url: res.url, isQuickHandler, isCorrect, lastChecked: Date.now() }
+              }));
+            }
+          }).catch(() => {});
+        }
+      }
     } finally {
       setIsLoading(false);
     }
@@ -155,6 +180,95 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
       console.error('Gagal mengubah status aktif bot:', err);
     } finally {
       setTogglingBotId(null);
+    }
+  };
+
+  const handleSyncWebhook = async (bot: TelegramBotRecord) => {
+    setSyncingWebhookBotId(bot.id);
+    setActiveMenuBotId(null);
+    setWebhookNotification(null);
+
+    try {
+      // Pastikan nama function sesuai dengan edge function Telegram kamu (misal: telegram-webhook)
+      // Dan pastikan variabel recordId digabung di belakang URL menggunakan ?id=
+      const functionName = "telegram-webhook"; // Sesuaikan dengan nama edge function kamu di Supabase
+      const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/${functionName}?id=${bot.id}`;
+
+      const telegramWebhookApi = `https://api.telegram.org/bot${bot.telegram_bot_token}/setWebhook?url=${encodeURIComponent(edgeFunctionUrl)}`;
+
+      // Kirim request fetch ke Telegram API
+      const response = await fetch(telegramWebhookApi);
+      const result = await response.json();
+      console.log("Hasil setWebhook:", result);
+
+      if (result.ok) {
+        setLiveWebhookInfo(prev => ({
+          ...prev,
+          [bot.id]: { url: edgeFunctionUrl, isQuickHandler: false, isCorrect: true, lastChecked: Date.now() }
+        }));
+        setWebhookNotification({
+          type: 'success',
+          message: isId
+            ? `Webhook Telegram "${bot.bot_name}" berhasil disinkronkan ke ?id=${bot.id}`
+            : `Telegram webhook for "${bot.bot_name}" synced successfully to ?id=${bot.id}`
+        });
+      } else {
+        setWebhookNotification({
+          type: 'error',
+          message: isId
+            ? `Gagal sinkronkan webhook: ${result.description || 'Error Telegram API'}`
+            : `Failed to sync webhook: ${result.description || 'Telegram API Error'}`
+        });
+      }
+    } catch (err: any) {
+      console.error("Error handleSyncWebhook:", err);
+      setWebhookNotification({
+        type: 'error',
+        message: err?.message || 'Gagal menghubungi Telegram API'
+      });
+    } finally {
+      setSyncingWebhookBotId(null);
+      setTimeout(() => setWebhookNotification(null), 6000);
+    }
+  };
+
+  const handleCheckWebhook = async (bot: TelegramBotRecord) => {
+    setCheckingWebhookBotId(bot.id);
+    setActiveMenuBotId(null);
+    try {
+      const res = await checkTelegramWebhookInfo(bot.telegram_bot_token);
+      if (res.ok && res.url !== undefined) {
+        const isQuickHandler = res.url.includes('quick-handler');
+        const isCorrect = res.url.includes('telegram-webhook') && res.url.includes(`id=${bot.id}`);
+        setLiveWebhookInfo(prev => ({
+          ...prev,
+          [bot.id]: { url: res.url, isQuickHandler, isCorrect, lastChecked: Date.now() }
+        }));
+
+        if (isQuickHandler) {
+          setWebhookNotification({
+            type: 'error',
+            message: isId
+              ? `Perhatian! Webhook bot "${bot.bot_name}" masih mengarah ke "quick-handler" (tanpa parameter ?id=). Klik "Perbaiki Webhook" untuk memperbarui.`
+              : `Warning! Webhook still points to "quick-handler". Click "Sync Webhook" to update.`
+          });
+        } else {
+          setWebhookNotification({
+            type: 'info',
+            message: isId
+              ? `URL Webhook saat ini di Telegram: ${res.url || '(Belum diset)'}`
+              : `Current Webhook URL on Telegram: ${res.url || '(Not set)'}`
+          });
+        }
+      } else {
+        setWebhookNotification({
+          type: 'error',
+          message: res.description || 'Gagal mengambil data webhook dari Telegram'
+        });
+      }
+    } finally {
+      setCheckingWebhookBotId(null);
+      setTimeout(() => setWebhookNotification(null), 6000);
     }
   };
 
@@ -284,6 +398,34 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-4 sm:p-8 max-w-6xl mx-auto w-full space-y-6">
+        {/* Notifikasi Webhook Status */}
+        {webhookNotification && (
+          <div className={`p-4 rounded-2xl flex items-start gap-3 text-xs leading-relaxed transition-all shadow-xs ${
+            webhookNotification.type === 'success'
+              ? 'bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+              : webhookNotification.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              : 'bg-blue-50 dark:bg-blue-950/60 border border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+          }`}>
+            {webhookNotification.type === 'success' ? (
+              <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+            ) : webhookNotification.type === 'error' ? (
+              <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />
+            ) : (
+              <Link2 size={16} className="text-blue-500 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 font-medium break-all">
+              {webhookNotification.message}
+            </div>
+            <button
+              onClick={() => setWebhookNotification(null)}
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* Bot Cards Grid */}
         <div>
           <div className="flex items-center justify-between mb-4">
@@ -405,6 +547,30 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                                 </button>
 
                                 <button
+                                  onClick={() => handleSyncWebhook(bot)}
+                                  disabled={syncingWebhookBotId === bot.id}
+                                  className="w-full text-left px-3.5 py-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-100 dark:border-slate-800"
+                                >
+                                  {syncingWebhookBotId === bot.id ? (
+                                    <RefreshCw size={13} className="animate-spin text-blue-500" />
+                                  ) : (
+                                    <Link2 size={13} />
+                                  )}
+                                  <span>{isId ? 'Sinkronkan Webhook (?id=...)' : 'Sync Webhook (?id=...)'}</span>
+                                </button>
+                                <button
+                                  onClick={() => handleCheckWebhook(bot)}
+                                  disabled={checkingWebhookBotId === bot.id}
+                                  className="w-full text-left px-3.5 py-2 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer transition-colors border-t border-slate-100 dark:border-slate-800"
+                                >
+                                  {checkingWebhookBotId === bot.id ? (
+                                    <RefreshCw size={13} className="animate-spin text-slate-400" />
+                                  ) : (
+                                    <Search size={13} />
+                                  )}
+                                  <span>{isId ? 'Cek getWebhookInfo' : 'Check getWebhookInfo'}</span>
+                                </button>
+                                <button
                                   onClick={() => {
                                     setActiveMenuBotId(null);
                                     setEditingBot(bot);
@@ -451,6 +617,50 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                               : 'Inactive (Silent)'}
                           </span>
                         </div>
+
+                        {/* Webhook Status Info */}
+                        <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
+                          <span>Webhook</span>
+                          <div className="flex items-center gap-1.5">
+                            <span
+                              className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-semibold truncate max-w-[120px]"
+                              title={`telegram-webhook?id=${bot.id}`}
+                            >
+                              ?id={bot.id.slice(0, 8)}...
+                            </span>
+                            <button
+                              onClick={() => handleSyncWebhook(bot)}
+                              disabled={syncingWebhookBotId === bot.id}
+                              className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded transition-colors cursor-pointer"
+                              title={isId ? 'Sinkronkan Webhook ke Telegram API' : 'Sync Webhook to Telegram API'}
+                            >
+                              <RefreshCw size={11} className={syncingWebhookBotId === bot.id ? 'animate-spin text-blue-500' : ''} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Peringatan jika Webhook Masih quick-handler (Kasus di screenshot pengguna) */}
+                        {liveWebhookInfo[bot.id]?.isQuickHandler && (
+                          <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200 space-y-1.5">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
+                              <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                              <span>{isId ? "Webhook Masih 'quick-handler'" : "Webhook Still 'quick-handler'"}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-tight">
+                              {isId
+                                ? `Bot Telegram ini masih terdaftar ke URL lama tanpa ID unik. Klik tombol di bawah untuk menyinkronkan ke ?id=${bot.id}`
+                                : `Bot still points to old URL without unique ID. Click button below to sync.`}
+                            </p>
+                            <button
+                              onClick={() => handleSyncWebhook(bot)}
+                              disabled={syncingWebhookBotId === bot.id}
+                              className="w-full py-1.5 px-2 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg font-semibold flex items-center justify-center gap-1.5 cursor-pointer text-[11px] shadow-xs"
+                            >
+                              <RefreshCw size={11} className={syncingWebhookBotId === bot.id ? 'animate-spin' : ''} />
+                              <span>{isId ? 'Perbaiki & Sinkronkan Sekarang' : 'Fix & Sync Now'}</span>
+                            </button>
+                          </div>
+                        )}
 
                         {/* Telegram Links Chat ID */}
                         <div className="flex items-center justify-between text-slate-500 dark:text-slate-400">
@@ -641,6 +851,22 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                         </button>
                       </div>
                     )}
+                  </div>
+
+                  {/* Webhook Edge Function Status */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200/90 dark:border-slate-700/80 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">
+                        <CheckCircle2 size={14} className="text-emerald-500" />
+                        <span>Webhook Telegram Terdaftar:</span>
+                      </div>
+                      <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded text-[10px]">
+                        telegram-webhook
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 break-all text-slate-700 dark:text-slate-300 select-all">
+                      https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook?id={createdBotResult.bot.id}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5">
