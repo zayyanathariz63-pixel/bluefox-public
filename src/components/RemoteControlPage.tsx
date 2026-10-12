@@ -100,11 +100,12 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
         if (b.telegram_bot_token) {
           checkTelegramWebhookInfo(b.telegram_bot_token).then((res) => {
             if (res.ok && res.url !== undefined) {
-              const isQuickHandler = res.url.includes('quick-handler');
-              const isCorrect = res.url.includes('telegram-webhook') && res.url.includes(`id=${b.id}`);
+              const hasRecordId = res.url.includes(`id=${b.id}`);
+              const isCorrect = res.url.includes('quick-handler') && hasRecordId;
+              const isOutdated = !hasRecordId;
               setLiveWebhookInfo(prev => ({
                 ...prev,
-                [b.id]: { url: res.url, isQuickHandler, isCorrect, lastChecked: Date.now() }
+                [b.id]: { url: res.url, isQuickHandler: isOutdated, isCorrect, lastChecked: Date.now() }
               }));
             }
           }).catch(() => {});
@@ -189,9 +190,9 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
     setWebhookNotification(null);
 
     try {
-      // Pastikan nama function sesuai dengan edge function Telegram kamu (misal: telegram-webhook)
-      // Dan pastikan variabel recordId digabung di belakang URL menggunakan ?id=
-      const functionName = "telegram-webhook"; // Sesuaikan dengan nama edge function kamu di Supabase
+      // Nama Edge Function Supabase: quick-handler
+      // Menggunakan query parameter ?id=${bot.id}
+      const functionName = "quick-handler";
       const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/${functionName}?id=${bot.id}`;
 
       const telegramWebhookApi = `https://api.telegram.org/bot${bot.telegram_bot_token}/setWebhook?url=${encodeURIComponent(edgeFunctionUrl)}`;
@@ -209,8 +210,8 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
         setWebhookNotification({
           type: 'success',
           message: isId
-            ? `Webhook Telegram "${bot.bot_name}" berhasil disinkronkan ke ?id=${bot.id}`
-            : `Telegram webhook for "${bot.bot_name}" synced successfully to ?id=${bot.id}`
+            ? `Webhook Telegram "${bot.bot_name}" berhasil disinkronkan ke quick-handler?id=${bot.id}`
+            : `Telegram webhook for "${bot.bot_name}" synced successfully to quick-handler?id=${bot.id}`
         });
       } else {
         setWebhookNotification({
@@ -238,26 +239,27 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
     try {
       const res = await checkTelegramWebhookInfo(bot.telegram_bot_token);
       if (res.ok && res.url !== undefined) {
-        const isQuickHandler = res.url.includes('quick-handler');
-        const isCorrect = res.url.includes('telegram-webhook') && res.url.includes(`id=${bot.id}`);
+        const hasRecordId = res.url.includes(`id=${bot.id}`);
+        const isCorrect = res.url.includes('quick-handler') && hasRecordId;
+        const isOutdated = !hasRecordId;
         setLiveWebhookInfo(prev => ({
           ...prev,
-          [bot.id]: { url: res.url, isQuickHandler, isCorrect, lastChecked: Date.now() }
+          [bot.id]: { url: res.url, isQuickHandler: isOutdated, isCorrect, lastChecked: Date.now() }
         }));
 
-        if (isQuickHandler) {
+        if (isOutdated) {
           setWebhookNotification({
             type: 'error',
             message: isId
-              ? `Perhatian! Webhook bot "${bot.bot_name}" masih mengarah ke "quick-handler" (tanpa parameter ?id=). Klik "Perbaiki Webhook" untuk memperbarui.`
-              : `Warning! Webhook still points to "quick-handler". Click "Sync Webhook" to update.`
+              ? `Perhatian! Webhook bot "${bot.bot_name}" belum menggunakan ?id=${bot.id}. URL saat ini: ${res.url || '(Belum diset)'}. Klik "Perbaiki Webhook" untuk memperbarui.`
+              : `Warning! Webhook does not include ?id=${bot.id}. Current: ${res.url || '(Not set)'}. Click "Sync Webhook" to update.`
           });
         } else {
           setWebhookNotification({
             type: 'info',
             message: isId
-              ? `URL Webhook saat ini di Telegram: ${res.url || '(Belum diset)'}`
-              : `Current Webhook URL on Telegram: ${res.url || '(Not set)'}`
+              ? `URL Webhook saat ini sudah benar dan aktif: ${res.url}`
+              : `Current Webhook URL is correct and active: ${res.url}`
           });
         }
       } else {
@@ -624,7 +626,7 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                           <div className="flex items-center gap-1.5">
                             <span
                               className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-semibold truncate max-w-[120px]"
-                              title={`telegram-webhook?id=${bot.id}`}
+                              title={`quick-handler?id=${bot.id}`}
                             >
                               ?id={bot.id.slice(0, 8)}...
                             </span>
@@ -639,17 +641,17 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                           </div>
                         </div>
 
-                        {/* Peringatan jika Webhook Masih quick-handler (Kasus di screenshot pengguna) */}
+                        {/* Peringatan jika Webhook Belum Ada ?id= (Kasus di screenshot pengguna) */}
                         {liveWebhookInfo[bot.id]?.isQuickHandler && (
                           <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-800 text-[11px] text-amber-900 dark:text-amber-200 space-y-1.5">
                             <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-400">
                               <AlertTriangle size={13} className="text-amber-500 shrink-0" />
-                              <span>{isId ? "Webhook Masih 'quick-handler'" : "Webhook Still 'quick-handler'"}</span>
+                              <span>{isId ? "Webhook Belum Memakai ?id=" : "Webhook Missing ?id="}</span>
                             </div>
                             <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-tight">
                               {isId
-                                ? `Bot Telegram ini masih terdaftar ke URL lama tanpa ID unik. Klik tombol di bawah untuk menyinkronkan ke ?id=${bot.id}`
-                                : `Bot still points to old URL without unique ID. Click button below to sync.`}
+                                ? `Bot Telegram ini belum terdaftar dengan parameter ID unik. Klik tombol di bawah untuk menyinkronkan ke ?id=${bot.id}`
+                                : `Bot webhook does not have unique record ID. Click button below to sync to ?id=${bot.id}.`}
                             </p>
                             <button
                               onClick={() => handleSyncWebhook(bot)}
@@ -861,11 +863,11 @@ export const RemoteControlPage: React.FC<RemoteControlPageProps> = ({
                         <span>Webhook Telegram Terdaftar:</span>
                       </div>
                       <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded text-[10px]">
-                        telegram-webhook
+                        quick-handler
                       </span>
                     </div>
                     <div className="text-[11px] font-mono bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 break-all text-slate-700 dark:text-slate-300 select-all">
-                      https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook?id={createdBotResult.bot.id}
+                      https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/quick-handler?id={createdBotResult.bot.id}
                     </div>
                   </div>
 

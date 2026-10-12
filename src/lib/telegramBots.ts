@@ -22,7 +22,7 @@ export interface TelegramLinkRecord {
 
 const LOCAL_STORAGE_BOTS_KEY = 'bluefox_telegram_bots_v1';
 const LOCAL_STORAGE_LINKS_KEY = 'bluefox_telegram_links_v1';
-export const EDGE_FUNCTION_BASE_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/telegram-webhook';
+export const EDGE_FUNCTION_BASE_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/quick-handler';
 export const MAX_TELEGRAM_BOTS_PER_USER = 5;
 
 /**
@@ -230,9 +230,8 @@ export async function registerTelegramWebhook(botToken: string, recordId: string
     if (!cleanToken) return { ok: false, description: 'Token tidak boleh kosong' };
     if (!recordId) return { ok: false, description: 'Record ID tidak valid' };
 
-    // Pastikan nama function sesuai dengan edge function Telegram kamu (misal: telegram-webhook)
-    // Dan pastikan variabel recordId digabung di belakang URL menggunakan ?id=
-    const functionName = "telegram-webhook"; // Sesuaikan dengan nama edge function kamu di Supabase
+    // Edge Function Supabase: quick-handler dengan query parameter ?id=${recordId}
+    const functionName = "quick-handler";
     const edgeFunctionUrl = `https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/${functionName}?id=${recordId}`;
 
     const telegramWebhookApi = `https://api.telegram.org/bot${cleanToken}/setWebhook?url=${encodeURIComponent(edgeFunctionUrl)}`;
