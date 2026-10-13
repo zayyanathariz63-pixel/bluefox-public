@@ -27,6 +27,8 @@ export interface Message {
   thinking?: string;
   isThinking?: boolean;
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  motionCode?: string;
+  isManualMotion?: boolean;
 }
 
 export interface Connector {

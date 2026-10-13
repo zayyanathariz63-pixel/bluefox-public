@@ -5,7 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import { 
   Pencil, Power, Copy, Check, Globe, Zap, Maximize2, 
   Music, FileText, RotateCcw, AlertTriangle, Lightbulb, 
-  HelpCircle, ShieldAlert, Sparkles 
+  HelpCircle, ShieldAlert, Sparkles, Play, Code, ExternalLink, Film 
 } from 'lucide-react';
 import { Message, MediaAttachment } from '../types';
 import { cn } from '../lib/utils';
@@ -14,6 +14,7 @@ import { SourcesBottomSheet } from './SourcesBottomSheet';
 import { useLanguage } from '../lib/i18n';
 import { ThinkingBlock } from './ThinkingBlock';
 import { parseThinking } from '../lib/reasoning';
+import { parseAiResponse, sanitizeMotionHtml } from '../lib/motion';
 
 interface ChatMessageProps {
   message: Message;
@@ -21,6 +22,7 @@ interface ChatMessageProps {
   onRetry?: (id: string) => void;
   onStop?: () => void;
   onOpenMediaScreen?: (media: MediaAttachment) => void;
+  onOpenMotionPanel?: (code: string) => void;
 }
 
 /**
@@ -34,6 +36,8 @@ export function extractCleanText(markdownText: string): string {
   if (!markdownText) return '';
   // 1. Hilangkan blok penalaran <think>...</think>
   let text = markdownText.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // 1b. Hilangkan blok kode animasi [BLUEFOX_MOTION]...[/BLUEFOX_MOTION]
+  text = text.replace(/\[BLUEFOX_MOTION\][\s\S]*?\[\/BLUEFOX_MOTION\]/gi, '');
   // 2. Hilangkan tag HTML
   text = text.replace(/<[^>]+>/g, '');
   // 3. Hilangkan markdown image tags ![alt](url)
@@ -125,7 +129,14 @@ const CustomBlockquote = ({ children, ...props }: any) => {
   );
 };
 
-export function ChatMessage({ message, onEdit, onRetry, onStop, onOpenMediaScreen }: ChatMessageProps) {
+export function ChatMessage({ 
+  message, 
+  onEdit, 
+  onRetry, 
+  onStop, 
+  onOpenMediaScreen,
+  onOpenMotionPanel 
+}: ChatMessageProps) {
   const { lang, t } = useLanguage();
   const isId = lang === 'id';
   const isUser = message.role === 'user';
@@ -134,10 +145,33 @@ export function ChatMessage({ message, onEdit, onRetry, onStop, onOpenMediaScree
   const [showSourcesModal, setShowSourcesModal] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
 
+  // Motion states
+  const [motionIframeKey, setMotionIframeKey] = useState(1);
+  const [showMotionCode, setShowMotionCode] = useState(false);
+  const [copiedMotionCode, setCopiedMotionCode] = useState(false);
+
   const hasWebSources = !isUser && Boolean(message.sources && message.sources.length > 0);
   const isTavily = message.search_engine_used === 'tavily';
 
   const { thinking, content, isThinkingComplete } = parseThinking(message.text, message.thinking);
+
+  // Parse [BLUEFOX_MOTION] if present or stored in message.motionCode
+  const rawTextForMotion = message.motionCode
+    ? `[BLUEFOX_MOTION]${message.motionCode}[/BLUEFOX_MOTION]\n\n${content || message.text || ''}`
+    : (content || message.text || '');
+
+  const motionResult = parseAiResponse(rawTextForMotion);
+  const hasMotion = motionResult.hasMotionCode && Boolean(motionResult.codeToRender);
+  const motionCodeToRender = motionResult.codeToRender || message.motionCode || null;
+  const displayContent = hasMotion ? motionResult.chatMessage : content;
+
+  const handleCopyMotionCode = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!motionCodeToRender) return;
+    navigator.clipboard.writeText(motionCodeToRender);
+    setCopiedMotionCode(true);
+    setTimeout(() => setCopiedMotionCode(false), 2000);
+  };
 
   // Perbaikan Tombol Copy: Hanya menyalin teks bersih dan tanda baca (tanpa elemen/markdown artifacts)
   const handleCopyCleanMessage = () => {
@@ -404,7 +438,7 @@ export function ChatMessage({ message, onEdit, onRetry, onStop, onOpenMediaScree
               </div>
             ) : (
               /* Konten Utama Pesan AI Biasa */
-              content ? (
+              (displayContent || content) ? (
                 <div className="w-full text-[15px] text-slate-900 dark:text-slate-100 leading-relaxed font-normal break-words">
                   <div className="markdown-body">
                     <ReactMarkdown 
@@ -414,9 +448,95 @@ export function ChatMessage({ message, onEdit, onRetry, onStop, onOpenMediaScree
                         blockquote: CustomBlockquote
                       }}
                     >
-                      {content}
+                      {displayContent || content}
                     </ReactMarkdown>
                   </div>
+
+                  {/* KEBUTUHAN UTAMA: Kartu Visual Bluefox Motion */}
+                  {hasMotion && motionCodeToRender && (
+                    <div className="w-full my-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden shadow-sm">
+                      {/* Header Kartu Motion */}
+                      <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 text-xs select-none">
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-lg bg-blue-600/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                            <Film size={14} />
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-900 dark:text-slate-100">
+                              Bluefox Motion
+                            </span>
+                            {message.isManualMotion && (
+                              <span className="ml-2 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                (Kode Manual)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setMotionIframeKey(k => k + 1)}
+                            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-750 rounded-lg transition-colors cursor-pointer"
+                            title={isId ? 'Putar Ulang Animasi' : 'Replay Animation'}
+                          >
+                            <RotateCcw size={13} />
+                          </button>
+
+                          <button
+                            onClick={() => setShowMotionCode(!showMotionCode)}
+                            className={cn(
+                              "p-1.5 rounded-lg transition-colors cursor-pointer",
+                              showMotionCode
+                                ? "bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400"
+                                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-750"
+                            )}
+                            title={isId ? 'Lihat/Sembunyikan Kode' : 'Toggle Code View'}
+                          >
+                            <Code size={13} />
+                          </button>
+
+                          <button
+                            onClick={handleCopyMotionCode}
+                            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-750 rounded-lg transition-colors cursor-pointer"
+                            title={isId ? 'Salin Kode HTML' : 'Copy HTML Code'}
+                          >
+                            {copiedMotionCode ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                          </button>
+
+                          {onOpenMotionPanel && (
+                            <button
+                              onClick={() => onOpenMotionPanel(motionCodeToRender)}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-xs ml-1"
+                              title={isId ? 'Buka di Panel Samping' : 'Open in Side Panel'}
+                            >
+                              <ExternalLink size={12} />
+                              <span className="hidden sm:inline">{isId ? 'Panel Samping' : 'Side Panel'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Viewport Iframe */}
+                      <div className="relative w-full h-64 sm:h-72 bg-slate-950 flex items-center justify-center overflow-hidden">
+                        <iframe
+                          key={motionIframeKey}
+                          srcDoc={sanitizeMotionHtml(motionCodeToRender)}
+                          title="Bluefox Motion Animation Preview"
+                          className="w-full h-full border-0"
+                          sandbox="allow-scripts allow-same-origin"
+                        />
+                      </div>
+
+                      {/* Collapsible Source Code View */}
+                      {showMotionCode && (
+                        <div className="p-3 bg-slate-950 border-t border-slate-800 text-xs font-mono text-slate-300 max-h-56 overflow-auto">
+                          <pre className="whitespace-pre overflow-x-auto text-[11px] leading-relaxed">
+                            {motionCodeToRender}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 !isThinkingComplete && (

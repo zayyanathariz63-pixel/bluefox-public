@@ -5,7 +5,8 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2 } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film } from 'lucide-react';
+import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
 import { SettingsModal } from './components/SettingsModal';
@@ -18,6 +19,9 @@ import { UserGradientAvatar } from './components/UserGradientAvatar';
 import { FileHistoryModal } from './components/FileHistoryModal';
 import { CustomGenerateModal } from './components/CustomGenerateModal';
 import { CustomApiDrawer } from './components/CustomApiDrawer';
+import { MotionPanel } from './components/MotionPanel';
+import { MotionManualModal } from './components/MotionManualModal';
+import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse } from './lib/motion';
 import { BluefoxCustomApi, CustomApiKey } from './types';
 import { useLanguage } from './lib/i18n';
 import { 
@@ -253,6 +257,11 @@ export default function App() {
   const [customGenerateType, setCustomGenerateType] = useState<'image' | 'video' | undefined>(undefined);
   const [customGenerateApiId, setCustomGenerateApiId] = useState<string | undefined>(undefined);
 
+  // State for Bluefox Motion (Animasi visual berbasis kode)
+  const [isMotionPanelOpen, setIsMotionPanelOpen] = useState(false);
+  const [activeMotionCode, setActiveMotionCode] = useState<string>('');
+  const [isMotionManualModalOpen, setIsMotionManualModalOpen] = useState(false);
+
   // State for Custom API Bottom Drawer Popup (Muncul dari bawah)
   const [isCustomApiDrawerOpen, setIsCustomApiDrawerOpen] = useState(false);
   const [customChatApis, setCustomChatApis] = useState<CustomApiKey[]>(() => {
@@ -305,6 +314,52 @@ export default function App() {
     setCustomGenerateType(type);
     setCustomGenerateApiId(apiId);
     setIsCustomGenerateOpen(true);
+  };
+
+  const handleManualMotionSubmit = (code: string, note?: string) => {
+    // 2.A: Mode Opsi Kode Manual (Langsung bungkus ke tag renderer tanpa panggil AI)
+    const processResult = processUserInput(code, true);
+    if (processResult.type === 'RENDER_MOTION' && processResult.code) {
+      const motionCode = processResult.code;
+      const userTitle = note?.trim() || (lang === 'id' ? 'Animasi Kode Manual' : 'Manual Motion Code');
+
+      const userMessageId = Date.now().toString();
+      const userMsg: Message = {
+        id: userMessageId,
+        role: 'user',
+        text: `\`\`\`html\n${motionCode}\n\`\`\``
+      };
+
+      const aiMessageId = (Date.now() + 1).toString();
+      const aiReplyText = lang === 'id'
+        ? `Berikut adalah visualisasi animasi untuk **${userTitle}** yang langsung dirender ke iframe:\n\n[BLUEFOX_MOTION]\n${motionCode}\n[/BLUEFOX_MOTION]`
+        : `Here is the live animation visualization for **${userTitle}** rendered into the iframe:\n\n[BLUEFOX_MOTION]\n${motionCode}\n[/BLUEFOX_MOTION]`;
+
+      const aiMsg: Message = {
+        id: aiMessageId,
+        role: 'model',
+        text: aiReplyText,
+        motionCode: motionCode,
+        isManualMotion: true
+      };
+
+      const nextMessages = [...messages, userMsg, aiMsg];
+      setMessages(nextMessages);
+
+      // Otomatis buka panel samping & suntikkan kode ke iframe srcdoc
+      setActiveMotionCode(motionCode);
+      setIsMotionPanelOpen(true);
+
+      const convId = currentSessionId || getValidUUID(null);
+      if (!currentSessionId) {
+        setCurrentSessionId(convId);
+      }
+
+      saveChatTurn(convId, userMsg.text, aiReplyText).catch(() => {});
+      saveSessionsToLocal(
+        chatSessions.map(s => s.id === convId ? { ...s, messages: nextMessages, updatedAt: Date.now() } : s)
+      );
+    }
   };
 
   const handleSelectCustomChatModel = (api: CustomApiKey) => {
@@ -2068,6 +2123,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       } else if (lowerText.startsWith('@creative')) {
         const query = userText.replace(/^@creative\s*/i, '').trim();
         effectiveAiPrompt = `[CREATIVE DYNAMIC STYLE PROTOCOL]\nAktifkan parameter kreasi ide eksploratif, variasi diksi yang kaya dan ekspresif, eksploratif, serta hasilkan ide-ide inovatif dan out-of-the-box.\n\nTopik/Instruksi:\n${query}`;
+      } else if (lowerText.includes('@motion')) {
+        // Mode @motion: Menggunakan System Prompt khusus Bluefox Motion
+        const motionQuery = userText.replace(/@motion\s*/gi, '').trim();
+        effectiveAiPrompt = `${BLUEFOX_MOTION_SYSTEM_PROMPT}\n\nInstruksi Animasi Pengguna:\n${motionQuery || userText}`;
       }
 
       const activeMemories = getActiveMemories();
@@ -2277,6 +2336,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // Jika user memilih salah satu dari 3 model bawaan (atau mode bukan custom)
       const isNativeBluefox = !isCustomMode || (isAgnesMatch || isTencentMatch || isLagunaMatch);
 
+      const isMotionTriggered = lowerText.includes('@motion');
+      const activeSystemPrompt = isMotionTriggered
+        ? `${BLUEFOX_SYSTEM_PROMPT}\n\n${BLUEFOX_MOTION_SYSTEM_PROMPT}`
+        : BLUEFOX_SYSTEM_PROMPT;
+      const effectiveCustomInstruction = isMotionTriggered
+        ? (customInstruction ? `${customInstruction}\n\n${BLUEFOX_MOTION_SYSTEM_PROMPT}` : BLUEFOX_MOTION_SYSTEM_PROMPT)
+        : (customInstruction || "");
+
       let chatPayload: any;
 
       if (isNativeBluefox) {
@@ -2324,10 +2391,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
           smart_select_level: smartSelectLevel,
           smartSelectLevel: smartSelectLevel,
-          customInstruction: customInstruction || "",
-          custom_instruction: customInstruction || "",
-          system_prompt: BLUEFOX_SYSTEM_PROMPT,
-          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+          customInstruction: effectiveCustomInstruction,
+          custom_instruction: effectiveCustomInstruction,
+          system_prompt: activeSystemPrompt,
+          systemPrompt: activeSystemPrompt,
           stream: false
         };
       } else {
@@ -2390,10 +2457,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
           smart_select_level: smartSelectLevel,
           smartSelectLevel: smartSelectLevel,
-          customInstruction: customInstruction || "",
-          custom_instruction: customInstruction || "",
-          system_prompt: BLUEFOX_SYSTEM_PROMPT,
-          systemPrompt: BLUEFOX_SYSTEM_PROMPT,
+          customInstruction: effectiveCustomInstruction,
+          custom_instruction: effectiveCustomInstruction,
+          system_prompt: activeSystemPrompt,
+          systemPrompt: activeSystemPrompt,
           stream: false
         };
       }
@@ -2465,7 +2532,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               body: JSON.stringify({
                 model: customTarget.model || "gpt-4o",
                 messages: [
-                  { role: "system", content: BLUEFOX_SYSTEM_PROMPT },
+                  { role: "system", content: activeSystemPrompt },
                   ...formattedHistory,
                   { role: "user", content: promptToSend }
                 ],
@@ -2737,6 +2804,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         console.warn("⚠️ [Supabase] Info simpan pesan asisten:", err);
       });
 
+      // Ekstrak kode animasi [BLUEFOX_MOTION] dari respon AI
+      const parsedMotion = parseAiResponse(aiReplyText);
+      const detectedMotionCode = (parsedMotion.hasMotionCode && parsedMotion.codeToRender)
+        ? parsedMotion.codeToRender
+        : undefined;
+
+      if (detectedMotionCode) {
+        // Otomatis buka panel samping & suntikkan kode ke iframe srcdoc sesuai alur eksekusi Bluefox
+        setActiveMotionCode(detectedMotionCode);
+        setIsMotionPanelOpen(true);
+      }
+
       const finalMessages = [...updatedMessages, {
         id: aiMessageId,
         role: 'model' as const,
@@ -2745,7 +2824,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         has_sources: attachedSources.length > 0,
         search_engine_used: attachedEngine,
         sources: attachedSources.length > 0 ? attachedSources : undefined,
+        motionCode: detectedMotionCode
       }];
+
+      if (detectedMotionCode) {
+        setMessages(finalMessages);
+      }
 
       setChatSessions(prev => {
         const next = [...prev];
@@ -3076,6 +3160,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               </button>
             )}
 
+            {/* Tombol Panel Samping Bluefox Motion */}
+            {activeMotionCode && (
+              <button
+                onClick={() => setIsMotionPanelOpen(!isMotionPanelOpen)}
+                className={cn(
+                  "h-9 px-2.5 sm:px-3 rounded-xl flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer shadow-xs active:scale-95 border",
+                  isMotionPanelOpen
+                    ? "text-white bg-blue-600 border-blue-600 hover:bg-blue-700"
+                    : "text-blue-600 dark:text-blue-400 bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 border-blue-200 dark:border-blue-800"
+                )}
+                title={lang === 'id' ? "Buka/Tutup Panel Animasi (Motion)" : "Toggle Motion Panel"}
+              >
+                <Film size={15} />
+                <span className="hidden sm:inline">Motion</span>
+              </button>
+            )}
+
             <button
               onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
               className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
@@ -3132,8 +3233,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         </div>
       )}
 
-      {/* Main Chat Area */}
-      <main onScroll={handleScroll} className="flex-1 overflow-y-auto w-full scroll-smooth relative">
+      {/* Container Kolom Chat & Panel Samping Bluefox Motion */}
+      <div className="flex-1 flex overflow-hidden w-full relative">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+          {/* Main Chat Area */}
+          <main onScroll={handleScroll} className="flex-1 overflow-y-auto w-full scroll-smooth relative">
         {messages.length === 0 ? (
           <div className="min-h-full flex flex-col items-center justify-center px-4 py-8 max-w-2xl mx-auto">
             <h2 className="text-xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-3 tracking-tight text-center leading-tight">
@@ -3178,6 +3282,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 onRetry={handleRetryMessage}
                 onStop={isLoading ? stopGeneration : undefined} 
                 onOpenMediaScreen={handleOpenMediaScreen}
+                onOpenMotionPanel={(code) => {
+                  setActiveMotionCode(code);
+                  setIsMotionPanelOpen(true);
+                }}
               />
             ))}
             {isLoading && (
@@ -3274,6 +3382,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             )}
             <ChatInput 
               onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
+              onSubmitManualMotion={handleManualMotionSubmit}
               isLoading={isLoading} 
               onStop={stopGeneration} 
               connectors={connectors}
@@ -3284,10 +3393,24 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               isVisionActive={isVisionActive}
               disabled={isUsageLimitReached}
               onOpenCustomGenerate={handleOpenCustomGenerate}
+              onOpenMotionManual={() => setIsMotionManualModalOpen(true)}
+              onOpenMotionPanel={() => setIsMotionPanelOpen(true)}
             />
           </>
         )}
       </footer>
+    </div>
+
+    {/* Panel Samping Bluefox Motion */}
+    {isMotionPanelOpen && (
+      <MotionPanel
+        isOpen={isMotionPanelOpen}
+        onClose={() => setIsMotionPanelOpen(false)}
+        motionCode={activeMotionCode}
+        onUpdateCode={(newCode) => setActiveMotionCode(newCode)}
+      />
+    )}
+  </div>
 
       {/* Slide-down Model Selector Overlay (Half-screen Dropdown from the Top) */}
       <AnimatePresence>
@@ -4547,6 +4670,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           messages: messages,
         }}
         lang={lang}
+      />
+
+      <MotionManualModal
+        isOpen={isMotionManualModalOpen}
+        onClose={() => setIsMotionManualModalOpen(false)}
+        onSubmitManualCode={handleManualMotionSubmit}
       />
     </div>
       )}

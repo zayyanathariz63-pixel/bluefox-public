@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Upload, X, Eye, AlertTriangle, Clock, Film, Music, FileText, Globe, ExternalLink, Square as StopCircle, Image as ImageIcon, Video as VideoIcon } from 'lucide-react';
+import { Send, Loader2, Square, Link2, MoreHorizontal, Mic, Upload, X, Eye, AlertTriangle, Clock, Film, Music, FileText, Globe, ExternalLink, Square as StopCircle, Image as ImageIcon, Video as VideoIcon, Code2, Sparkles, Clipboard, Play, FileCode } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Connector, MediaAttachment } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
@@ -8,9 +8,11 @@ import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
 import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompressor';
 import { extractTextFromPdf } from '../lib/pdfReader';
+import { MOTION_PRESETS } from '../lib/motion';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
+  onSubmitManualMotion?: (code: string, note?: string) => void;
   isLoading: boolean;
   onStop?: () => void;
   connectors: Connector[];
@@ -21,6 +23,8 @@ interface ChatInputProps {
   isVisionActive?: boolean;
   disabled?: boolean;
   onOpenCustomGenerate?: (prompt?: string, type?: 'image' | 'video') => void;
+  onOpenMotionManual?: () => void;
+  onOpenMotionPanel?: () => void;
 }
 
 interface CustomErrorModal {
@@ -48,7 +52,9 @@ export function ChatInput({
   onDisableVision,
   isVisionActive,
   disabled,
-  onOpenCustomGenerate
+  onOpenCustomGenerate,
+  onOpenMotionManual,
+  onOpenMotionPanel
 }: ChatInputProps) {
   const { lang, t } = useLanguage();
   const [input, setInput] = useState('');
@@ -65,6 +71,10 @@ export function ChatInput({
   const [commandQuery, setCommandQuery] = useState('');
   const [filteredCommands, setFilteredCommands] = useState<TriggerCommand[]>(TRIGGER_COMMANDS);
   const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
+
+  // Bluefox Motion (@motion) Mode State
+  const [isMotionActive, setIsMotionActive] = useState(false);
+  const [motionModeType, setMotionModeType] = useState<'prompt' | 'code'>('prompt');
 
   const recognitionRef = useRef<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -552,7 +562,67 @@ export function ChatInput({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Global Keyboard Shortcuts untuk PC: Ctrl+P (Prompt), Ctrl+C (Code Manual), Ctrl+X (Tutup @motion)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrMeta) return;
+
+      // 1. Ctrl + P: Buka mode input prompt @motion
+      if (e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setIsMotionActive(true);
+        setMotionModeType('prompt');
+        setInput(prev => prev.replace(/@motion\s*/gi, ''));
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+        return;
+      }
+
+      // 2. Ctrl + X: Tutup / batalkan mode @motion
+      if (e.key.toLowerCase() === 'x') {
+        const selection = window.getSelection()?.toString();
+        // Hanya cegah default jika tidak ada teks yang sedang di-cut normal
+        if (isMotionActive && (!selection || selection.length === 0)) {
+          e.preventDefault();
+          setIsMotionActive(false);
+          return;
+        }
+      }
+
+      // 3. Ctrl + C: Buka mode code manual
+      if (e.key.toLowerCase() === 'c') {
+        const selection = window.getSelection()?.toString();
+        // Hanya picu jika TIDAK ADA teks yang diblok/diseleksi (agar clipboard copy normal tetap berjalan lancar)
+        if (!selection || selection.trim().length === 0) {
+          e.preventDefault();
+          setIsMotionActive(true);
+          setMotionModeType('code');
+          if (onOpenMotionManual) {
+            onOpenMotionManual();
+          }
+          return;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [isMotionActive, onOpenMotionManual]);
+
   const handleInputChange = (val: string) => {
+    // KEBUTUHAN UTAMA: Jika user mengetik @motion
+    // Tulisan @motion pindah ke kiri atas input prompt (isMotionActive = true) dan teks input dibersihkan
+    if (val.toLowerCase().includes('@motion')) {
+      setIsMotionActive(true);
+      setMotionModeType('prompt');
+      const cleaned = val.replace(/@motion\s*/gi, '');
+      setInput(cleaned);
+      setIsCommandModalOpen(false);
+      return;
+    }
+
     setInput(val);
     const atIndex = val.lastIndexOf('@');
     if (atIndex !== -1) {
@@ -573,6 +643,20 @@ export function ChatInput({
   };
 
   const handleSelectCommand = (cmd: TriggerCommand) => {
+    if (cmd.name === '@motion') {
+      setIsMotionActive(true);
+      setMotionModeType('prompt');
+      const atIndex = input.lastIndexOf('@');
+      let cleaned = atIndex !== -1 ? input.slice(0, atIndex) : '';
+      cleaned = cleaned.replace(/@motion\s*/gi, '');
+      setInput(cleaned);
+      setIsCommandModalOpen(false);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      return;
+    }
+
     const atIndex = input.lastIndexOf('@');
     let newInput = '';
     if (atIndex !== -1) {
@@ -608,11 +692,18 @@ export function ChatInput({
       return;
     }
 
-    if ((rawTrimmed || attachedMediaList.length > 0) && !isLoading) {
-      onSend(rawTrimmed, attachedMediaList.length > 0 ? attachedMediaList : undefined);
+    // Jika mode @motion sedang aktif, tambahkan @motion agar backend & AI menangkapnya
+    let textToSend = rawTrimmed;
+    if (isMotionActive) {
+      textToSend = rawTrimmed ? `@motion ${rawTrimmed}` : `@motion`;
+    }
+
+    if ((textToSend || attachedMediaList.length > 0) && !isLoading) {
+      onSend(textToSend, attachedMediaList.length > 0 ? attachedMediaList : undefined);
       setInput('');
       setIsCommandModalOpen(false);
       setAttachedMediaList([]);
+      setIsMotionActive(false);
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
@@ -919,6 +1010,35 @@ export function ChatInput({
                     Custom API
                   </span>
                 </button>
+
+                {/* Opsi 1.6: Bluefox Motion (Animasi @motion & Kode Manual) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPopupOpen(false);
+                    setIsMotionActive(true);
+                    setMotionModeType('prompt');
+                    textareaRef.current?.focus();
+                  }}
+                  className="w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border border-blue-200/80 bg-blue-50/50 hover:bg-blue-50 transition-all text-left group cursor-pointer"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
+                      <Film size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
+                        Bluefox Motion
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">
+                        Animasi @motion & Kode Manual
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 border border-blue-200 px-1.5 py-0.5 rounded-full shrink-0">
+                    @motion
+                  </span>
+                </button>
               </div>
 
               {/* Opsi 2: Daftar Konektor Aktif */}
@@ -1122,79 +1242,192 @@ export function ChatInput({
           )}
         </AnimatePresence>
 
+        {/* BILAH DUA TOMBOL DI ATAS INPUT PROMPT: 'INPUT PROMPT' & 'CODE MANUAL' */}
+        <AnimatePresence>
+          {isMotionActive && (
+            <motion.div
+              initial={{ opacity: 0, y: 6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.98 }}
+              className="mb-2 p-1.5 sm:p-2 bg-gradient-to-r from-blue-50/95 via-sky-50/90 to-indigo-50/95 border border-blue-200/90 rounded-2xl shadow-xs flex items-center justify-between gap-2 overflow-x-auto select-none"
+            >
+              {/* Tombol Pilihan: Input Prompt & Code Manual */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMotionModeType('prompt');
+                    textareaRef.current?.focus();
+                  }}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer",
+                    motionModeType === 'prompt'
+                      ? "bg-blue-600 text-white shadow-xs shadow-blue-600/30"
+                      : "bg-white/90 text-slate-700 hover:bg-white border border-slate-200/80"
+                  )}
+                  title="Gunakan AI Prompt untuk membuat animasi (Ctrl+P)"
+                >
+                  <Sparkles size={13} className={motionModeType === 'prompt' ? "text-white" : "text-blue-500"} />
+                  <span>Input Prompt</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMotionModeType('code');
+                    if (onOpenMotionManual) {
+                      onOpenMotionManual();
+                    }
+                  }}
+                  className={cn(
+                    "px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer",
+                    motionModeType === 'code'
+                      ? "bg-blue-600 text-white shadow-xs shadow-blue-600/30"
+                      : "bg-white/90 text-slate-700 hover:bg-white border border-slate-200/80"
+                  )}
+                  title="Tempel kode manual dan deteksi otomatis (Ctrl+C)"
+                >
+                  <Code2 size={13} className={motionModeType === 'code' ? "text-white" : "text-blue-500"} />
+                  <span>Code Manual</span>
+                </button>
+              </div>
+
+              {/* PC Keyboard Shortcut Tips & Tutup */}
+              <div className="flex items-center gap-2 shrink-0 pl-1">
+                <div className="hidden sm:flex items-center gap-2 text-[10px] text-slate-500 font-medium">
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700 shadow-2xs">Ctrl P</kbd>
+                    Prompt
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700 shadow-2xs">Ctrl C</kbd>
+                    Code
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono text-slate-700 shadow-2xs">Ctrl X</kbd>
+                    Tutup
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMotionActive(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                  title="Tutup @motion (Ctrl+X)"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <form 
           onSubmit={handleSubmit}
-          className="relative flex items-end overflow-hidden rounded-2xl bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all shadow-sm"
+          className="relative flex flex-col overflow-hidden rounded-2xl bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all shadow-sm"
         >
-          {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) */}
-          <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
-            <button
-              type="button"
-              onClick={() => setIsPopupOpen(!isPopupOpen)}
-              className={cn(
-                "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
-                isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
-                  ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
-                  : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
-              )}
-              title="Konektor & Upload File"
-            >
-              {isProcessingMedia ? (
-                <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-              ) : (
-                <Link2 className="w-5 h-5" />
-              )}
-            </button>
-          </div>
+          {/* TULISAN @MOTION DI KIRI ATAS INPUT PROMPT DENGAN TANDA SILANG (X) */}
+          {isMotionActive && (
+            <div className="px-3 pt-2 pb-1.5 flex items-center justify-between border-b border-blue-100/70 bg-blue-50/50 select-none">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-2xs">
+                  <Sparkles size={11} className="text-blue-200" />
+                  <span>@motion</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsMotionActive(false);
+                    }}
+                    className="p-0.5 ml-0.5 rounded-full hover:bg-blue-700 active:bg-blue-800 text-blue-200 hover:text-white transition-colors cursor-pointer"
+                    title="Hapus @motion (Ctrl+X)"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+                <span className="text-[11px] text-blue-600 font-medium hidden sm:inline">
+                  {lang === 'id' ? 'Mode Bluefox Motion Aktif' : 'Bluefox Motion Active'}
+                </span>
+              </div>
 
-          <div className="flex-1 relative min-h-[52px] sm:min-h-[56px] flex items-center">
-            <AnimatePresence mode="popLayout">
-              {isRecording ? (
-                <motion.div
-                  key="recording"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="w-full flex items-center justify-between px-2 pr-28"
-                >
-                  <div className="text-slate-800 text-sm font-medium truncate flex-1 pl-1">
-                    {recordingText || "Mendengarkan..."}
-                  </div>
-                  <div className="flex items-center justify-center gap-1 h-6 mx-2 shrink-0">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-1 bg-blue-600 rounded-full"
-                        animate={{ height: ['40%', '100%', '40%'] }}
-                        transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
-                      />
-                    ))}
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.textarea
-                  key="textarea"
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  ref={textareaRef}
-                  value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder={
-                    disabled 
-                      ? (lang === 'id' ? "Kuota penuh, silakan reset kuota." : "Usage limit reached, please reset.") 
-                      : attachedMediaList.length > 0 
-                        ? (lang === 'id' ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` : `Ask about these ${attachedMediaList.length} attached files...`)
-                        : t.inputPlaceholder
-                  }
-                  className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-slate-800 placeholder:text-slate-400 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
-                  rows={1}
-                  disabled={isLoading || disabled}
-                />
-              )}
-            </AnimatePresence>
-          </div>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {lang === 'id' ? 'Klik tanda silang (X) atau tekan Ctrl+X untuk hapus' : 'Click X or Ctrl+X to remove'}
+              </span>
+            </div>
+          )}
+
+          <div className="relative flex items-end w-full">
+            {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) */}
+            <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setIsPopupOpen(!isPopupOpen)}
+                className={cn(
+                  "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
+                  isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
+                    ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
+                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                )}
+                title="Konektor & Upload File"
+              >
+                {isProcessingMedia ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                ) : (
+                  <Link2 className="w-5 h-5" />
+                )}
+              </button>
+            </div>
+
+            <div className="flex-1 relative min-h-[52px] sm:min-h-[56px] flex items-center">
+              <AnimatePresence mode="popLayout">
+                {isRecording ? (
+                  <motion.div
+                    key="recording"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    className="w-full flex items-center justify-between px-2 pr-28"
+                  >
+                    <div className="text-slate-800 text-sm font-medium truncate flex-1 pl-1">
+                      {recordingText || "Mendengarkan..."}
+                    </div>
+                    <div className="flex items-center justify-center gap-1 h-6 mx-2 shrink-0">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <motion.div
+                          key={i}
+                          className="w-1 bg-blue-600 rounded-full"
+                          animate={{ height: ['40%', '100%', '40%'] }}
+                          transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                        />
+                      ))}
+                    </div>
+                  </motion.div>
+                ) : (
+                  <motion.textarea
+                    key="textarea"
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    ref={textareaRef}
+                    value={input}
+                    onChange={(e) => handleInputChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={
+                      disabled 
+                        ? (lang === 'id' ? "Kuota penuh, silakan reset kuota." : "Usage limit reached, please reset.") 
+                        : isMotionActive
+                          ? (lang === 'id' ? "Ketik prompt animasi AI (misal: buatkan animasi lingkaran membesar dan mengecil)..." : "Type motion prompt for AI...")
+                          : attachedMediaList.length > 0 
+                            ? (lang === 'id' ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` : `Ask about these ${attachedMediaList.length} attached files...`)
+                            : t.inputPlaceholder
+                    }
+                    className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-slate-800 placeholder:text-slate-400 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
+                    rows={1}
+                    disabled={isLoading || disabled}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
 
           <div className="absolute right-2 bottom-2 sm:right-3 sm:bottom-3 flex items-center justify-center gap-1.5">
             {isRecording ? (
@@ -1245,7 +1478,8 @@ export function ChatInput({
               </button>
             )}
           </div>
-        </form>
+        </div>
+      </form>
       </div>
       <div className="text-center mt-2 text-xs text-slate-400 font-medium">
         tmpa chat dapat membuat kesalahan. Pertimbangkan untuk memverifikasi informasi penting.

@@ -105,6 +105,19 @@ export const TRIGGER_COMMANDS: TriggerCommand[] = [
     hasParameter: true,
     parameterPlaceholder: 'deskripsi video yang ingin dibuat...'
   },
+  {
+    id: 'motion',
+    name: '@motion',
+    category: 'ai',
+    categoryLabel: 'Bluefox Motion',
+    badge: 'Code Animation',
+    description: 'Modul pembuat animasi & video visual berbasis kode HTML, CSS, JS, dan SVG mandiri.',
+    syntax: '@motion [deskripsi animasi yang ingin dibuat]',
+    example: '@motion buatkan animasi lingkaran membesar dan mengecil',
+    iconName: 'Film',
+    hasParameter: true,
+    parameterPlaceholder: 'deskripsi animasi/visual yang ingin dibuat...'
+  },
 
   // 2. System Controller (@bluefox) Commands
   {
