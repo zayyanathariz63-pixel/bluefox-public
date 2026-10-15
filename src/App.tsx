@@ -21,7 +21,8 @@ import { CustomGenerateModal } from './components/CustomGenerateModal';
 import { CustomApiDrawer } from './components/CustomApiDrawer';
 import { MotionPanel } from './components/MotionPanel';
 import { MotionManualModal } from './components/MotionManualModal';
-import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse } from './lib/motion';
+import { MotionLoadingProgress } from './components/MotionLoadingProgress';
+import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse, invokeMotionGenerator } from './lib/motion';
 import { BluefoxCustomApi, CustomApiKey } from './types';
 import { useLanguage } from './lib/i18n';
 import { 
@@ -261,6 +262,9 @@ export default function App() {
   const [isMotionPanelOpen, setIsMotionPanelOpen] = useState(false);
   const [activeMotionCode, setActiveMotionCode] = useState<string>('');
   const [isMotionManualModalOpen, setIsMotionManualModalOpen] = useState(false);
+  const [isMotionLoading, setIsMotionLoading] = useState<boolean>(false);
+  const [isMotionFinalizing, setIsMotionFinalizing] = useState<boolean>(false);
+  const motionFinalizeResolverRef = useRef<(() => void) | null>(null);
 
   // State for Custom API Bottom Drawer Popup (Muncul dari bawah)
   const [isCustomApiDrawerOpen, setIsCustomApiDrawerOpen] = useState(false);
@@ -1680,6 +1684,12 @@ export default function App() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (motionFinalizeResolverRef.current) {
+      motionFinalizeResolverRef.current();
+      motionFinalizeResolverRef.current = null;
+    }
+    setIsMotionLoading(false);
+    setIsMotionFinalizing(false);
     setIsLoading(false);
   };
 
@@ -2039,6 +2049,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
     }
 
     // 1. Tampilkan UI loading & bersihkan error state
+    const isMotionReq = lowerText.includes('@motion');
+    setIsMotionLoading(isMotionReq);
+    setIsMotionFinalizing(false);
     setIsLoading(true);
     setErrorState(null);
 
@@ -2219,7 +2232,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       });
 
       abortControllerRef.current = new AbortController();
-      timeoutId = setTimeout(() => abortControllerRef.current?.abort(), 80000);
+      timeoutId = setTimeout(() => abortControllerRef.current?.abort(), isMotionReq ? 600000 : 80000);
 
       // =========================================================================
       // DUAL-ENGINE FALLBACK WEB SEARCH INTENT DETECTION & CONTEXT INJECTION (3-5 MULTI-SEARCH + ADVANCE)
@@ -2476,19 +2489,52 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
       }
 
-      // Panggil Supabase Edge Function bluefox-processor- langsung (Sesuai instruksi: panggil edge function supabase)
+      // Panggil Supabase Edge Function:
+      // Khusus untuk @motion memanggil 'generate-animation' (mencegah timeout proses generate animasi yang lama)
       let response: Response;
-      try {
-        const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current.signal);
-        response = new Response(JSON.stringify(edgeData), {
+      let motionEdgeData: any = null;
+
+      if (isMotionTriggered) {
+        try {
+          motionEdgeData = await invokeMotionGenerator(chatPayload, abortControllerRef.current?.signal);
+        } catch (motionErr: any) {
+          if (abortControllerRef.current?.signal.aborted) {
+            throw new DOMException('Request aborted', 'AbortError');
+          }
+          console.warn("⚠️ Direct generate-animation error, fallback to bluefox-processor:", motionErr?.message);
+          motionEdgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current?.signal);
+        }
+
+        // KETIKA WEBSITE MENDAPATKAN RESPON AI DARI @MOTION:
+        // Otomatis kasih animasi "rander full code & preview" selama 20 detik baru diberikan ke user
+        setIsMotionFinalizing(true);
+        await new Promise<void>((resolve) => {
+          motionFinalizeResolverRef.current = resolve;
+          // Guard timeout 21 detik jika komponen unmount
+          setTimeout(() => {
+            if (motionFinalizeResolverRef.current) {
+              motionFinalizeResolverRef.current();
+              motionFinalizeResolverRef.current = null;
+            }
+          }, 21000);
+        });
+
+        response = new Response(JSON.stringify(motionEdgeData), {
           status: 200,
           headers: { "Content-Type": "application/json" }
         });
-      } catch (edgeErr: any) {
-        if (abortControllerRef.current?.signal.aborted) {
-          throw new DOMException('Request aborted', 'AbortError');
-        }
-        console.warn("⚠️ Direct Edge Function error:", edgeErr?.message);
+      } else {
+        try {
+          const edgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current.signal);
+          response = new Response(JSON.stringify(edgeData), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        } catch (edgeErr: any) {
+          if (abortControllerRef.current?.signal.aborted) {
+            throw new DOMException('Request aborted', 'AbortError');
+          }
+          console.warn("⚠️ Direct Edge Function error:", edgeErr?.message);
 
         const isAuthError = edgeErr?.status === 401 || edgeErr?.status === 403 || /autentikasi|unauthorized|jwt|token/i.test(edgeErr?.message || '');
         let fallbackHandled = false;
@@ -2555,6 +2601,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           }
         }
       }
+    }
 
       if (abortControllerRef.current?.signal.aborted) {
         throw new DOMException('Request aborted', 'AbortError');
@@ -2630,6 +2677,19 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
         if (!extractedReply && !raw.startsWith('{') && raw.length > 5) {
           extractedReply = raw;
+        }
+      }
+
+      // Khusus untuk respons @motion dari generate-animation:
+      // Pastikan kode terbungkus dalam [BLUEFOX_MOTION] jika edge function mengembalikan kode langsung
+      if (isMotionTriggered) {
+        const directCode = result?.code || result?.animation || result?.generated_code || result?.html || motionEdgeData?.code || motionEdgeData?.animation || motionEdgeData?.generated_code || motionEdgeData?.html;
+        if (directCode && typeof directCode === 'string' && !extractedReply.includes('[BLUEFOX_MOTION]')) {
+          extractedReply = `Tentu, berikut adalah animasi visual berbasis kode yang telah dibuat:\n\n[BLUEFOX_MOTION]\n${directCode.trim()}\n[/BLUEFOX_MOTION]`;
+        } else if (extractedReply && !extractedReply.includes('[BLUEFOX_MOTION]')) {
+          if (extractedReply.includes('<!DOCTYPE') || extractedReply.includes('<html') || (extractedReply.includes('<style') && extractedReply.includes('<div')) || extractedReply.includes('<svg')) {
+            extractedReply = `Berikut animasi visual berbasis kode yang siap dirender:\n\n[BLUEFOX_MOTION]\n${extractedReply.trim()}\n[/BLUEFOX_MOTION]`;
+          }
         }
       }
 
@@ -2964,6 +3024,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
       // Matikan loading animasi (...) dalam kondisi apapun
       setIsLoading(false);
+      setIsMotionLoading(false);
+      setIsMotionFinalizing(false);
       abortControllerRef.current = null;
     }
   };
@@ -3289,17 +3351,30 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               />
             ))}
             {isLoading && (
-              <motion.div 
-                initial={{ opacity: 0 }} 
-                animate={{ opacity: 1 }}
-                className="py-4 sm:py-5 px-4 sm:px-8 flex w-full"
-              >
-                <div className="max-w-3xl mx-auto flex w-full items-center gap-1.5 pl-1 sm:pl-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              </motion.div>
+              isMotionLoading ? (
+                <MotionLoadingProgress
+                  isFinalizing={isMotionFinalizing}
+                  onFinalizeComplete={() => {
+                    if (motionFinalizeResolverRef.current) {
+                      motionFinalizeResolverRef.current();
+                      motionFinalizeResolverRef.current = null;
+                    }
+                  }}
+                  onStop={stopGeneration}
+                />
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0 }} 
+                  animate={{ opacity: 1 }}
+                  className="py-4 sm:py-5 px-4 sm:px-8 flex w-full"
+                >
+                  <div className="max-w-3xl mx-auto flex w-full items-center gap-1.5 pl-1 sm:pl-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </motion.div>
+              )
             )}
             <div ref={messagesEndRef} />
           </div>

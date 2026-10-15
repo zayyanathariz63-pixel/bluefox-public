@@ -3,6 +3,8 @@
  * Modul pembuat & perender animasi visual berbasis kode HTML/CSS/SVG/JS instan.
  */
 
+import { supabase, supabaseKey } from './supabase';
+
 export const BLUEFOX_MOTION_SYSTEM_PROMPT = `[SYSTEM PROMPT / INSTRUCTIONS]
 Kamu adalah modul pembuat animasi dan video berbasis kode untuk website Bluefox.
 Tugas utamamu adalah menghasilkan kode animasi visual lengkap yang siap dirender secara instan di browser.
@@ -346,3 +348,72 @@ export const MOTION_PRESETS: MotionPreset[] = [
 </html>`
   }
 ];
+
+/**
+ * URL Supabase Edge Function khusus untuk Bluefox Motion:
+ * Mencegah timeout proses generator animasi berdurasi panjang
+ */
+export const MOTION_EDGE_FUNCTION_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/generate-animation';
+
+/**
+ * Memanggil Edge Function khusus 'generate-animation' untuk request @motion
+ */
+export async function invokeMotionGenerator(payload: any, signal?: AbortSignal) {
+  const edgeFunctionUrl = MOTION_EDGE_FUNCTION_URL;
+  const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
+
+  let authToken = anonKey;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.access_token) {
+      authToken = sessionData.session.access_token;
+    }
+  } catch (authErr) {
+    console.warn("⚠️ Gagal membaca access token sesi Supabase untuk motion:", authErr);
+  }
+
+  const promptText = payload.prompt || payload.userText || payload.text || '';
+  const safePayload = {
+    ...payload,
+    prompt: promptText,
+    userText: promptText,
+    query: promptText,
+    system_instruction: BLUEFOX_MOTION_SYSTEM_PROMPT,
+    system_prompt: BLUEFOX_MOTION_SYSTEM_PROMPT,
+    mode: 'motion',
+    is_motion: true,
+  };
+
+  console.log('[MOTION EDGE FUNCTION DISPATCH]', {
+    endpoint: edgeFunctionUrl,
+    promptSample: promptText.slice(0, 100)
+  });
+
+  const response = await fetch(edgeFunctionUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': anonKey,
+      'Authorization': `Bearer ${authToken}`,
+    },
+    body: JSON.stringify(safePayload),
+    signal,
+  });
+
+  if (!response.ok) {
+    const textError = await response.text();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(textError);
+    } catch {
+      parsed = { error: textError };
+    }
+    const err: any = new Error(parsed?.error || parsed?.message || `Edge function generate-animation returned HTTP ${response.status}`);
+    err.status = response.status;
+    err.data = parsed;
+    throw err;
+  }
+
+  const data = await response.json();
+  return data;
+}
