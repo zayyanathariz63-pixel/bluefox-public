@@ -154,3 +154,26 @@ body {
   color: #334155;
 }
 
+/* 5s Flash Light Sweep Effect for @motion inline loading */
+@keyframes flashSweep {
+  0% {
+    transform: translateX(-150%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  30% {
+    transform: translateX(250%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(250%);
+    opacity: 0;
+  }
+}
+
+.animate-flash-sweep {
+  animation: flashSweep 5s ease-in-out infinite;
+}
+

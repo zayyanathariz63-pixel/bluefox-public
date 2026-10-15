@@ -86,12 +86,46 @@ export function parseAiResponse(aiResponseText: string): ParsedAiMotionResponse 
       extractedCode = extractedCode.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
     }
 
-    const cleanTextMessage = aiResponseText.replace(motionRegex, '').trim();
+    let cleanTextMessage = aiResponseText.replace(motionRegex, '').trim();
+    if (!cleanTextMessage) {
+      cleanTextMessage = 'Berikut adalah animasi visual berbasis kode yang telah dibuat dan siap dilihat pada pratinjau di bawah ini:';
+    }
 
     return {
       hasMotionCode: true,
-      chatMessage: cleanTextMessage, // Teks yang ditampilkan di balon chat
-      codeToRender: extractedCode     // Kode yang dikirim ke iframe preview
+      chatMessage: cleanTextMessage, // Teks respon percakapan AI di balon chat
+      codeToRender: extractedCode     // Kode animasi visual yang dikirim ke pratinjau
+    };
+  }
+
+  // 2. Deteksi jika kode berada dalam blok markdown ```html ... ``` atau ``` ... ```
+  const codeBlockRegex = /```(?:html|xml|svg)?\s*([\s\S]*?(?:<!DOCTYPE|<html|<svg|<canvas|<style|<script)[\s\S]*?)```/i;
+  const blockMatch = aiResponseText.match(codeBlockRegex);
+
+  if (blockMatch && blockMatch[1]) {
+    const extractedCode = blockMatch[1].trim();
+    let cleanTextMessage = aiResponseText.replace(codeBlockRegex, '').trim();
+    if (!cleanTextMessage) {
+      cleanTextMessage = 'Berikut adalah animasi visual berbasis kode yang telah dibuat dan siap dilihat pada pratinjau di bawah ini:';
+    }
+
+    return {
+      hasMotionCode: true,
+      chatMessage: cleanTextMessage,
+      codeToRender: extractedCode
+    };
+  }
+
+  // 3. Deteksi jika respon mentah adalah dokumen HTML / SVG mandiri
+  if (
+    aiResponseText.includes('<!DOCTYPE html>') || 
+    (aiResponseText.includes('<html') && aiResponseText.includes('</html>')) ||
+    (aiResponseText.includes('<svg') && aiResponseText.includes('</svg>') && (aiResponseText.includes('<animate') || aiResponseText.includes('keyframes') || aiResponseText.includes('<style')))
+  ) {
+    return {
+      hasMotionCode: true,
+      chatMessage: 'Berikut adalah animasi visual berbasis kode yang telah dibuat dan siap dilihat pada pratinjau di bawah ini:',
+      codeToRender: aiResponseText.trim()
     };
   }
 

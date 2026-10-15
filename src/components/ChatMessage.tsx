@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { 
   Pencil, Power, Copy, Check, Globe, Zap, Maximize2, 
   Music, FileText, RotateCcw, AlertTriangle, Lightbulb, 
-  HelpCircle, ShieldAlert, Sparkles, Play, Code, ExternalLink, Film 
+  HelpCircle, ShieldAlert, Sparkles, Play, Code, ExternalLink, Film, Download 
 } from 'lucide-react';
 import { Message, MediaAttachment } from '../types';
 import { cn } from '../lib/utils';
@@ -15,6 +15,7 @@ import { useLanguage } from '../lib/i18n';
 import { ThinkingBlock } from './ThinkingBlock';
 import { parseThinking } from '../lib/reasoning';
 import { parseAiResponse, sanitizeMotionHtml } from '../lib/motion';
+import { MotionDownloadModal } from './MotionDownloadModal';
 
 interface ChatMessageProps {
   message: Message;
@@ -149,6 +150,8 @@ export function ChatMessage({
   const [motionIframeKey, setMotionIframeKey] = useState(1);
   const [showMotionCode, setShowMotionCode] = useState(false);
   const [copiedMotionCode, setCopiedMotionCode] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const chatIframeRef = useRef<HTMLIFrameElement>(null);
 
   const hasWebSources = !isUser && Boolean(message.sources && message.sources.length > 0);
   const isTavily = message.search_engine_used === 'tavily';
@@ -503,28 +506,50 @@ export function ChatMessage({
                             {copiedMotionCode ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
                           </button>
 
+                          {/* Tombol Unduh Animasi (Popup Pilihan: 1. MP4, 2. Code, 3. Code & MP4) */}
+                          <button
+                            onClick={() => setIsDownloadModalOpen(true)}
+                            className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-750 rounded-lg transition-colors cursor-pointer"
+                            title={isId ? 'Pilihan Unduh Animasi' : 'Download Animation Options'}
+                          >
+                            <Download size={13} />
+                          </button>
+
                           {onOpenMotionPanel && (
                             <button
                               onClick={() => onOpenMotionPanel(motionCodeToRender)}
                               className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shadow-xs ml-1"
-                              title={isId ? 'Buka di Panel Samping' : 'Open in Side Panel'}
+                              title={isId ? 'Buka Pratinjau Penuh' : 'Open Full Preview'}
                             >
                               <ExternalLink size={12} />
-                              <span className="hidden sm:inline">{isId ? 'Panel Samping' : 'Side Panel'}</span>
+                              <span className="hidden sm:inline">{isId ? 'Buka Penuh' : 'Full Preview'}</span>
                             </button>
                           )}
                         </div>
                       </div>
 
-                      {/* Viewport Iframe */}
-                      <div className="relative w-full h-64 sm:h-72 bg-slate-950 flex items-center justify-center overflow-hidden">
+                      {/* Viewport Iframe: Klik card preview langsung buka full seperti biasa */}
+                      <div 
+                        onClick={() => onOpenMotionPanel && onOpenMotionPanel(motionCodeToRender)}
+                        className="relative w-full h-64 sm:h-72 bg-slate-950 flex items-center justify-center overflow-hidden cursor-pointer group"
+                        title={isId ? 'Klik untuk membuka layar penuh' : 'Click to open full view'}
+                      >
                         <iframe
+                          ref={chatIframeRef}
                           key={motionIframeKey}
                           srcDoc={sanitizeMotionHtml(motionCodeToRender)}
                           title="Bluefox Motion Animation Preview"
-                          className="w-full h-full border-0"
+                          className="w-full h-full border-0 pointer-events-none"
                           sandbox="allow-scripts allow-same-origin"
                         />
+
+                        {/* Overlay hover untuk klik langsung buka full */}
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-all pointer-events-none">
+                          <div className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-xl bg-slate-900/90 backdrop-blur-xs text-white text-xs font-semibold flex items-center gap-1.5 shadow-xl border border-slate-700">
+                            <Maximize2 size={13} />
+                            <span>{isId ? 'Buka Pratinjau Penuh' : 'Open Full Preview'}</span>
+                          </div>
+                        </div>
                       </div>
 
                       {/* Collapsible Source Code View */}
@@ -535,6 +560,14 @@ export function ChatMessage({
                           </pre>
                         </div>
                       )}
+
+                      {/* Modal Pilihan Download Animasi (1. MP4, 2. Code, 3. Code & MP4) */}
+                      <MotionDownloadModal
+                        isOpen={isDownloadModalOpen}
+                        onClose={() => setIsDownloadModalOpen(false)}
+                        motionCode={motionCodeToRender}
+                        iframeRef={chatIframeRef}
+                      />
                     </div>
                   )}
                 </div>
