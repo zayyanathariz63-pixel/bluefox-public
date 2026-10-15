@@ -2490,18 +2490,47 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // Panggil Supabase Edge Function:
-      // Khusus untuk @motion memanggil 'generate-animation' (mencegah timeout proses generate animasi yang lama)
+      // Khusus untuk @motion memanggil 'motion-generator' (mencegah timeout proses generate animasi yang lama)
       let response: Response;
       let motionEdgeData: any = null;
+      let motionMessageId: string | undefined = undefined;
 
       if (isMotionTriggered) {
+        // 1. Simpan pesan user terlebih dahulu ke tabel message_bluefox
         try {
-          motionEdgeData = await invokeMotionGenerator(chatPayload, abortControllerRef.current?.signal);
+          const { data: insertedMsg, error: insertError } = await supabase
+            .from('message_bluefox')
+            .insert({
+              session_id: effectiveConvId,
+              user_message: userText,
+              ai_response: 'Memulai proses...'
+            })
+            .select()
+            .single();
+
+          if (!insertError && insertedMsg) {
+            motionMessageId = insertedMsg.id;
+            console.log('[message_bluefox] Pesan @motion berhasil disimpan, ID:', insertedMsg.id);
+          } else if (insertError) {
+            console.warn('[message_bluefox] Info simpan pesan awal @motion:', insertError.message);
+          }
+        } catch (dbErr) {
+          console.warn('[message_bluefox] Error simpan awal @motion:', dbErr);
+        }
+
+        // 2. Panggil Edge Function motion-generator secara asinkron
+        try {
+          motionEdgeData = await invokeMotionGenerator({
+            ...chatPayload,
+            message_id: motionMessageId,
+            prompt: userText,
+            session_id: effectiveConvId
+          }, abortControllerRef.current?.signal);
         } catch (motionErr: any) {
           if (abortControllerRef.current?.signal.aborted) {
             throw new DOMException('Request aborted', 'AbortError');
           }
-          console.warn("⚠️ Direct generate-animation error, fallback to bluefox-processor:", motionErr?.message);
+          console.warn("⚠️ Direct motion-generator error, fallback to bluefox-processor:", motionErr?.message);
           motionEdgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current?.signal);
         }
 
@@ -2856,10 +2885,27 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         });
       }
 
-      // Simpan percakapan sekaligus (User Prompt + AI Response) ke tabel message_bluefox & perbarui timestamp session_bluefox
-      saveChatTurn(effectiveConvId, userText, aiReplyText, attachmentMetadata).catch(err => {
-        console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan (saveChatTurn):", err);
-      });
+      // Simpan percakapan ke tabel message_bluefox & perbarui timestamp session_bluefox
+      if (motionMessageId) {
+        (async () => {
+          try {
+            await supabase
+              .from('message_bluefox')
+              .update({
+                ai_response: aiReplyText,
+                attachments: attachmentMetadata || []
+              })
+              .eq('id', motionMessageId);
+            console.log('[Supabase message_bluefox] Baris berhasil diperbarui dengan respon akhir AI');
+          } catch (err) {
+            console.warn("⚠️ [Supabase message_bluefox] Info update respon AI:", err);
+          }
+        })();
+      } else {
+        saveChatTurn(effectiveConvId, userText, aiReplyText, attachmentMetadata).catch(err => {
+          console.warn("⚠️ [Supabase message_bluefox] Info simpan pesan (saveChatTurn):", err);
+        });
+      }
       sendMessageToSupabase(aiReplyText, effectiveConvId, 'assistant').catch(err => {
         console.warn("⚠️ [Supabase] Info simpan pesan asisten:", err);
       });

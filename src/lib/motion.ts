@@ -384,16 +384,74 @@ export const MOTION_PRESETS: MotionPreset[] = [
 ];
 
 /**
- * URL Supabase Edge Function khusus untuk Bluefox Motion:
- * Mencegah timeout proses generator animasi berdurasi panjang
+ * URL Supabase Edge Function khusus untuk Bluefox Motion
  */
-export const MOTION_EDGE_FUNCTION_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/generate-animation';
+export const MOTION_EDGE_FUNCTION_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/motion-generator';
 
 /**
- * Memanggil Edge Function khusus 'generate-animation' untuk request @motion
+ * Memanggil Edge Function khusus 'motion-generator' via supabase.functions.invoke
+ * Sesuai panduan resmi pemanggilan frontend:
+ * 1. Simpan pesan user terlebih dahulu ke tabel message_bluefox
+ * 2. Panggil supabase.functions.invoke('motion-generator', { body: { message_id, prompt } })
  */
 export async function invokeMotionGenerator(payload: any, signal?: AbortSignal) {
-  const edgeFunctionUrl = MOTION_EDGE_FUNCTION_URL;
+  const promptText = payload.prompt || payload.userText || payload.text || '';
+  const messageId = payload.message_id || payload.messageId;
+
+  const invokeBody = {
+    message_id: messageId,
+    prompt: promptText,
+    user_message: promptText,
+    session_id: payload.session_id || payload.sessionId,
+    system_instruction: BLUEFOX_MOTION_SYSTEM_PROMPT,
+    system_prompt: BLUEFOX_MOTION_SYSTEM_PROMPT,
+    mode: 'motion',
+    is_motion: true,
+    ...payload,
+  };
+
+  console.log('[MOTION EDGE FUNCTION INVOKE]', {
+    function: 'motion-generator',
+    message_id: messageId,
+    promptSample: promptText.slice(0, 100)
+  });
+
+  // 1. Pemanggilan resmi via supabase.functions.invoke('motion-generator')
+  try {
+    const { data, error } = await supabase.functions.invoke('motion-generator', {
+      body: invokeBody
+    });
+
+    if (error) {
+      console.error("Gagal menghasilkan animasi:", error);
+    } else if (data) {
+      console.log("Animasi berhasil dibuat:", data);
+      return data;
+    }
+  } catch (invokeErr) {
+    console.warn("Catatan supabase.functions.invoke('motion-generator'):", invokeErr);
+  }
+
+  // 2. Fallback jika nama function di project adalah 'generate-animation'
+  try {
+    const { data: dataGen, error: errGen } = await supabase.functions.invoke('generate-animation', {
+      body: invokeBody
+    });
+
+    if (!errGen && dataGen) {
+      console.log("Animasi berhasil dibuat (fallback generate-animation):", dataGen);
+      return dataGen;
+    }
+  } catch (genErr) {
+    console.warn("Catatan fallback generate-animation:", genErr);
+  }
+
+  // 3. Fallback pemanggilan langsung via HTTP POST
+  const edgeFunctionUrls = [
+    'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/motion-generator',
+    'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/generate-animation'
+  ];
+
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
   let authToken = anonKey;
@@ -406,48 +464,28 @@ export async function invokeMotionGenerator(payload: any, signal?: AbortSignal) 
     console.warn("⚠️ Gagal membaca access token sesi Supabase untuk motion:", authErr);
   }
 
-  const promptText = payload.prompt || payload.userText || payload.text || '';
-  const safePayload = {
-    ...payload,
-    prompt: promptText,
-    userText: promptText,
-    query: promptText,
-    system_instruction: BLUEFOX_MOTION_SYSTEM_PROMPT,
-    system_prompt: BLUEFOX_MOTION_SYSTEM_PROMPT,
-    mode: 'motion',
-    is_motion: true,
-  };
-
-  console.log('[MOTION EDGE FUNCTION DISPATCH]', {
-    endpoint: edgeFunctionUrl,
-    promptSample: promptText.slice(0, 100)
-  });
-
-  const response = await fetch(edgeFunctionUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': anonKey,
-      'Authorization': `Bearer ${authToken}`,
-    },
-    body: JSON.stringify(safePayload),
-    signal,
-  });
-
-  if (!response.ok) {
-    const textError = await response.text();
-    let parsed: any;
+  for (const url of edgeFunctionUrls) {
     try {
-      parsed = JSON.parse(textError);
-    } catch {
-      parsed = { error: textError };
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': anonKey,
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(invokeBody),
+        signal,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Animasi berhasil dibuat via HTTP:", data);
+        return data;
+      }
+    } catch (fetchErr) {
+      console.warn(`Fetch ${url} failed:`, fetchErr);
     }
-    const err: any = new Error(parsed?.error || parsed?.message || `Edge function generate-animation returned HTTP ${response.status}`);
-    err.status = response.status;
-    err.data = parsed;
-    throw err;
   }
 
-  const data = await response.json();
-  return data;
+  throw new Error("Gagal memanggil fungsi motion-generator di Supabase");
 }
