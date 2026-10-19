@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
@@ -22,6 +22,15 @@ import { CustomApiDrawer } from './components/CustomApiDrawer';
 import { MotionPanel } from './components/MotionPanel';
 import { MotionManualModal } from './components/MotionManualModal';
 import { MotionLoadingProgress } from './components/MotionLoadingProgress';
+import { ChooseAccountModal } from './components/ChooseAccountModal';
+import { 
+  SavedAccount, 
+  recordCurrentSession, 
+  switchSavedAccount,
+  getOrCreateDeviceId,
+  registerAccountDeviceSession,
+  getSavedAccounts
+} from './lib/accountManager';
 import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse, invokeMotionGenerator } from './lib/motion';
 import { BluefoxCustomApi, CustomApiKey } from './types';
 import { useLanguage } from './lib/i18n';
@@ -107,9 +116,12 @@ export function redirectToSSO() {
     }
   }
 
+  const deviceId = getOrCreateDeviceId();
+
   const ssoUrl = new URL(ACCOUNT_SSO_URL);
   ssoUrl.searchParams.set('client_id', CLIENT_ID);
   ssoUrl.searchParams.set('redirect_uri', REDIRECT_URI);
+  ssoUrl.searchParams.set('device_id', deviceId);
 
   console.log("🔄 [SSO Redirect] Mengarahkan ke:", ssoUrl.toString());
   window.location.href = ssoUrl.toString();
@@ -666,11 +678,19 @@ export default function App() {
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMenuLoadMoreOpen, setIsMenuLoadMoreOpen] = useState(false);
+  const [isChooseAccountOpen, setIsChooseAccountOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isUserStoppedRef = useRef(false);
   const typewriterIntervalRef = useRef<any>(null);
   const isExchangingRef = useRef(false);
+
+  // Rekam akun aktif saat ini ke daftar akun lokal perangkat (localStorage)
+  useEffect(() => {
+    if (user) {
+      recordCurrentSession(user, userTier);
+    }
+  }, [user, userTier]);
 
   const handleLandingStart = async () => {
     if (user) {
@@ -712,6 +732,64 @@ export default function App() {
     }
     setUser(null);
     setAppState('landing');
+  };
+
+  // Handler Berpindah Akun Instan dari Popup Bottom Sheet
+  const handleSwitchAccount = async (account: SavedAccount) => {
+    setShowActionToast(lang === 'id' ? `Beralih ke ${account.email}...` : `Switching to ${account.email}...`);
+    try {
+      const res = await switchSavedAccount(account);
+      if (res.success) {
+        const { data: authData } = await supabase.auth.getUser();
+        if (authData?.user) {
+          setUser(authData.user);
+          try {
+            const limits = await getUserLimits(authData.user.id);
+            if (limits) {
+              setDbLimits({
+                used5h: limits.used_5h,
+                usedWeekly: limits.used_weekly,
+              });
+            }
+          } catch {}
+          fetchUserSessions();
+        } else {
+          setUser({
+            id: account.id,
+            email: account.email,
+            user_metadata: { full_name: account.name }
+          } as any);
+        }
+        setShowActionToast(lang === 'id' ? `Berhasil masuk sebagai ${account.name || account.email}` : `Logged in as ${account.name || account.email}`);
+        setTimeout(() => setShowActionToast(null), 2500);
+      } else {
+        setShowActionToast(lang === 'id' ? 'Gagal beralih akun. Silakan login kembali.' : 'Failed to switch account.');
+        setTimeout(() => setShowActionToast(null), 3000);
+      }
+    } catch (err: any) {
+      console.error("Gagal beralih akun:", err);
+      setShowActionToast(lang === 'id' ? 'Gagal beralih akun' : 'Failed to switch account');
+      setTimeout(() => setShowActionToast(null), 2500);
+    }
+  };
+
+  const handleAddAccount = () => {
+    // 1. Cek apakah ada akun lain di penyimpanan lokal perangkat
+    const localAccounts = getSavedAccounts(user, userTier);
+    const otherAccounts = localAccounts.filter(a => a.id !== user?.id && a.email !== user?.email);
+    if (otherAccounts.length > 0) {
+      setShowActionToast(lang === 'id' ? `Ditemukan ${otherAccounts.length} akun lain di perangkat ini.` : `Found ${otherAccounts.length} other accounts.`);
+      setTimeout(() => setShowActionToast(null), 2500);
+      setIsChooseAccountOpen(true);
+    } else {
+      // 2. Jika belum ada akun lain, buka alur penambahan akun dengan tmpa_device_id
+      redirectToSSO();
+    }
+  };
+
+  const handleCreateAccount = () => {
+    // Proses sama seperti saat user pertama kali masuk (SSO dengan tmpa_device_id)
+    redirectToSSO();
   };
 
   const sortSessions = (sessions: ChatSession[]) => {
@@ -991,7 +1069,16 @@ export default function App() {
             if (activeUser) {
               setUser(activeUser);
 
-              // Upsert user
+              // Buat 1 ID unik untuk user itu yang disimpan di local bernama "tmpa_device_id"
+              // dan simpan akun ke daftar akun lokal
+              registerAccountDeviceSession(
+                activeUser,
+                {
+                  access_token: edgeData?.session?.access_token,
+                  refresh_token: edgeData?.session?.refresh_token
+                },
+                userTier
+              );
               try {
                 const userEmail = activeUser.email || '';
                 const userName = activeUser.user_metadata?.full_name || activeUser.email?.split('@')[0] || 'TMPA User';
@@ -3773,16 +3860,52 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   </div>
                 </div>
                 
-                <button 
-                  onClick={handleLogout}
-                  className="flex items-center w-full gap-2 px-4 py-2.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-sm font-semibold cursor-pointer border border-transparent hover:border-rose-200"
-                >
-                  <LogOut size={16} />
-                  <span>{t.logout}</span>
-                </button>
+                {/* DUA TOMBOL DI BAWAH ACCOUNT USER */}
+                <div className="flex flex-col gap-2 pt-1">
+                  {/* 1. Chos account */}
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsChooseAccountOpen(true);
+                      setIsSidebarOpen(false);
+                    }}
+                    className="flex items-center justify-between w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-slate-700 hover:text-blue-700 transition-all text-sm font-semibold cursor-pointer shadow-2xs group"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Users size={17} className="text-blue-600 group-hover:scale-110 transition-transform" />
+                      <span>{lang === 'id' ? 'Chos account' : 'Choose account'}</span>
+                    </div>
+                    <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-600 -rotate-90 transition-transform" />
+                  </button>
+
+                  {/* 2. Logout pada umumnya */}
+                  <button 
+                    type="button"
+                    onClick={handleLogout}
+                    className="flex items-center w-full gap-2.5 px-3.5 py-2.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-sm font-semibold cursor-pointer border border-transparent hover:border-rose-200"
+                  >
+                    <LogOut size={17} />
+                    <span>{t.logout}</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Setengah Layar Bottom Sheet: Choose Account */}
+      <AnimatePresence>
+        {isChooseAccountOpen && (
+          <ChooseAccountModal
+            isOpen={isChooseAccountOpen}
+            onClose={() => setIsChooseAccountOpen(false)}
+            currentUser={user}
+            currentTier={userTier}
+            onSwitchAccount={handleSwitchAccount}
+            onAddAccount={handleAddAccount}
+            onCreateAccount={handleCreateAccount}
+          />
         )}
       </AnimatePresence>
 
