@@ -12,7 +12,6 @@ interface QuotaExceededModalProps {
   message?: string;
   used5h?: number;
   usedWeekly?: number;
-  isCustomApi?: boolean;
 }
 
 export function QuotaExceededModal({
@@ -23,7 +22,6 @@ export function QuotaExceededModal({
   message,
   used5h = 100,
   usedWeekly = 100,
-  isCustomApi = false,
 }: QuotaExceededModalProps) {
   const { lang } = useLanguage();
 
@@ -70,7 +68,7 @@ export function QuotaExceededModal({
             </div>
             <div className="flex-1 pr-6">
               <span className="text-[11px] font-bold text-rose-600 uppercase tracking-wider bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full inline-block mb-1">
-                {isCustomApi ? 'Custom API Rate Limit' : 'Quota System Notification'}
+                Quota System Notification
               </span>
               <h3 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight leading-snug">
                 {title || defaultTitle}
@@ -84,8 +82,7 @@ export function QuotaExceededModal({
           </div>
 
           {/* Usage Meters */}
-          {!isCustomApi && (
-            <div className="space-y-3.5 mb-6 bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4">
+          <div className="space-y-3.5 mb-6 bg-slate-50/70 border border-slate-200/80 rounded-2xl p-4">
               {/* 5-Hour Meter */}
               <div>
                 <div className="flex justify-between text-xs font-bold text-slate-800 mb-1">
@@ -130,7 +127,6 @@ export function QuotaExceededModal({
                 </div>
               </div>
             </div>
-          )}
 
           {/* Action Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5">

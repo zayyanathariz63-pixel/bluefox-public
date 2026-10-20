@@ -22,7 +22,6 @@ interface ChatInputProps {
   onDisableVision?: () => void;
   isVisionActive?: boolean;
   disabled?: boolean;
-  onOpenCustomGenerate?: (prompt?: string, type?: 'image' | 'video') => void;
   onOpenMotionManual?: () => void;
   onOpenMotionPanel?: () => void;
 }
@@ -52,7 +51,6 @@ export function ChatInput({
   onDisableVision,
   isVisionActive,
   disabled,
-  onOpenCustomGenerate,
   onOpenMotionManual,
   onOpenMotionPanel
 }: ChatInputProps) {
@@ -675,23 +673,6 @@ export function ChatInput({
     e.preventDefault();
     const rawTrimmed = input.trim();
 
-    // Check if user submitted @image or @video command directly
-    if (rawTrimmed.toLowerCase().startsWith('@image') && onOpenCustomGenerate) {
-      const promptArg = rawTrimmed.replace(/^@image\s*/i, '').trim();
-      onOpenCustomGenerate(promptArg, 'image');
-      setInput('');
-      setIsCommandModalOpen(false);
-      return;
-    }
-
-    if (rawTrimmed.toLowerCase().startsWith('@video') && onOpenCustomGenerate) {
-      const promptArg = rawTrimmed.replace(/^@video\s*/i, '').trim();
-      onOpenCustomGenerate(promptArg, 'video');
-      setInput('');
-      setIsCommandModalOpen(false);
-      return;
-    }
-
     // Jika mode @motion sedang aktif, tambahkan @motion agar backend & AI menangkapnya
     let textToSend = rawTrimmed;
     if (isMotionActive) {
@@ -982,34 +963,6 @@ export function ChatInput({
                   </span>
                 </button>
 
-                {/* Opsi 1.5: Custom API Generate (Image & Video) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPopupOpen(false);
-                    if (onOpenCustomGenerate) {
-                      onOpenCustomGenerate();
-                    }
-                  }}
-                  className="w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border border-purple-200/80 bg-purple-50/50 hover:bg-purple-50 transition-all text-left group cursor-pointer"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
-                      <ImageIcon size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-900 group-hover:text-purple-700 transition-colors truncate">
-                        Generate Gambar & Video
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        Custom API (SDXL, Runway, Kustom)
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-purple-700 bg-purple-100/70 border border-purple-200 px-1.5 py-0.5 rounded-full shrink-0">
-                    Custom API
-                  </span>
-                </button>
 
                 {/* Opsi 1.6: Bluefox Motion (Animasi @motion & Kode Manual) */}
                 <button

@@ -88,57 +88,37 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
     safePayload.selected_model === 'tencent-hy3-free' ||
     safePayload.selected_model === 'laguna-s-2.1';
 
-  if (isBluefoxModel) {
-    // PENTING: Model bawaan Bluefox BUKAN Custom API!
-    // JANGAN kirim api_id / target_api_id agar Edge Function tidak mencari ke tabel bluefox_custom_api!
-    delete safePayload.api_id;
-    delete safePayload.apiId;
-    delete safePayload.target_api_id;
-    delete safePayload.targetApiId;
-    delete safePayload.API_ID;
-    delete safePayload.target_api;
-    delete safePayload.targetApi;
-    delete safePayload.customApi;
-    delete safePayload.custom_api;
-    delete safePayload.custom_api_id;
+  // Selalu bersihkan field custom API dan gunakan native Bluefox model
+  delete safePayload.api_id;
+  delete safePayload.apiId;
+  delete safePayload.target_api_id;
+  delete safePayload.targetApiId;
+  delete safePayload.API_ID;
+  delete safePayload.target_api;
+  delete safePayload.targetApi;
+  delete safePayload.customApi;
+  delete safePayload.custom_api;
+  delete safePayload.custom_api_id;
 
-    // Normalisasi ID model resmi
-    let normalized = 'agnes-2.5-flash';
-    const m = (safePayload.model_id || safePayload.model || safePayload.selected_model || '').toLowerCase();
-    if (m.includes('laguna') || m.includes('dilo')) {
-      normalized = 'laguna-s-2.1';
-    } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev')) {
-      normalized = 'jev';
-    } else {
-      normalized = 'agnes-2.5-flash';
-    }
-
-    safePayload.is_bluefox_native = true;
-    safePayload.isBluefoxNative = true;
-    safePayload.model = normalized;
-    safePayload.model_id = normalized;
-    safePayload.modelId = normalized;
-    safePayload.id_model = normalized;
-    safePayload.resolved_model = normalized;
-    safePayload.resolvedModel = normalized;
+  // Normalisasi ID model resmi
+  let normalized = 'agnes-2.5-flash';
+  const m = (safePayload.model_id || safePayload.model || safePayload.selected_model || '').toLowerCase();
+  if (m.includes('laguna') || m.includes('dilo')) {
+    normalized = 'laguna-s-2.1';
+  } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev')) {
+    normalized = 'jev';
   } else {
-    // Mode Custom API: Tetapkan target_api_id secara eksplisit dan is_bluefox_native: false
-    safePayload.is_bluefox_native = false;
-    safePayload.isBluefoxNative = false;
-
-    const customTargetId = safePayload.target_api_id || safePayload.targetApiId || safePayload.api_id || safePayload.apiId || safePayload.custom_api_id || safePayload.customApi?.id || 'custom-api';
-    safePayload.target_api_id = customTargetId;
-    safePayload.targetApiId = customTargetId;
-    safePayload.api_id = customTargetId;
-    safePayload.apiId = customTargetId;
-    safePayload.custom_api_id = customTargetId;
-
-    const fallbackModel = safePayload.model_id || safePayload.modelId || safePayload.model || safePayload.id_model || 'gpt-4o';
-    if (!safePayload.model_id) safePayload.model_id = fallbackModel;
-    if (!safePayload.modelId) safePayload.modelId = fallbackModel;
-    if (!safePayload.id_model) safePayload.id_model = fallbackModel;
-    if (!safePayload.model) safePayload.model = fallbackModel;
+    normalized = 'agnes-2.5-flash';
   }
+
+  safePayload.is_bluefox_native = true;
+  safePayload.isBluefoxNative = true;
+  safePayload.model = normalized;
+  safePayload.model_id = normalized;
+  safePayload.modelId = normalized;
+  safePayload.id_model = normalized;
+  safePayload.resolved_model = normalized;
+  safePayload.resolvedModel = normalized;
 
   // 1. Ekstrak access token sesi aktif pengguna
   let authToken = anonKey;
