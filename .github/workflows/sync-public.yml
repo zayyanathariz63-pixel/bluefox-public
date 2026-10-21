@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -15,13 +16,8 @@ jobs:
           fetch-depth: 0
 
       - name: Push to Public Mirror
-        uses: cpina/github-action-push-to-another-repository@main
-        env:
-          API_TOKEN_GITHUB: ${{ secrets.ACCESS_TOKEN_PUBLIC_REPO }}
-        with:
-          source-directory: '.'
-          destination-github-username: 'zayyanathariz63-pixel'
-          destination-repository-name: 'bluefox-public'
-          user-email: 'zayyanathariz63@gmail.com'
-          commit-message: 'Auto-sync public mirror update'
-          target-branch: 'main'
+        run: |
+          git config --global user.name "zayyanathariz63-pixel"
+          git config --global user.email "zayyanathariz63@gmail.com"
+          git remote add public https://x-access-token:${{ secrets.ACCESS_TOKEN_PUBLIC_REPO }}@github.com/zayyanathariz63-pixel/bluefox-public.git
+          git push public main --force
