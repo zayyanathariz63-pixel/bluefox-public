@@ -1,0 +1,6 @@
+{
+  "appId": "bluefox",
+  "appName": "bluefox",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}
