@@ -20,9 +20,8 @@ jobs:
           API_TOKEN_GITHUB: ${{ secrets.ACCESS_TOKEN_PUBLIC_REPO }}
         with:
           source-directory: '.'
-          destination-github-username: 'TMPA official'
+          destination-github-username: 'zayyanathariz63-pixel'
           destination-repository-name: 'bluefox-public'
           user-email: 'zayyanathariz63@gmail.com'
           commit-message: 'Auto-sync public mirror update'
           target-branch: 'main'
-          exclude: "(.env|server.cjs|server.ts|private-configs/)"
