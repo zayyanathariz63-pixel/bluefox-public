@@ -37,8 +37,9 @@ jobs:
         run: |
           if [ ! -d "android" ]; then
             npx @capacitor/cli add android
+          else
+            npx @capacitor/cli sync android
           fi
-          npx @capacitor/cli sync android
 
       - name: Build Android APK
         run: |
