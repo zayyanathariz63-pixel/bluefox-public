@@ -1,6 +1,6 @@
 {
-  "appId": "bluefox",
-  "appName": "bluefox",
+  "appId": "id.tmpa.bluefox",
+  "appName": "Bluefox",
   "webDir": "dist",
   "bundledWebRuntime": false
 }
