@@ -41,11 +41,12 @@ jobs:
             npx @capacitor/cli sync android
           fi
 
-      - name: Build Android APK
+                - name: Build Android APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
+
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
