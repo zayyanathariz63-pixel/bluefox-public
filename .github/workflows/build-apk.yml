@@ -33,8 +33,12 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Sync Capacitor
-        run: npx @capacitor/cli sync android
+      - name: Setup Capacitor Android Platform
+        run: |
+          if [ ! -d "android" ]; then
+            npx @capacitor/cli add android
+          fi
+          npx @capacitor/cli sync android
 
       - name: Build Android APK
         run: |
