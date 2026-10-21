@@ -1,0 +1,28 @@
+name: Sync to Public Mirror
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Private Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Public Mirror
+        uses: cpina/github-action-push-to-another-repository@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.ACCESS_TOKEN_PUBLIC_REPO }}
+        with:
+          source-directory: '.'
+          destination-github-username: 'TMPA official'
+          destination-repository-name: 'bluefox-public'
+          user-email: 'zayyanathariz63@gmail.com'
+          commit-message: 'Auto-sync public mirror update'
+          target-branch: 'main'
+          exclude: "(.env|server.cjs|server.ts|private-configs/)"
