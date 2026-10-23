@@ -886,21 +886,9 @@ export function SettingsModal({
                     )}
 
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <h4 className="text-lg font-bold text-slate-900">{lang === 'id' ? 'Kuota Keseluruhan' : 'Total Quota'}</h4>
-                          <p className="text-xs text-slate-500">{lang === 'id' ? 'Dihitung berdasarkan model dan pencarian yang digunakan' : 'Calculated based on models and searches used'}</p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            resetUsage();
-                            showToast(lang === 'id' ? 'Kuota dan limit penggunaan berhasil direset ke 0%!' : 'Usage limits successfully reset to 0%!');
-                          }}
-                          className="flex items-center gap-1.5 text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-lg transition shadow-xs cursor-pointer"
-                        >
-                          <RotateCcw size={13} />
-                          <span>Reset Kuota (Dev)</span>
-                        </button>
+                      <div className="mb-2">
+                        <h4 className="text-lg font-bold text-slate-900">{lang === 'id' ? 'Kuota Keseluruhan' : 'Total Quota'}</h4>
+                        <p className="text-xs text-slate-500">{lang === 'id' ? 'Dihitung berdasarkan model dan pencarian yang digunakan' : 'Calculated based on models and searches used'}</p>
                       </div>
                       
                       <div className="space-y-5 mt-6">

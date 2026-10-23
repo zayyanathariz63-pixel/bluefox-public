@@ -1009,39 +1009,69 @@ export async function redeemInviteCode(userId: string, code: string): Promise<{ 
 /**
  * Pengecekan dan pemotongan batas penggunaan AI normal via Supabase RPC
  * Memanggil RPC Supabase: consume_ai_limit(p_user_id, p_model)
+ * Model options: 'v2_vision', 'v2_non_vision', 'v1', atau 'dilo'
  */
-export async function consumeAiLimit(userId: string, model: string): Promise<{ success: boolean; message?: string }> {
+export async function consumeAiLimit(
+  userId?: string, 
+  model: string = 'v2_non_vision', 
+  isVision: boolean = false
+): Promise<{ success: boolean; message?: string; remaining_5h?: number; remaining_weekly?: number }> {
   try {
-    // Jika Mode Development aktif di browser, lewati pemotongan limit
+    // 1. Cek apakah Mode Development / No Limit aktif di perangkat lokal user
     if (isLocalDevMode()) {
+      console.log('Mode Development aktif (No Limit). Melewati pengecekan kuota Supabase.');
       return { success: true, message: 'Mode Development aktif (No Limit).' };
     }
 
-    if (!userId) {
-      return { success: false, message: 'Login diperlukan untuk memeriksa batas kuota.' };
+    // 2. Ambil UUID user jika belum disediakan
+    let userUuid = userId;
+    if (!userUuid) {
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) {
+        return { success: false, message: 'Sesi login tidak ditemukan. Silakan login ulang.' };
+      }
+      userUuid = authUser.id;
     }
 
-    const { data, error } = await supabase.rpc('consume_ai_limit', {
-      p_user_id: userId,
-      p_model: model
+    // 3. Normalisasi nilai p_model: 'v2_vision', 'v2_non_vision', 'v1', atau 'dilo'
+    let rpcModel: 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo' = 'v2_non_vision';
+    const m = (model || '').toLowerCase();
+    if (m === 'v2_vision' || m === 'v2_non_vision' || m === 'v1' || m === 'dilo') {
+      rpcModel = m as any;
+    } else if (m.includes('laguna') || m.includes('dilo')) {
+      rpcModel = 'dilo';
+    } else if (m.includes('tencent') || m.includes('standard') || m.includes('standar') || m.includes('jev')) {
+      rpcModel = 'v1';
+    } else {
+      rpcModel = isVision ? 'v2_vision' : 'v2_non_vision';
+    }
+
+    // 4. Panggil RPC consume_ai_limit
+    const { data: limitResult, error: limitError } = await supabase.rpc('consume_ai_limit', {
+      p_user_id: userUuid,
+      p_model: rpcModel
     });
 
-    if (error) {
-      // Jika RPC tidak terdefinisi di Supabase, fallback agar tidak memblokir user secara salah
-      console.warn('RPC consume_ai_limit info/fallback:', error.message);
-      return { success: true };
-    }
-
-    if (data && data.success === false) {
+    // 5. Validasi hasil pemotongan limit
+    if (limitError || !limitResult || !limitResult.success) {
+      const errorMessage = limitResult?.message || limitError?.message || 'Gagal memproses kuota limit.';
       return {
         success: false,
-        message: data.message || 'Batas kuota penggunaan AI Anda telah habis.'
+        message: errorMessage
       };
     }
 
-    return { success: true, message: data?.message };
+    console.log(`Sisa Limit 5 Jam: ${limitResult.remaining_5h}%`);
+    console.log(`Sisa Limit Mingguan: ${limitResult.remaining_weekly}%`);
+
+    return {
+      success: true,
+      message: limitResult.message,
+      remaining_5h: limitResult.remaining_5h,
+      remaining_weekly: limitResult.remaining_weekly
+    };
   } catch (err: any) {
     console.warn('consumeAiLimit catch fallback:', err);
-    return { success: true };
+    return { success: false, message: err?.message || 'Gagal memproses limit.' };
   }
 }
