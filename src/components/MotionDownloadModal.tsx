@@ -33,20 +33,27 @@ export function MotionDownloadModal({
       setError(null);
       setIsRecording(true);
       setProgress(5);
-      setStatusMessage(isId ? 'Merekam video animasi MP4...' : 'Recording MP4 animation...');
+      setStatusMessage(isId ? 'Merekam video animasi visual...' : 'Recording animation video...');
 
-      await recordAndDownloadMotionMp4(iframeRef?.current || null, 3.5, (pct) => {
-        setProgress(pct);
-      });
+      const result = await recordAndDownloadMotionMp4(
+        iframeRef?.current || null,
+        3.5,
+        (pct) => setProgress(pct),
+        motionCode
+      );
 
-      setStatusMessage(isId ? 'Selesai! Berkas MP4 tersimpan.' : 'Done! MP4 file downloaded.');
+      setStatusMessage(
+        isId
+          ? `Selesai! Berkas video ${result.format.toUpperCase()} berhasil disimpan.`
+          : `Done! ${result.format.toUpperCase()} video successfully downloaded.`
+      );
       setTimeout(() => {
         setIsRecording(false);
         onClose();
-      }, 1000);
+      }, 1200);
     } catch (err: any) {
       console.error('Download MP4 error:', err);
-      setError(err?.message || (isId ? 'Gagal merekam video MP4' : 'Failed to record MP4 video'));
+      setError(err?.message || (isId ? 'Gagal merekam video animasi' : 'Failed to record animation video'));
       setIsRecording(false);
     }
   };
@@ -68,21 +75,28 @@ export function MotionDownloadModal({
       setError(null);
       setIsRecording(true);
       setProgress(10);
-      setStatusMessage(isId ? 'Mengunduh kode & merekam MP4...' : 'Downloading code & recording MP4...');
+      setStatusMessage(isId ? 'Mengunduh kode & merekam video...' : 'Downloading code & recording video...');
 
       // 1. Download kode segera
       downloadMotionCode(motionCode);
 
-      // 2. Rekam dan unduh MP4
-      await recordAndDownloadMotionMp4(iframeRef?.current || null, 3.5, (pct) => {
-        setProgress(pct);
-      });
+      // 2. Rekam dan unduh video animasi
+      const result = await recordAndDownloadMotionMp4(
+        iframeRef?.current || null,
+        3.5,
+        (pct) => setProgress(pct),
+        motionCode
+      );
 
-      setStatusMessage(isId ? 'Selesai! Berkas kode & MP4 telah diunduh.' : 'Done! Code & MP4 files downloaded.');
+      setStatusMessage(
+        isId
+          ? `Selesai! Berkas kode HTML & video ${result.format.toUpperCase()} telah diunduh.`
+          : `Done! HTML code & ${result.format.toUpperCase()} video downloaded.`
+      );
       setTimeout(() => {
         setIsRecording(false);
         onClose();
-      }, 1000);
+      }, 1200);
     } catch (err: any) {
       console.error('Download bundle error:', err);
       setError(err?.message || (isId ? 'Gagal mengunduh paket berkas' : 'Failed to download bundle'));

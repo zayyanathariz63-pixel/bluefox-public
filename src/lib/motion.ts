@@ -15,8 +15,8 @@ Setiap kali pengguna menyertakan perintah @motion dalam instruksinya, kamu WAJIB
 <!-- Masukkan kode HTML, CSS, dan JS lengkap di sini -->
 [/BLUEFOX_MOTION]
 Ketentuan Bahasa & Struktur Kode:
-Kode harus berupa satu kesatuan HTML mandiri yang berisi tag <style> untuk CSS dan tag <script> untuk JavaScript murni.
-Dilarang menggunakan HTML Canvas. Gunakan elemen HTML standar, CSS keyframes/transitions untuk animasi, dan/atau SVG animasi.
+Kode harus berupa satu kesatuan HTML mandiri yang berisi tag <style> untuk CSS dan/atau tag <script> untuk JavaScript murni.
+Bebas dan disarankan menggunakan elemen HTML standar dengan CSS keyframes/transitions, SVG animasi dinamis, maupun HTML5 Canvas animasi interaktif berseni visual tinggi.
 Semua resource (gaya, animasi, logika) harus berada di dalam satu blok kode tersebut tanpa ketergantungan file eksternal lokal.
 Format Respons:
 Tulis penjelasan singkat atau sapaan di luar tag [BLUEFOX_MOTION].
