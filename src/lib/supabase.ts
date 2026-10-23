@@ -915,3 +915,133 @@ export function getModelDisplayName(modelId?: string): string {
   }
   return 'bluefox pro';
 }
+
+/**
+ * Pengecekan status Mode Development / No Limit dari localStorage
+ */
+export function isLocalDevMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return localStorage.getItem('tmpa_dev_mode') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Menyimpan status Mode Development / No Limit ke localStorage
+ */
+export function setLocalDevMode(active: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (active) {
+      localStorage.setItem('tmpa_dev_mode', 'true');
+    } else {
+      localStorage.removeItem('tmpa_dev_mode');
+    }
+  } catch {}
+}
+
+/**
+ * Menukarkan Invite Code untuk mengaktifkan Development Mode / No Limit
+ * Memanggil RPC Supabase: redeem_invite_code(p_user_id, p_code)
+ */
+export async function redeemInviteCode(userId: string, code: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    if (!userId) {
+      const { data: authData } = await supabase.auth.getUser();
+      userId = authData?.user?.id || '';
+    }
+
+    if (!userId) {
+      return { success: false, message: 'Silakan login terlebih dahulu!' };
+    }
+
+    const trimmedCode = (code || '').trim().toUpperCase();
+    if (!trimmedCode) {
+      return { success: false, message: 'Kode undangan tidak boleh kosong.' };
+    }
+
+    // Panggil fungsi RPC Supabase
+    const { data, error } = await supabase.rpc('redeem_invite_code', {
+      p_user_id: userId,
+      p_code: trimmedCode
+    });
+
+    if (error) {
+      return { 
+        success: false, 
+        message: error.message || 'Gagal memproses kode undangan di server.' 
+      };
+    }
+
+    // Tangani struktur respons boolean atau objek dari RPC Supabase
+    if (typeof data === 'boolean') {
+      if (data) {
+        setLocalDevMode(true);
+        return { success: true, message: 'Berhasil! Mode Development / No Limit diaktifkan di perangkat ini.' };
+      } else {
+        return { success: false, message: 'Kode undangan tidak valid atau sudah pernah digunakan.' };
+      }
+    }
+
+    if (data?.success === false) {
+      return { 
+        success: false, 
+        message: data.message || 'Kode undangan tidak valid atau sudah pernah digunakan.' 
+      };
+    }
+
+    // Sukses: simpan ke localStorage
+    setLocalDevMode(true);
+    return {
+      success: true,
+      message: data?.message || 'Berhasil! Mode Development / No Limit diaktifkan di perangkat ini.'
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err?.message || 'Terjadi kesalahan saat memvalidasi kode undangan.'
+    };
+  }
+}
+
+/**
+ * Pengecekan dan pemotongan batas penggunaan AI normal via Supabase RPC
+ * Memanggil RPC Supabase: consume_ai_limit(p_user_id, p_model)
+ */
+export async function consumeAiLimit(userId: string, model: string): Promise<{ success: boolean; message?: string }> {
+  try {
+    // Jika Mode Development aktif di browser, lewati pemotongan limit
+    if (isLocalDevMode()) {
+      return { success: true, message: 'Mode Development aktif (No Limit).' };
+    }
+
+    if (!userId) {
+      return { success: false, message: 'Login diperlukan untuk memeriksa batas kuota.' };
+    }
+
+    const { data, error } = await supabase.rpc('consume_ai_limit', {
+      p_user_id: userId,
+      p_model: model
+    });
+
+    if (error) {
+      // Jika RPC tidak terdefinisi di Supabase, fallback agar tidak memblokir user secara salah
+      console.warn('RPC consume_ai_limit info/fallback:', error.message);
+      return { success: true };
+    }
+
+    if (data && data.success === false) {
+      return {
+        success: false,
+        message: data.message || 'Batas kuota penggunaan AI Anda telah habis.'
+      };
+    }
+
+    return { success: true, message: data?.message };
+  } catch (err: any) {
+    console.warn('consumeAiLimit catch fallback:', err);
+    return { success: true };
+  }
+}

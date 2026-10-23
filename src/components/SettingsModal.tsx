@@ -11,7 +11,7 @@ import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { RemoteControlPage } from './RemoteControlPage';
 import { useLanguage, Language } from '../lib/i18n';
-import { getModelDisplayName } from '../lib/supabase';
+import { supabase, getModelDisplayName, isLocalDevMode, setLocalDevMode } from '../lib/supabase';
 import { processAndCompressImage } from '../lib/imageCompressor';
 import { 
   getSharedChatsRegistry, 
@@ -48,9 +48,10 @@ interface SettingsModalProps {
   userTier?: string;
   onOpenSession?: (sessionId: string) => void;
   onAddSession?: (session: { id: string; title: string }) => void;
+  onDevModeChange?: (active: boolean) => void;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'integrations' | 'language' | 'delete' | 'share_chat' | 'remote_control';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'integrations' | 'language' | 'delete' | 'share_chat' | 'remote_control' | 'redeem';
 
 export function SettingsModal({ 
   isOpen, 
@@ -67,13 +68,21 @@ export function SettingsModal({
   user,
   userTier,
   onOpenSession,
-  onAddSession
+  onAddSession,
+  onDevModeChange
 }: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Redeem & Development Mode (No Limit) states
+  const [isDevMode, setIsDevMode] = useState<boolean>(() => isLocalDevMode());
+  const [redeemCodeInput, setRedeemCodeInput] = useState<string>('');
+  const [redeemLoading, setRedeemLoading] = useState<boolean>(false);
+  const [redeemError, setRedeemError] = useState<string | null>(null);
+  const [redeemSuccessMsg, setRedeemSuccessMsg] = useState<string | null>(null);
 
   // Share chat state
   const [sharedRegistry, setSharedRegistry] = useState<Record<string, SharedChatRecord>>(() => getSharedChatsRegistry());
@@ -90,6 +99,69 @@ export function SettingsModal({
     type: 'media' | 'sessions' | 'account' | null;
   }>({ isOpen: false, type: null });
   const [isExecutingDelete, setIsExecutingDelete] = useState(false);
+
+  // A. Saat User Redeem Kode (Sesuai spesifikasi prompt klien)
+  async function submitRedeemCode(inputCode: string) {
+    const code = (inputCode || '').trim();
+    if (!code) {
+      alert(lang === 'id' ? 'Silakan masukkan kode undangan!' : 'Please enter an invite code!');
+      return;
+    }
+
+    setRedeemLoading(true);
+    setRedeemError(null);
+    setRedeemSuccessMsg(null);
+
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUser = authData?.user || user;
+      if (!currentUser) {
+        alert(lang === 'id' ? 'Silakan login terlebih dahulu!' : 'Please sign in first!');
+        setRedeemLoading(false);
+        return;
+      }
+
+      // Panggil fungsi RPC Supabase
+      const { data, error } = await supabase.rpc('redeem_invite_code', {
+        p_user_id: currentUser.id,
+        p_code: code
+      });
+
+      if (error || !data || data.success === false) {
+        const errorMsg = data?.message || error?.message || (lang === 'id' ? 'Gagal meredeem kode' : 'Failed to redeem code');
+        setRedeemError(errorMsg);
+        alert(errorMsg);
+        setRedeemLoading(false);
+        return;
+      }
+
+      // SIMPAN KE LOCALSTORAGE (Sesuai permintaan: tidak dicatat ke supabase untuk chat, cukup di local)
+      localStorage.setItem('tmpa_dev_mode', 'true');
+      setIsDevMode(true);
+      setRedeemCodeInput('');
+      const successNotice = data?.message || (lang === 'id' 
+        ? 'Berhasil! Mode Development / No Limit diaktifkan di perangkat ini.' 
+        : 'Success! Development Mode / No Limit activated on this device.');
+      setRedeemSuccessMsg(successNotice);
+      alert(successNotice);
+      if (onDevModeChange) onDevModeChange(true);
+    } catch (err: any) {
+      const errorMsg = err?.message || (lang === 'id' ? 'Terjadi kesalahan sistem' : 'System error');
+      setRedeemError(errorMsg);
+      alert(errorMsg);
+    } finally {
+      setRedeemLoading(false);
+    }
+  }
+
+  function handleDeactivateDevMode() {
+    localStorage.removeItem('tmpa_dev_mode');
+    setIsDevMode(false);
+    setRedeemSuccessMsg(null);
+    setRedeemError(null);
+    if (onDevModeChange) onDevModeChange(false);
+    showToast(lang === 'id' ? 'Mode Development dinonaktifkan di perangkat ini.' : 'Development Mode deactivated on this device.');
+  }
 
   useEffect(() => {
     const savedPic = localStorage.getItem('tmpa_profile_pic');
@@ -302,6 +374,39 @@ export function SettingsModal({
                   </div>
                 </button>
 
+                {/* 3.5. Redeem Kode Undangan / Dev Mode (Interactive) */}
+                <button
+                  onClick={() => setCurrentView('redeem')}
+                  className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
+                >
+                  <div className={cn(
+                    "mt-1 flex-shrink-0 transition-colors p-2 rounded-xl",
+                    isDevMode 
+                      ? "text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100" 
+                      : "text-slate-400 group-hover:text-purple-600 bg-slate-100 group-hover:bg-purple-50"
+                  )}>
+                    <Key size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-purple-600 transition-colors">
+                        {t.redeemCode}
+                      </h3>
+                      {isDevMode ? (
+                        <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          No Limit Aktif
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold uppercase bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-mono">
+                          Dev Mode
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">{t.redeemCodeDesc}</p>
+                  </div>
+                </button>
+
                 {/* 4. Personalisasi (Interactive) */}
                 <button
                   onClick={() => setCurrentView('personalization')}
@@ -471,6 +576,7 @@ export function SettingsModal({
                   {currentView === 'language' && t.language}
                   {currentView === 'delete' && 'Delete'}
                   {currentView === 'share_chat' && (lang === 'id' ? 'Share chat' : 'Share chat')}
+                  {currentView === 'redeem' && (lang === 'id' ? 'Redeem Kode Undangan' : 'Redeem Invite Code')}
                 </span>
               </div>
 
@@ -628,6 +734,65 @@ export function SettingsModal({
                           {userTier || 'FREE (DEFAULT)'}
                         </div>
                       </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {lang === 'id' ? 'Mode Pengembangan (No Limit)' : 'Development Mode (No Limit)'}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setCurrentView('redeem')}
+                            className="text-xs font-semibold text-purple-600 hover:text-purple-700 cursor-pointer"
+                          >
+                            {isDevMode ? (lang === 'id' ? 'Kelola Kode' : 'Manage Code') : (lang === 'id' ? 'Tukarkan Kode' : 'Redeem Code')}
+                          </button>
+                        </div>
+                        <div className={cn(
+                          "p-4 rounded-xl border flex items-center justify-between gap-3 shadow-xs",
+                          isDevMode 
+                            ? "bg-emerald-50/70 border-emerald-300 text-emerald-900" 
+                            : "bg-white border-slate-200 text-slate-700"
+                        )}>
+                          <div className="flex items-center gap-3">
+                            <div className={cn(
+                              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
+                              isDevMode ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                            )}>
+                              <Key size={18} />
+                            </div>
+                            <div>
+                              <div className="font-semibold text-sm flex items-center gap-2">
+                                <span>{isDevMode ? (lang === 'id' ? 'Aktif (Tanpa Batas Kuota)' : 'Active (No Limit)') : (lang === 'id' ? 'Mode Standar' : 'Standard Mode')}</span>
+                                {isDevMode && (
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                {isDevMode 
+                                  ? (lang === 'id' ? 'Pengecekan batas kuota Supabase dilewati di perangkat ini.' : 'Supabase quota checks bypassed on this device.') 
+                                  : (lang === 'id' ? 'Punya invite code? Aktifkan no limit di menu Redeem.' : 'Have an invite code? Activate no limit in Redeem menu.')}
+                              </p>
+                            </div>
+                          </div>
+                          {isDevMode ? (
+                            <button
+                              type="button"
+                              onClick={handleDeactivateDevMode}
+                              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer shrink-0"
+                            >
+                              {lang === 'id' ? 'Nonaktifkan' : 'Deactivate'}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setCurrentView('redeem')}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white transition-colors cursor-pointer shrink-0 shadow-2xs"
+                            >
+                              Redeem
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -686,6 +851,39 @@ export function SettingsModal({
                         {lang === 'id' ? 'Persentase gabungan penggunaan seluruh model dan pencarian web yang diakumulasikan per permintaan.' : 'Combined usage percentage of models and web search accumulated per request.'}
                       </p>
                     </div>
+
+                    {/* Banner Indikator Mode Development (No Limit) */}
+                    {isDevMode && (
+                      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl p-4.5 flex items-start justify-between gap-3 shadow-xs">
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0 mt-0.5">
+                            <Sparkles size={18} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-emerald-950 text-sm">
+                                {lang === 'id' ? 'Mode Development / No Limit Aktif' : 'Development Mode / No Limit Active'}
+                              </h4>
+                              <span className="text-[10px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-300 px-2 py-0.2 rounded-full font-mono uppercase">
+                                Bypassed
+                              </span>
+                            </div>
+                            <p className="text-xs text-emerald-800/80 mt-1 leading-relaxed">
+                              {lang === 'id'
+                                ? 'Perangkat ini berjalan dalam mode bebas batas kuota (No Limit). Seluruh panggilan chat AI tidak memotong kuota database Supabase.'
+                                : 'This device is running in No Limit mode. All AI chat requests bypass Supabase quota tracking and limits.'}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setCurrentView('redeem')}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 transition-colors cursor-pointer shrink-0 shadow-2xs"
+                        >
+                          {lang === 'id' ? 'Pengaturan' : 'Settings'}
+                        </button>
+                      </div>
+                    )}
 
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
                       <div className="flex justify-between items-start mb-2">
@@ -1345,6 +1543,157 @@ export function SettingsModal({
                         })}
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {/* View: REDEEM KODE UNDANGAN / DEV MODE */}
+                {currentView === 'redeem' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div>
+                      <h3 className="text-2xl font-bold text-slate-900 mb-1">
+                        {lang === 'id' ? 'Tukarkan Kode Undangan' : 'Redeem Invite Code'}
+                      </h3>
+                      <p className="text-slate-500 text-sm">
+                        {lang === 'id' 
+                          ? 'Aktifkan Mode Development / No Limit di perangkat ini menggunakan invite code resmi.' 
+                          : 'Activate Development Mode / No Limit on this device using an official invite code.'}
+                      </p>
+                    </div>
+
+                    {/* Status Card */}
+                    <div className={cn(
+                      "p-5 rounded-2xl border transition-all shadow-sm space-y-3",
+                      isDevMode 
+                        ? "bg-emerald-50/70 border-emerald-300" 
+                        : "bg-white border-slate-200"
+                    )}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3.5">
+                          <div className={cn(
+                            "p-2.5 rounded-xl border flex-shrink-0 mt-0.5",
+                            isDevMode 
+                              ? "bg-emerald-100 border-emerald-200 text-emerald-700" 
+                              : "bg-purple-50 border-purple-100 text-purple-600"
+                          )}>
+                            <Key size={22} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-slate-900 text-base">
+                                {isDevMode 
+                                  ? (lang === 'id' ? 'Mode Development (No Limit) Aktif' : 'Development Mode (No Limit) Active')
+                                  : (lang === 'id' ? 'Status Mode Development' : 'Development Mode Status')}
+                              </h4>
+                              {isDevMode ? (
+                                <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  Aktif
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold uppercase bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-mono">
+                                  Standar
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                              {isDevMode 
+                                ? (lang === 'id' 
+                                    ? 'Perangkat ini telah terverifikasi dan mode No Limit aktif secara lokal di browser. Obrolan AI berjalan tanpa pengecekan kuota database Supabase.'
+                                    : 'This device is verified and No Limit mode is active locally in this browser. AI chats bypass Supabase quota limits.')
+                                : (lang === 'id'
+                                    ? 'Belum aktif. Masukkan kode undangan 1x pakai di bawah ini untuk mengaktifkan akses tanpa batas pada browser ini.'
+                                    : 'Not active. Enter a 1-time invite code below to unlock unlimited AI chats on this browser.')}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {isDevMode && (
+                        <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between flex-wrap gap-2">
+                          <span className="text-xs font-mono text-emerald-800">
+                            localStorage: <code className="bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">tmpa_dev_mode = 'true'</code>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleDeactivateDevMode}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+                          >
+                            {lang === 'id' ? 'Nonaktifkan Mode Dev' : 'Deactivate Dev Mode'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Input Redeem Form */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                          {lang === 'id' ? 'Masukkan Kode Undangan (Invite Code)' : 'Enter Invite Code'}
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={redeemCodeInput}
+                            onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !redeemLoading && redeemCodeInput.trim()) {
+                                submitRedeemCode(redeemCodeInput);
+                              }
+                            }}
+                            placeholder="Contoh: DEV-XXXX-XXXX"
+                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-mono text-sm tracking-widest placeholder-slate-400 uppercase focus:bg-white focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none transition-all"
+                            disabled={redeemLoading}
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const clipText = await navigator.clipboard.readText();
+                                if (clipText) setRedeemCodeInput(clipText.trim().toUpperCase());
+                              } catch {}
+                            }}
+                            className="px-3.5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
+                            title="Tempel dari Clipboard"
+                          >
+                            <Copy size={14} />
+                            <span>Paste</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {redeemError && (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
+                          <AlertCircle size={15} className="shrink-0 text-rose-600" />
+                          <span>{redeemError}</span>
+                        </div>
+                      )}
+
+                      {redeemSuccessMsg && (
+                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+                          <Check size={15} className="shrink-0 text-emerald-600 stroke-[3]" />
+                          <span>{redeemSuccessMsg}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => submitRedeemCode(redeemCodeInput)}
+                        disabled={redeemLoading || !redeemCodeInput.trim()}
+                        className="w-full py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        {redeemLoading ? (
+                          <>
+                            <Loader2 size={16} className="animate-spin" />
+                            <span>{lang === 'id' ? 'Memvalidasi Kode...' : 'Validating Code...'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles size={16} />
+                            <span>{lang === 'id' ? 'Redeem Kode & Aktifkan No Limit' : 'Redeem Code & Activate No Limit'}</span>
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 )}

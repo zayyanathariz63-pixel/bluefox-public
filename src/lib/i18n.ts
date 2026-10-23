@@ -124,6 +124,10 @@ export const translations = {
     personalizationDesc: "Atur instruksi kustom Anda dan lihat aplikasi terhubung",
     deleteData: "Delete",
     deleteDataDesc: "Hapus semua media, semua sesi chat, atau hapus akun pengguna",
+    redeemCode: "Redeem Kode Undangan",
+    redeemCodeDesc: "Aktifkan Mode Development / No Limit di perangkat ini dengan kode resmi",
+    devModeActiveBadge: "Mode Dev (No Limit) Aktif",
+    devModeBypassNotice: "Mode Development aktif: Semua pengecekan dan kuota Supabase dilewati di perangkat ini.",
     connectedApps: "Aplikasi / Web Terhubung",
     connectedAppsDesc: "Gunakan produk kami secara lancar dan terintegrasi",
 
@@ -302,6 +306,10 @@ export const translations = {
     personalizationDesc: "Configure custom system instructions and connected apps",
     deleteData: "Delete",
     deleteDataDesc: "Clear all media, delete all chat sessions, or delete user account",
+    redeemCode: "Redeem Invite Code",
+    redeemCodeDesc: "Activate Development Mode / No Limit on this device with an official code",
+    devModeActiveBadge: "Dev Mode (No Limit) Active",
+    devModeBypassNotice: "Development Mode active: All Supabase quota checks and limits are bypassed on this device.",
     connectedApps: "Connected Apps & Websites",
     connectedAppsDesc: "Seamlessly integrate and link platform services",
 

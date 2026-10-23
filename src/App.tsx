@@ -374,6 +374,22 @@ export default function App() {
 
   const [dbLimits, setDbLimits] = useState<{ used5h: number; usedWeekly: number } | null>(null);
 
+  // Status Mode Development / No Limit dari localStorage browser
+  const [isDevMode, setIsDevMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('tmpa_dev_mode') === 'true';
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const syncDevMode = () => {
+      setIsDevMode(localStorage.getItem('tmpa_dev_mode') === 'true');
+    };
+    window.addEventListener('storage', syncDevMode);
+    return () => window.removeEventListener('storage', syncDevMode);
+  }, []);
+
   const [usageEvents, setUsageEvents] = useState<{h: number, w: number, ts: number}[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('ai_usage_events') || '[]');
@@ -409,13 +425,19 @@ export default function App() {
   };
 
   const usage = getUsage();
-  const isUsageLimitReached = usage.hourly >= 100 || usage.weekly >= 100;
+  // Jika Mode Development aktif (No Limit), limit tidak pernah memblokir user
+  const isUsageLimitReached = isDevMode ? false : (usage.hourly >= 100 || usage.weekly >= 100);
 
   const updateUsage = (
     model: string, 
     isVision?: boolean, 
     searchMode?: 'standard' | 'advanced' | 'map_standard' | 'map_advanced'
   ) => {
+    // Abaikan dan jangan rekam pemotongan kuota jika Mode Development aktif secara lokal
+    if (isDevMode || (typeof window !== 'undefined' && localStorage.getItem('tmpa_dev_mode') === 'true')) {
+      return;
+    }
+
     let h = 0, w = 0;
     if (model === 'agnes-2.5-flash' || model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'bluefox_pro' || model === 'qwen3_coder') {
       if (isVision) {
@@ -1740,13 +1762,19 @@ ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned 
 **Daftar Sesi Terbaru:**
 ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '[DISEMATKAN]' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Pesan: ${s.messages?.length || 0}\n   - Terakhir diubah: ${new Date(s.updatedAt).toLocaleString('id-ID')}`).join('\n\n') || '_Belum ada riwayat sesi lain._'}`;
         } else if (subCmd.startsWith('kuota') || subCmd.startsWith('quota')) {
+          const devModeNotice = isDevMode ? (
+            lang === 'en' 
+              ? '\n| **Development Mode** | `[NO LIMIT - ACTIVE]` | Supabase quota limits are bypassed on this device |'
+              : '\n| **Mode Development** | `[NO LIMIT - AKTIF]` | Pengecekan & kuota Supabase dilewati di perangkat ini |'
+          ) : '';
+
           systemReply = lang === 'en' ? `### Quota & Usage Monitor (Bluefox Controller)
 
 | Quota Parameter | Usage Status | Description |
 | :--- | :--- | :--- |
 | **Rolling Limit (5 Hours)** | \`${dbLimits?.used5h ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
-| **Weekly Limit** | \`${dbLimits?.usedWeekly ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
-| **System Status** | \`[NORMAL OPERATIONAL]\` | Auto quota reset window every 5 hours |
+| **Weekly Limit** | \`${dbLimits?.usedWeekly ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |${devModeNotice}
+| **System Status** | \`${isDevMode ? '[NO LIMIT - DEV MODE]' : '[NORMAL OPERATIONAL]'}\` | ${isDevMode ? 'Unlimited AI queries enabled' : 'Auto quota reset window every 5 hours'} |
 
 _Developer Tip: Type \`@bluefox reset\` to reset all AI model usage limits to 0%._`
           : `### Indikator Batas Penggunaan (Quota Monitor)
@@ -1754,8 +1782,8 @@ _Developer Tip: Type \`@bluefox reset\` to reset all AI model usage limits to 0%
 | Parameter Kuota | Status Penggunaan | Keterangan |
 | :--- | :--- | :--- |
 | **Rolling Limit (5 Jam)** | \`${dbLimits?.used5h ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
-| **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |
-| **Status Sistem** | \`[OPERASIONAL NORMAL]\` | Reset kuota otomatis tiap 5 jam |
+| **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |${devModeNotice}
+| **Status Sistem** | \`${isDevMode ? '[NO LIMIT - DEV MODE]' : '[OPERASIONAL NORMAL]'}\` | ${isDevMode ? 'Akses tanpa batas aktif di perangkat ini' : 'Reset kuota otomatis tiap 5 jam'} |
 
 _Tip Pengujian: Ketik \`@bluefox reset\` untuk mereset seluruh batas penggunaan AI ke 0%._`;
         } else if (subCmd.startsWith('reset')) {
@@ -2047,7 +2075,64 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         ? 'agnes-2.5-flash' 
         : selectedModel;
 
-      updateUsage(currentEffectiveModel, isVisionNow);
+      // =========================================================================
+      // B. PENGECEKAN LIMIT KLIEN: MODE DEVELOPMENT LOKAL (NO LIMIT) VS SUPABASE
+      // =========================================================================
+      // 1. Cek apakah mode dev aktif secara lokal di browser
+      const isDevModeLocal = typeof window !== 'undefined' && localStorage.getItem('tmpa_dev_mode') === 'true';
+
+      if (isDevModeLocal) {
+        console.log('Mode Development aktif (No Limit). Melewati pengecekan Supabase.');
+        // Langsung jalankan proses kirim pesan chat ke AI tanpa potong kuota!
+      } else {
+        // 2. Jika bukan mode dev, jalankan sistem limit normal berbasis Supabase
+        let targetAuthUser = user;
+        if (!targetAuthUser) {
+          try {
+            const { data: authData } = await supabase.auth.getUser();
+            targetAuthUser = authData?.user;
+          } catch {}
+        }
+
+        if (!targetAuthUser && !activeUserId) {
+          setIsLoading(false);
+          setIsMotionLoading(false);
+          alert(lang === 'id' ? 'Login diperlukan' : 'Login required');
+          return;
+        }
+
+        const targetUid = targetAuthUser?.id || activeUserId;
+        if (targetUid) {
+          // Panggil fungsi potong limit normal (seperti skema 5 jam & mingguan sebelumnya)
+          try {
+            const { data: limitCheck, error: limitErr } = await supabase.rpc('consume_ai_limit', {
+              p_user_id: targetUid,
+              p_model: currentEffectiveModel
+            });
+
+            if (!limitErr && limitCheck && limitCheck.success === false) {
+              setIsLoading(false);
+              setIsMotionLoading(false);
+              const limitMsg = limitCheck.message || (lang === 'id' ? 'Batas penggunaan kuota AI telah habis.' : 'AI usage limit reached.');
+              alert(limitMsg);
+              setErrorState(limitMsg);
+              setQuotaModalInfo({
+                isOpen: true,
+                title: lang === 'id' ? 'Batas Penggunaan Tercapai' : 'Usage Limit Reached',
+                message: limitMsg,
+                used5h: dbLimits?.used5h ?? 100,
+                usedWeekly: dbLimits?.usedWeekly ?? 100
+              });
+              return; // Hentikan jika limit habis
+            }
+          } catch (rpcErr) {
+            console.warn('RPC consume_ai_limit info/fallback:', rpcErr);
+          }
+        }
+
+        // Catat penggunaan lokal hanya jika bukan mode dev
+        updateUsage(currentEffectiveModel, isVisionNow);
+      }
 
       // =========================================================================
       // ENRICH AI PROMPT UNTUK PERINTAH MODUL AI (@verifyai, @deep verify, @creative)
@@ -3036,8 +3121,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             </button>
           </div>
 
-          {/* Model Selector Trigger */}
-          <div className="flex items-center">
+          {/* Model Selector Trigger & Dev Mode Badge */}
+          <div className="flex items-center gap-2">
             {(() => {
               const modelDisplayName = selectedModel === 'agnes-2.5-flash'
                 ? 'bluefox pro' 
@@ -3068,6 +3153,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 </div>
               );
             })()}
+
+            {isDevMode && (
+              <span
+                onClick={() => setIsSettingsOpen(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold font-mono tracking-tight cursor-pointer hover:bg-emerald-100 transition-colors shadow-2xs"
+                title="Mode Development (No Limit) Aktif di Browser Ini"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                NO LIMIT
+              </span>
+            )}
           </div>
 
           <div className="relative shrink-0 flex items-center gap-1">
@@ -4496,6 +4592,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             return [formattedSession, ...prev];
           });
         }}
+        onDevModeChange={(active) => setIsDevMode(active)}
       />
 
       <ConnectorsModal
