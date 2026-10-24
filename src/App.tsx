@@ -441,38 +441,38 @@ export default function App() {
     let h = 0, w = 0;
     if (model === 'agnes-2.5-flash' || model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'bluefox_pro' || model === 'qwen3_coder') {
       if (isVision) {
-        h = 19; // Vision: 19% per 5 jam
-        w = 14; // Vision: 14% weekly
+        h = 5; // Bluefox pro vision: 5% per 5 jam
+        w = 7; // Bluefox pro vision: 7% weekly
       } else {
-        h = 13; // Non vision: 13% per 5 jam
-        w = 10; // Non vision: 10% weekly
+        h = 3; // Bluefox pro standar: 3% per 5 jam
+        w = 4; // Bluefox pro standar: 4% weekly
       }
     } else if (model === 'tencent-hy3-free' || model === 'bluefox_standard' || model === 'tmpa_v1' || model === 'gpt_oss') {
-      // bluefox standard (tencent-hy3-free)
-      h = 12; // 12% per 5 jam
-      w = 9;  // 9% weekly
+      // bluefox standard
+      h = 2; // 2% per 5 jam
+      w = 3; // 3% weekly
     } else if (model === 'laguna-s-2.1' || model === 'bluefox_dilo' || model === 'dilo' || model === 'longcat-2.0-free' || model === 'mistral_nemotron') {
-      // bluefox Dilo (laguna-s-2.1)
-      h = 8;  // 8% per 5 jam
-      w = 6;  // 6% weekly
+      // bluefox Dilo
+      h = 2; // 2% per 5 jam
+      w = 2; // 2% weekly
     } else {
-      h = 12;
-      w = 9;
+      h = 2;
+      w = 3;
     }
 
     if (searchMode) {
       if (searchMode === 'advanced') {
-        h += 10;
-        w += 5;
-      } else if (searchMode === 'standard') {
         h += 5;
         w += 3;
+      } else if (searchMode === 'standard') {
+        h += 3;
+        w += 2;
       } else if (searchMode === 'map_advanced') {
-        h += 13;
-        w += 7;
-      } else if (searchMode === 'map_standard') {
         h += 7;
         w += 4;
+      } else if (searchMode === 'map_standard') {
+        h += 6;
+        w += 3;
       }
     }
     

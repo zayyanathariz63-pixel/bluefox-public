@@ -960,23 +960,23 @@ export function SettingsModal({
                           <tbody className="divide-y divide-slate-100 font-mono">
                             <tr className="hover:bg-slate-50/70">
                               <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Advanced search</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">10%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">5%</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/70">
-                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Standard search</td>
                               <td className="py-2 px-3.5 text-blue-600 font-bold">5%</td>
                               <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
                             </tr>
                             <tr className="hover:bg-slate-50/70">
+                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Standard search</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">3%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">2%</td>
+                            </tr>
+                            <tr className="hover:bg-slate-50/70">
                               <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map search advanced</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">13%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">7%</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">7%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
                             </tr>
                             <tr className="hover:bg-slate-50/70">
                               <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map standard search</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">7%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
+                              <td className="py-2 px-3.5 text-blue-600 font-bold">6%</td>
+                              <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
                             </tr>
                           </tbody>
                         </table>
@@ -998,23 +998,23 @@ export function SettingsModal({
                             <tbody className="divide-y divide-slate-100 font-mono">
                               <tr className="hover:bg-slate-50/70">
                                 <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Vision Aktif)</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">19%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">14%</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">5%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">7%</td>
                               </tr>
                               <tr className="hover:bg-slate-50/70">
                                 <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Standar Teks)</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">13%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">10%</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">3%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
                               </tr>
                               <tr className="hover:bg-slate-50/70">
                                 <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox standard</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">12%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">9%</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">2%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
                               </tr>
                               <tr className="hover:bg-slate-50/70">
                                 <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox Dilo</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">8%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">6%</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">2%</td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">2%</td>
                               </tr>
                             </tbody>
                           </table>
