@@ -777,7 +777,7 @@ export async function loadChatHistory(conversationId: string) {
 }
 
 /**
- * Mengambil limit penggunaan AI dari tabel 'user_limits'
+ * Mengambil limit penggunaan AI langsung dari tabel 'user_limits' di Supabase
  */
 export async function getUserLimits(userId: string) {
   try {
@@ -788,18 +788,70 @@ export async function getUserLimits(userId: string) {
       .eq('user_id', userId)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+      console.warn("Info query user_limits:", error.message);
+      return null;
+    }
 
     const now = new Date();
+
+    // Jika belum ada row di public.user_limits, buatkan row default baru (0% used)
+    if (!data) {
+      try {
+        const reset5hAt = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+        const resetWeeklyAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        await supabase.from('user_limits').insert([{
+          user_id: userId,
+          is_dev_mode: isLocalDevMode(),
+          used_5h: 0.00,
+          reset_5h_at: reset5hAt,
+          used_weekly: 0.00,
+          reset_weekly_at: resetWeeklyAt
+        }]);
+      } catch (insertErr) {
+        console.warn("Info auto-create user_limits:", insertErr);
+      }
+
+      return {
+        used_5h: 0,
+        used_weekly: 0,
+        remaining_5h: 100,
+        remaining_weekly: 100,
+        is_dev_mode: isLocalDevMode(),
+        reset_5h_at: null,
+        reset_weekly_at: null,
+      };
+    }
+
+    // Jika is_dev_mode bernilai true di database, aktifkan dev mode lokal
+    if (data.is_dev_mode === true) {
+      setLocalDevMode(true);
+    }
+
     let used5h = Number(data.used_5h || 0);
     let usedWeekly = Number(data.used_weekly || 0);
 
+    let needsUpdate = false;
+    const updatePayload: Record<string, any> = {};
+
+    // Cek apakah window 5 jam sudah terlewati
     if (data.reset_5h_at && now > new Date(data.reset_5h_at)) {
       used5h = 0;
+      updatePayload.used_5h = 0.00;
+      updatePayload.reset_5h_at = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+      needsUpdate = true;
     }
 
+    // Cek apakah window mingguan sudah terlewati
     if (data.reset_weekly_at && now > new Date(data.reset_weekly_at)) {
       usedWeekly = 0;
+      updatePayload.used_weekly = 0.00;
+      updatePayload.reset_weekly_at = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      supabase.from('user_limits').update(updatePayload).eq('user_id', userId).then(() => {}, () => {});
     }
 
     return {
@@ -807,10 +859,12 @@ export async function getUserLimits(userId: string) {
       used_weekly: usedWeekly,
       remaining_5h: Math.max(0, 100 - used5h),
       remaining_weekly: Math.max(0, 100 - usedWeekly),
+      is_dev_mode: Boolean(data.is_dev_mode),
       reset_5h_at: data.reset_5h_at,
       reset_weekly_at: data.reset_weekly_at,
     };
-  } catch {
+  } catch (err) {
+    console.warn("getUserLimits catch:", err);
     return null;
   }
 }
@@ -1007,72 +1061,181 @@ export async function redeemInviteCode(userId: string, code: string): Promise<{ 
 }
 
 /**
- * Pengecekan dan pemotongan batas penggunaan AI normal via Supabase RPC
- * Memanggil RPC Supabase: consume_ai_limit(p_user_id, p_model)
- * Model options: 'v2_vision', 'v2_non_vision', 'v1', atau 'dilo'
+ * Pengecekan dan pemotongan batas penggunaan AI langsung ke tabel 'public.user_limits' di Supabase
  */
 export async function consumeAiLimit(
   userId?: string, 
   model: string = 'v2_non_vision', 
-  isVision: boolean = false
-): Promise<{ success: boolean; message?: string; remaining_5h?: number; remaining_weekly?: number }> {
+  isVision: boolean = false,
+  searchMode?: 'standard' | 'advanced' | 'map_standard' | 'map_advanced'
+): Promise<{ 
+  success: boolean; 
+  isLimitExceeded?: boolean; 
+  isDevMode?: boolean; 
+  message?: string; 
+  remaining_5h?: number; 
+  remaining_weekly?: number;
+  used_5h?: number;
+  used_weekly?: number;
+}> {
   try {
     // 1. Cek apakah Mode Development / No Limit aktif di perangkat lokal user
     if (isLocalDevMode()) {
-      console.log('Mode Development aktif (No Limit). Melewati pengecekan kuota Supabase.');
-      return { success: true, message: 'Mode Development aktif (No Limit).' };
+      console.log('Mode Development aktif (No Limit). Melewati pengecekan kuota.');
+      return { success: true, isDevMode: true, message: 'Mode Development aktif (No Limit).' };
     }
 
     // 2. Ambil UUID user jika belum disediakan
     let userUuid = userId;
     if (!userUuid) {
-      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      if (authError || !authUser) {
-        return { success: false, message: 'Sesi login tidak ditemukan. Silakan login ulang.' };
-      }
-      userUuid = authUser.id;
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      userUuid = authUser?.id;
     }
 
-    // 3. Normalisasi nilai p_model: 'v2_vision', 'v2_non_vision', 'v1', atau 'dilo'
-    let rpcModel: 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo' = 'v2_non_vision';
-    const m = (model || '').toLowerCase();
-    if (m === 'v2_vision' || m === 'v2_non_vision' || m === 'v1' || m === 'dilo') {
-      rpcModel = m as any;
-    } else if (m.includes('laguna') || m.includes('dilo')) {
-      rpcModel = 'dilo';
-    } else if (m.includes('tencent') || m.includes('standard') || m.includes('standar') || m.includes('jev')) {
-      rpcModel = 'v1';
-    } else {
-      rpcModel = isVision ? 'v2_vision' : 'v2_non_vision';
+    if (!userUuid) {
+      // Jika guest atau tidak ada sesi auth, jangan blokir
+      return { success: true, message: 'Guest session' };
     }
 
-    // 4. Panggil RPC consume_ai_limit
-    const { data: limitResult, error: limitError } = await supabase.rpc('consume_ai_limit', {
-      p_user_id: userUuid,
-      p_model: rpcModel
-    });
+    // 3. Cek langsung ke tabel public.user_limits
+    const { data: row, error: tableErr } = await supabase
+      .from('user_limits')
+      .select('*')
+      .eq('user_id', userUuid)
+      .maybeSingle();
 
-    // 5. Validasi hasil pemotongan limit
-    if (limitError || !limitResult || !limitResult.success) {
-      const errorMessage = limitResult?.message || limitError?.message || 'Gagal memproses kuota limit.';
+    if (tableErr) {
+      console.warn("Info query tabel user_limits:", tableErr.message);
+    }
+
+    // 4. Jika is_dev_mode aktif di tabel, sinkronkan ke local dan bebaskan batas kuota
+    if (row?.is_dev_mode === true) {
+      setLocalDevMode(true);
+      return { success: true, isDevMode: true, message: 'Mode Development aktif (No Limit).' };
+    }
+
+    const now = new Date();
+    let current5h = Number(row?.used_5h || 0);
+    let currentWeekly = Number(row?.used_weekly || 0);
+
+    // Cek apakah window 5 jam atau mingguan sudah lewat waktu reset
+    if (row?.reset_5h_at && now > new Date(row.reset_5h_at)) {
+      current5h = 0;
+    }
+    if (row?.reset_weekly_at && now > new Date(row.reset_weekly_at)) {
+      currentWeekly = 0;
+    }
+
+    // 5. Cek apakah kuota BENAR-BENAR sudah habis (>= 100%) di tabel public.user_limits
+    if (current5h >= 100) {
       return {
         success: false,
-        message: errorMessage
+        isLimitExceeded: true,
+        message: 'Batas penggunaan 5 jam Anda telah habis (100%).',
+        used_5h: current5h,
+        used_weekly: currentWeekly,
+        remaining_5h: 0,
+        remaining_weekly: Math.max(0, 100 - currentWeekly)
       };
     }
 
-    console.log(`Sisa Limit 5 Jam: ${limitResult.remaining_5h}%`);
-    console.log(`Sisa Limit Mingguan: ${limitResult.remaining_weekly}%`);
+    if (currentWeekly >= 100) {
+      return {
+        success: false,
+        isLimitExceeded: true,
+        message: 'Batas penggunaan mingguan Anda telah habis (100%).',
+        used_5h: current5h,
+        used_weekly: currentWeekly,
+        remaining_5h: Math.max(0, 100 - current5h),
+        remaining_weekly: 0
+      };
+    }
+
+    // 6. Hitung persentase potongan kuota sesuai aturan model & search
+    let delta5h = 0;
+    let deltaWeekly = 0;
+
+    const m = (model || '').toLowerCase();
+    if (m.includes('pro') || m.includes('agnes') || m.includes('deepseek') || m.includes('v2')) {
+      if (isVision) {
+        delta5h = 5; // Bluefox pro vision: 5 jam: 5%, seminggu: 7%
+        deltaWeekly = 7;
+      } else {
+        delta5h = 3; // Bluefox pro standard: 5 jam: 3%, seminggu: 4%
+        deltaWeekly = 4;
+      }
+    } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
+      delta5h = 2; // Bluefox standard: 5 jam: 2%, seminggu: 3%
+      deltaWeekly = 3;
+    } else if (m.includes('dilo') || m.includes('laguna')) {
+      delta5h = 2; // Bluefox dilo: 5 jam: 2%, seminggu: 2%
+      deltaWeekly = 2;
+    } else {
+      delta5h = 2;
+      deltaWeekly = 3;
+    }
+
+    if (searchMode) {
+      if (searchMode === 'advanced') {
+        delta5h += 5;
+        deltaWeekly += 3;
+      } else if (searchMode === 'standard') {
+        delta5h += 3;
+        deltaWeekly += 2;
+      } else if (searchMode === 'map_advanced') {
+        delta5h += 7;
+        deltaWeekly += 4;
+      } else if (searchMode === 'map_standard') {
+        delta5h += 6;
+        deltaWeekly += 3;
+      }
+    }
+
+    const next5h = Math.min(100, Number((current5h + delta5h).toFixed(2)));
+    const nextWeekly = Math.min(100, Number((currentWeekly + deltaWeekly).toFixed(2)));
+
+    const reset5hAt = (row?.reset_5h_at && now <= new Date(row.reset_5h_at))
+      ? row.reset_5h_at 
+      : new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+    const resetWeeklyAt = (row?.reset_weekly_at && now <= new Date(row.reset_weekly_at))
+      ? row.reset_weekly_at 
+      : new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    // 7. Simpan langsung pembaruan ke tabel public.user_limits
+    try {
+      await supabase
+        .from('user_limits')
+        .upsert({
+          user_id: userUuid,
+          used_5h: next5h,
+          used_weekly: nextWeekly,
+          reset_5h_at: reset5hAt,
+          reset_weekly_at: resetWeeklyAt,
+          is_dev_mode: false
+        }, { onConflict: 'user_id' });
+    } catch (saveErr) {
+      console.warn("Info simpan pemotongan kuota ke user_limits:", saveErr);
+    }
+
+    // Panggil RPC jika ada untuk sinkronisasi server-side (abaikan error jika RPC tidak ada)
+    try {
+      let rpcModel: 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo' = isVision ? 'v2_vision' : 'v2_non_vision';
+      if (m.includes('dilo') || m.includes('laguna')) rpcModel = 'dilo';
+      else if (m.includes('standard') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) rpcModel = 'v1';
+      supabase.rpc('consume_ai_limit', { p_user_id: userUuid, p_model: rpcModel }).then(() => {}, () => {});
+    } catch {}
 
     return {
       success: true,
-      message: limitResult.message,
-      remaining_5h: limitResult.remaining_5h,
-      remaining_weekly: limitResult.remaining_weekly
+      used_5h: next5h,
+      used_weekly: nextWeekly,
+      remaining_5h: Math.max(0, 100 - next5h),
+      remaining_weekly: Math.max(0, 100 - nextWeekly)
     };
   } catch (err: any) {
-    console.warn('consumeAiLimit catch fallback:', err);
-    return { success: false, message: err?.message || 'Gagal memproses limit.' };
+    console.warn("consumeAiLimit error fallback:", err);
+    // Jangan blokir pesan AI hanya karena kendala jaringan
+    return { success: true, message: 'Proceed with chat' };
   }
 }
 
