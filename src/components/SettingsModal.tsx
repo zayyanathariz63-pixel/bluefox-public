@@ -5,13 +5,22 @@ import {
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
   HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2,
-  Share2, GitFork, Pencil, Radio
+  Share2, GitFork, Pencil, Radio, Palette, Lock, Unlock
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
 import { RemoteControlPage } from './RemoteControlPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { supabase, getModelDisplayName, isLocalDevMode, setLocalDevMode } from '../lib/supabase';
+import { 
+  AppStyle, 
+  getAppStyle, 
+  setAppStyle, 
+  getUnlockedStyles, 
+  isStyleUnlocked, 
+  redeemStleyCode, 
+  APP_STYLES 
+} from '../lib/styleManager';
 import { processAndCompressImage } from '../lib/imageCompressor';
 import { 
   getSharedChatsRegistry, 
@@ -49,9 +58,10 @@ interface SettingsModalProps {
   onOpenSession?: (sessionId: string) => void;
   onAddSession?: (session: { id: string; title: string }) => void;
   onDevModeChange?: (active: boolean) => void;
+  appStyle?: AppStyle;
 }
 
-type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'integrations' | 'language' | 'delete' | 'share_chat' | 'remote_control' | 'redeem';
+type SubView = 'menu' | 'account' | 'activity' | 'usage' | 'personalization' | 'connected_apps' | 'integrations' | 'language' | 'delete' | 'share_chat' | 'remote_control' | 'redeem' | 'style_app';
 
 export function SettingsModal({ 
   isOpen, 
@@ -69,7 +79,8 @@ export function SettingsModal({
   userTier,
   onOpenSession,
   onAddSession,
-  onDevModeChange
+  onDevModeChange,
+  appStyle: propAppStyle
 }: SettingsModalProps) {
   const { lang, changeLanguage, t } = useLanguage();
   const [currentView, setCurrentView] = useState<SubView>('menu');
@@ -83,6 +94,81 @@ export function SettingsModal({
   const [redeemLoading, setRedeemLoading] = useState<boolean>(false);
   const [redeemError, setRedeemError] = useState<string | null>(null);
   const [redeemSuccessMsg, setRedeemSuccessMsg] = useState<string | null>(null);
+
+  // Style App & Style Redeem states
+  const [currentAppStyle, setCurrentAppStyle] = useState<AppStyle>(() => propAppStyle || getAppStyle());
+  const [unlockedStyles, setUnlockedStyles] = useState<string[]>(() => getUnlockedStyles());
+  const [styleCodeInput, setStyleCodeInput] = useState<string>('');
+  const [styleRedeemLoading, setStyleRedeemLoading] = useState<boolean>(false);
+  const [styleRedeemError, setStyleRedeemError] = useState<string | null>(null);
+  const [styleRedeemSuccessMsg, setStyleRedeemSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (propAppStyle) {
+      setCurrentAppStyle(propAppStyle);
+    }
+  }, [propAppStyle]);
+
+  const isBlueRilis = currentAppStyle === 'blue_rilis';
+
+  useEffect(() => {
+    const handleStyleChange = (e: any) => {
+      setCurrentAppStyle(e.detail || getAppStyle());
+    };
+    const handleUnlockedChange = (e: any) => {
+      setUnlockedStyles(e.detail || getUnlockedStyles());
+    };
+    window.addEventListener('tmpa_app_style_changed', handleStyleChange);
+    window.addEventListener('tmpa_unlocked_styles_changed', handleUnlockedChange);
+    return () => {
+      window.removeEventListener('tmpa_app_style_changed', handleStyleChange);
+      window.removeEventListener('tmpa_unlocked_styles_changed', handleUnlockedChange);
+    };
+  }, []);
+
+  async function submitStyleRedeem(inputCode: string) {
+    const code = (inputCode || '').trim();
+    if (!code) {
+      alert(lang === 'id' ? 'Silakan masukkan kode redeem style!' : 'Please enter a style redeem code!');
+      return;
+    }
+
+    setStyleRedeemLoading(true);
+    setStyleRedeemError(null);
+    setStyleRedeemSuccessMsg(null);
+
+    try {
+      const result = await redeemStleyCode(code);
+      if (result.success) {
+        setStyleCodeInput('');
+        setStyleRedeemSuccessMsg(result.message);
+        setCurrentAppStyle('blue_rilis');
+        setUnlockedStyles(getUnlockedStyles());
+        showToast(result.message);
+        alert(result.message);
+      } else {
+        setStyleRedeemError(result.message);
+        alert(result.message);
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || (lang === 'id' ? 'Terjadi kesalahan pada jaringan/server.' : 'Network or server error.');
+      setStyleRedeemError(errMsg);
+      alert(errMsg);
+    } finally {
+      setStyleRedeemLoading(false);
+    }
+  }
+
+  function handleSelectAppStyle(styleId: AppStyle) {
+    if (styleId !== 'normal' && !unlockedStyles.includes(styleId)) {
+      alert(lang === 'id' ? 'Style ini terkunci. Silakan tukarkan kode di menu Redeem Code.' : 'This style is locked. Please redeem the style code in Redeem Code menu.');
+      setCurrentView('redeem');
+      return;
+    }
+    setAppStyle(styleId);
+    setCurrentAppStyle(styleId);
+    showToast(lang === 'id' ? `Style ${styleId === 'blue_rilis' ? 'Blue Rilis' : 'Normal'} berhasil diterapkan!` : `Switched to ${styleId === 'blue_rilis' ? 'Blue Rilis' : 'Normal'} style!`);
+  }
 
   // Share chat state
   const [sharedRegistry, setSharedRegistry] = useState<Record<string, SharedChatRecord>>(() => getSharedChatsRegistry());
@@ -407,6 +493,49 @@ export function SettingsModal({
                   </div>
                 </button>
 
+                {/* 3.6. Style App (Stley App) (Interactive) */}
+                <button
+                  onClick={() => setCurrentView('style_app')}
+                  className={cn(
+                    "w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border transition-all group cursor-pointer",
+                    isBlueRilis 
+                      ? "bg-white/[0.04] backdrop-blur-md border-blue-500/20 hover:bg-white/[0.08] hover:border-blue-400/40 text-slate-100" 
+                      : "border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100"
+                  )}
+                >
+                  <div className={cn(
+                    "mt-1 flex-shrink-0 transition-colors p-2 rounded-xl",
+                    currentAppStyle === 'blue_rilis'
+                      ? "text-blue-400 bg-blue-500/20 border border-blue-400/30 group-hover:bg-blue-500/30"
+                      : "text-slate-400 group-hover:text-blue-600 bg-slate-100 group-hover:bg-blue-50"
+                  )}>
+                    <Palette size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className={cn(
+                        "text-[17px] font-semibold transition-colors",
+                        isBlueRilis ? "text-white group-hover:text-blue-300" : "text-slate-900 group-hover:text-blue-600"
+                      )}>
+                        {t.styleApp || 'Style App'}
+                      </h3>
+                      {currentAppStyle === 'blue_rilis' ? (
+                        <span className="text-[10px] font-bold uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs backdrop-blur-xs">
+                          <Sparkles size={11} className="text-blue-300 animate-pulse" />
+                          Blue Rilis
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold uppercase bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-mono">
+                          Normal
+                        </span>
+                      )}
+                    </div>
+                    <p className={cn("text-sm mt-0.5", isBlueRilis ? "text-slate-400" : "text-slate-500")}>
+                      {t.styleAppDesc || 'Pilih gaya antarmuka aplikasi (Normal Style atau Blue Rilis Style)'}
+                    </p>
+                  </div>
+                </button>
+
                 {/* 4. Personalisasi (Interactive) */}
                 <button
                   onClick={() => setCurrentView('personalization')}
@@ -512,15 +641,26 @@ export function SettingsModal({
                 </button>
 
                 {/* Destroy This Website Widget */}
-                <div className="pt-6 pb-2 flex flex-col items-center justify-center gap-2 border-t border-slate-200/80 mt-6">
-                  <span className="text-[11px] font-medium text-slate-400">
+                <div className={cn(
+                  "pt-6 pb-2 flex flex-col items-center justify-center gap-2 border-t mt-6",
+                  isBlueRilis 
+                    ? "border-blue-500/20 bg-slate-900/50 backdrop-blur-md rounded-2xl p-4 my-4 border shadow-[0_4px_20px_rgba(30,58,138,0.2)]" 
+                    : "border-slate-200/80"
+                )}>
+                  <span className={cn(
+                    "text-[11px] font-medium",
+                    isBlueRilis ? "text-blue-300/80" : "text-slate-400"
+                  )}>
                     {lang === 'id' ? 'Mini Game Interaktif' : 'Interactive Mini Game'}
                   </span>
                   <a 
                     href="https://destroy.spritefusion.com/?from=badge&url=bluefox.tmpa.my.id" 
                     target="_blank" 
                     rel="noopener noreferrer"
-                    className="inline-block transition-transform hover:scale-105 active:scale-95"
+                    className={cn(
+                      "inline-block transition-transform hover:scale-105 active:scale-95",
+                      isBlueRilis && "p-1.5 rounded-xl bg-slate-800/60 backdrop-blur-md border border-blue-400/30 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+                    )}
                     title="Destroy this website"
                   >
                     <img 
@@ -559,16 +699,32 @@ export function SettingsModal({
 
           {/* Subview Content */}
           {currentView !== 'menu' && currentView !== 'connected_apps' && currentView !== 'integrations' && currentView !== 'remote_control' && (
-            <div className="flex-1 overflow-y-auto bg-slate-50 flex flex-col w-full h-full text-slate-900">
+            <div className={cn(
+              "flex-1 overflow-y-auto flex flex-col w-full h-full",
+              isBlueRilis ? "bg-[#070b14]/90 text-slate-100" : "bg-slate-50 text-slate-900"
+            )}>
               {/* Header inside sub-screen */}
-              <div className="border-b border-slate-200 bg-white/95 backdrop-blur-md py-4 px-4 sm:px-6 sticky top-0 z-10 flex items-center shadow-xs">
+              <div className={cn(
+                "border-b py-4 px-4 sm:px-6 sticky top-0 z-10 flex items-center shadow-xs backdrop-blur-md",
+                isBlueRilis 
+                  ? "border-blue-500/20 bg-[#090f1d]/90 text-white" 
+                  : "border-slate-200 bg-white/95 text-slate-900"
+              )}>
                 <button 
                   onClick={() => setCurrentView('menu')}
-                  className="w-10 h-10 -ml-1 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                  className={cn(
+                    "w-10 h-10 -ml-1 rounded-full flex items-center justify-center transition-colors cursor-pointer",
+                    isBlueRilis 
+                      ? "text-slate-300 hover:text-white hover:bg-slate-800/80" 
+                      : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                  )}
                 >
                   <ArrowLeft size={22} />
                 </button>
-                <span className="ml-3 font-semibold text-lg text-slate-900 capitalize">
+                <span className={cn(
+                  "ml-3 font-semibold text-lg capitalize",
+                  isBlueRilis ? "text-white" : "text-slate-900"
+                )}>
                   {currentView === 'account' && t.accountInfo}
                   {currentView === 'activity' && t.activity}
                   {currentView === 'usage' && t.usageLimits}
@@ -576,7 +732,8 @@ export function SettingsModal({
                   {currentView === 'language' && t.language}
                   {currentView === 'delete' && 'Delete'}
                   {currentView === 'share_chat' && (lang === 'id' ? 'Share chat' : 'Share chat')}
-                  {currentView === 'redeem' && (lang === 'id' ? 'Redeem Kode Undangan' : 'Redeem Invite Code')}
+                  {currentView === 'redeem' && t.redeemCode}
+                  {currentView === 'style_app' && t.styleApp}
                 </span>
               </div>
 
@@ -816,21 +973,40 @@ export function SettingsModal({
                     ) : (
                       <div className="grid gap-3.5">
                         {chatSessions.map((session) => (
-                          <div key={session.id} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                            <h4 className="text-base font-bold text-slate-900 truncate leading-tight select-none">
+                          <div 
+                            key={session.id} 
+                            className={cn(
+                              "p-5 rounded-2xl border shadow-sm space-y-3 transition-colors",
+                              isBlueRilis 
+                                ? "bg-slate-900/60 backdrop-blur-xl border-blue-500/30 text-slate-100 shadow-[0_4px_20px_rgba(30,58,138,0.25)]" 
+                                : "bg-white border-slate-200"
+                            )}
+                          >
+                            <h4 className={cn(
+                              "text-base font-bold truncate leading-tight select-none",
+                              isBlueRilis ? "text-blue-100" : "text-slate-900"
+                            )}>
                               {session.title || (lang === 'id' ? "Percakapan baru..." : "New conversation...")}
                             </h4>
-                            <div className="grid sm:grid-cols-2 gap-3 text-xs text-slate-500 pt-2 border-t border-slate-100">
+                            <div className={cn(
+                              "grid sm:grid-cols-2 gap-3 text-xs pt-2 border-t",
+                              isBlueRilis ? "border-blue-500/20 text-slate-400" : "border-slate-100 text-slate-500"
+                            )}>
                               <div className="flex items-center gap-2">
-                                <Clock size={14} className="text-blue-600" />
+                                <Clock size={14} className={isBlueRilis ? "text-blue-400" : "text-blue-600"} />
                                 <span>{lang === 'id' ? 'Dibuat:' : 'Created:'} {formatDate(Number(session.id))}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Calendar size={14} className="text-slate-400" />
+                                <Calendar size={14} className={isBlueRilis ? "text-blue-400/70" : "text-slate-400"} />
                                 <span>{lang === 'id' ? 'Diperbarui:' : 'Updated:'} {formatDate(session.updatedAt || Number(session.id))}</span>
                               </div>
                             </div>
-                            <div className="inline-flex items-center bg-slate-100 px-3 py-1 rounded-full text-xs font-semibold text-slate-700 capitalize">
+                            <div className={cn(
+                              "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold capitalize",
+                              isBlueRilis 
+                                ? "bg-blue-950/60 border border-blue-500/30 text-blue-200" 
+                                : "bg-slate-100 text-slate-700"
+                            )}>
                               Model: {getModelDisplayName(session.model)}
                             </div>
                           </div>
@@ -1535,25 +1711,25 @@ export function SettingsModal({
                   </div>
                 )}
 
-                {/* View: REDEEM KODE UNDANGAN / DEV MODE */}
+                {/* View: REDEEM CODE (Dual Cards: Invite Code & Style Redeem) */}
                 {currentView === 'redeem' && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
                     <div>
-                      <h3 className="text-2xl font-bold text-slate-900 mb-1">
-                        {lang === 'id' ? 'Tukarkan Kode Undangan' : 'Redeem Invite Code'}
+                      <h3 className={cn("text-2xl font-bold mb-1", isBlueRilis ? "text-white" : "text-slate-900")}>
+                        Redeem Code
                       </h3>
-                      <p className="text-slate-500 text-sm">
+                      <p className={cn("text-sm", isBlueRilis ? "text-slate-400" : "text-slate-500")}>
                         {lang === 'id' 
-                          ? 'Aktifkan Mode Development / No Limit di perangkat ini menggunakan invite code resmi.' 
-                          : 'Activate Development Mode / No Limit on this device using an official invite code.'}
+                          ? 'Tukarkan kode untuk Mode Development (No Limit) atau aktifkan Style App eksklusif seperti Blue Rilis Style.' 
+                          : 'Redeem codes for Development Mode (No Limit) or unlock exclusive App Styles such as Blue Rilis Style.'}
                       </p>
                     </div>
 
-                    {/* Status Card */}
+                    {/* CARD 1: INVITE CODE REDEEM (Mode Development / No Limit) */}
                     <div className={cn(
-                      "p-5 rounded-2xl border transition-all shadow-sm space-y-3",
-                      isDevMode 
-                        ? "bg-emerald-50/70 border-emerald-300" 
+                      "p-6 rounded-2xl border transition-all shadow-sm space-y-4",
+                      isBlueRilis 
+                        ? "bg-white/[0.04] backdrop-blur-md border-blue-500/20 text-slate-100" 
                         : "bg-white border-slate-200"
                     )}>
                       <div className="flex items-start justify-between gap-3">
@@ -1561,127 +1737,486 @@ export function SettingsModal({
                           <div className={cn(
                             "p-2.5 rounded-xl border flex-shrink-0 mt-0.5",
                             isDevMode 
-                              ? "bg-emerald-100 border-emerald-200 text-emerald-700" 
-                              : "bg-purple-50 border-purple-100 text-purple-600"
+                              ? (isBlueRilis ? "bg-emerald-500/20 border-emerald-400/40 text-emerald-300" : "bg-emerald-100 border-emerald-200 text-emerald-700")
+                              : (isBlueRilis ? "bg-purple-500/20 border-purple-400/40 text-purple-300" : "bg-purple-50 border-purple-100 text-purple-600")
                           )}>
                             <Key size={22} />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h4 className="font-bold text-slate-900 text-base">
-                                {isDevMode 
-                                  ? (lang === 'id' ? 'Mode Development (No Limit) Aktif' : 'Development Mode (No Limit) Active')
-                                  : (lang === 'id' ? 'Status Mode Development' : 'Development Mode Status')}
+                              <h4 className={cn("font-bold text-base", isBlueRilis ? "text-white" : "text-slate-900")}>
+                                {lang === 'id' ? 'Invite Code Redeem' : 'Invite Code Redeem'}
                               </h4>
                               {isDevMode ? (
-                                <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                                <span className="text-[10px] font-bold uppercase bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                   Aktif
                                 </span>
                               ) : (
-                                <span className="text-[10px] font-semibold uppercase bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full font-mono">
+                                <span className="text-[10px] font-semibold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-mono">
                                   Standar
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                              {isDevMode 
-                                ? (lang === 'id' 
-                                    ? 'Perangkat ini telah terverifikasi dan mode No Limit aktif secara lokal di browser. Obrolan AI berjalan tanpa pengecekan kuota database Supabase.'
-                                    : 'This device is verified and No Limit mode is active locally in this browser. AI chats bypass Supabase quota limits.')
-                                : (lang === 'id'
-                                    ? 'Belum aktif. Masukkan kode undangan 1x pakai di bawah ini untuk mengaktifkan akses tanpa batas pada browser ini.'
-                                    : 'Not active. Enter a 1-time invite code below to unlock unlimited AI chats on this browser.')}
+                            <p className={cn("text-xs mt-1 leading-relaxed", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
+                              {lang === 'id'
+                                ? 'Tukarkan invite code 1x pakai untuk mengaktifkan mode No Limit di browser ini (semua chat AI melewati pengecekan kuota database Supabase).'
+                                : 'Redeem a 1-time invite code to activate No Limit development mode on this browser (bypasses Supabase quota limit checks).'}
                             </p>
                           </div>
                         </div>
                       </div>
 
                       {isDevMode && (
-                        <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between flex-wrap gap-2">
-                          <span className="text-xs font-mono text-emerald-800">
-                            localStorage: <code className="bg-emerald-100 px-1.5 py-0.5 rounded text-[11px]">tmpa_dev_mode = 'true'</code>
+                        <div className={cn(
+                          "pt-3 border-t flex items-center justify-between flex-wrap gap-2",
+                          isBlueRilis ? "border-emerald-500/20 text-emerald-300" : "border-emerald-200/60 text-emerald-800"
+                        )}>
+                          <span className="text-xs font-mono">
+                            Status: <code className={cn("px-1.5 py-0.5 rounded text-[11px]", isBlueRilis ? "bg-emerald-950/60 border border-emerald-500/30 text-emerald-300" : "bg-emerald-100")}>tmpa_dev_mode = 'true'</code>
                           </span>
                           <button
                             type="button"
                             onClick={handleDeactivateDevMode}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 transition-colors cursor-pointer"
+                            className={cn(
+                              "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer",
+                              isBlueRilis 
+                                ? "bg-rose-950/40 text-rose-300 border-rose-500/30 hover:bg-rose-900/50" 
+                                : "bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200"
+                            )}
                           >
                             {lang === 'id' ? 'Nonaktifkan Mode Dev' : 'Deactivate Dev Mode'}
                           </button>
                         </div>
                       )}
+
+                      {/* Input Invite Code Form */}
+                      <div className="space-y-3 pt-1">
+                        <div>
+                          <label className={cn("text-xs font-bold uppercase tracking-wider block mb-2", isBlueRilis ? "text-slate-300" : "text-slate-700")}>
+                            {lang === 'id' ? 'Masukkan Kode Undangan (Invite Code)' : 'Enter Invite Code'}
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={redeemCodeInput}
+                              onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !redeemLoading && redeemCodeInput.trim()) {
+                                  submitRedeemCode(redeemCodeInput);
+                                }
+                              }}
+                              placeholder="Contoh: DEV-XXXX-XXXX"
+                              className={cn(
+                                "flex-1 rounded-xl px-4 py-3 font-mono text-sm tracking-widest uppercase outline-none transition-all",
+                                isBlueRilis
+                                  ? "bg-slate-900/60 border border-blue-500/30 text-white placeholder-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                                  : "bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20"
+                              )}
+                              disabled={redeemLoading}
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const clipText = await navigator.clipboard.readText();
+                                  if (clipText) setRedeemCodeInput(clipText.trim().toUpperCase());
+                                } catch {}
+                              }}
+                              className={cn(
+                                "px-3.5 py-3 rounded-xl font-semibold text-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5",
+                                isBlueRilis
+                                  ? "bg-white/[0.08] hover:bg-white/[0.14] text-slate-200 border border-white/10"
+                                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                              )}
+                              title="Tempel dari Clipboard"
+                            >
+                              <Copy size={14} />
+                              <span>Paste</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {redeemError && (
+                          <div className={cn(
+                            "p-3 rounded-xl text-xs flex items-center gap-2 border",
+                            isBlueRilis 
+                              ? "bg-rose-950/40 border-rose-500/30 text-rose-300" 
+                              : "bg-rose-50 border-rose-200 text-rose-700"
+                          )}>
+                            <AlertCircle size={15} className="shrink-0 text-rose-500" />
+                            <span>{redeemError}</span>
+                          </div>
+                        )}
+
+                        {redeemSuccessMsg && (
+                          <div className={cn(
+                            "p-3 rounded-xl text-xs flex items-center gap-2 border",
+                            isBlueRilis 
+                              ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300" 
+                              : "bg-emerald-50 border-emerald-200 text-emerald-800"
+                          )}>
+                            <Check size={15} className="shrink-0 text-emerald-500 stroke-[3]" />
+                            <span>{redeemSuccessMsg}</span>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => submitRedeemCode(redeemCodeInput)}
+                          disabled={redeemLoading || !redeemCodeInput.trim()}
+                          className={cn(
+                            "w-full py-3 px-5 rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+                            isBlueRilis
+                              ? "bg-purple-600/80 hover:bg-purple-600 text-white border border-purple-400/30 shadow-[0_0_15px_rgba(168,85,247,0.3)]"
+                              : "bg-purple-600 hover:bg-purple-700 text-white"
+                          )}
+                        >
+                          {redeemLoading ? (
+                            <>
+                              <Loader2 size={16} className="animate-spin" />
+                              <span>{lang === 'id' ? 'Memvalidasi Invite Code...' : 'Validating Invite Code...'}</span>
+                            </>
+                          ) : (
+                            <>
+                              <Key size={16} />
+                              <span>{lang === 'id' ? 'Redeem Invite Code (No Limit)' : 'Redeem Invite Code (No Limit)'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
 
-                    {/* Input Redeem Form */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-                      <div>
-                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block mb-2">
-                          {lang === 'id' ? 'Masukkan Kode Undangan (Invite Code)' : 'Enter Invite Code'}
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={redeemCodeInput}
-                            onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter' && !redeemLoading && redeemCodeInput.trim()) {
-                                submitRedeemCode(redeemCodeInput);
-                              }
-                            }}
-                            placeholder="Contoh: DEV-XXXX-XXXX"
-                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-mono text-sm tracking-widest placeholder-slate-400 uppercase focus:bg-white focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none transition-all"
-                            disabled={redeemLoading}
-                          />
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              try {
-                                const clipText = await navigator.clipboard.readText();
-                                if (clipText) setRedeemCodeInput(clipText.trim().toUpperCase());
-                              } catch {}
-                            }}
-                            className="px-3.5 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5"
-                            title="Tempel dari Clipboard"
-                          >
-                            <Copy size={14} />
-                            <span>Paste</span>
-                          </button>
+                    {/* CARD 2: STYLE REDEEM (STLEY REDEEM) */}
+                    <div className={cn(
+                      "p-6 rounded-2xl border transition-all shadow-sm space-y-4",
+                      isBlueRilis 
+                        ? "bg-white/[0.04] backdrop-blur-md border-blue-500/20 text-slate-100" 
+                        : "bg-white border-slate-200"
+                    )}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3.5">
+                          <div className={cn(
+                            "p-2.5 rounded-xl border flex-shrink-0 mt-0.5",
+                            unlockedStyles.includes('blue_rilis')
+                              ? (isBlueRilis ? "bg-blue-500/20 border-blue-400/40 text-blue-300" : "bg-blue-50 border-blue-200 text-blue-600")
+                              : (isBlueRilis ? "bg-white/[0.06] border-white/10 text-slate-300" : "bg-slate-100 border-slate-200 text-slate-500")
+                          )}>
+                            <Palette size={22} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className={cn("font-bold text-base", isBlueRilis ? "text-white" : "text-slate-900")}>
+                                {lang === 'id' ? 'Style Redeem (Stley Redeem)' : 'Style Redeem (Theme Unlock)'}
+                              </h4>
+                              {unlockedStyles.includes('blue_rilis') ? (
+                                <span className="text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-700 px-2.5 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                                  <Sparkles size={11} className="text-blue-500" />
+                                  Blue Rilis Terbuka
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-semibold uppercase bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-mono">
+                                  Perlu Kode
+                                </span>
+                              )}
+                            </div>
+                            <p className={cn("text-xs mt-1 leading-relaxed", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
+                              {lang === 'id'
+                                ? 'Tukarkan kode redeem style untuk membuka tema eksklusif Blue Rilis Style (efek Glass Matte, background hitam kebiruan gelap, dan sinar biru).'
+                                : 'Redeem a style code to unlock exclusive themes like Blue Rilis Style (Glass Matte surfaces, deep dark blue tones, and glowing blue accents).'}
+                            </p>
+                          </div>
                         </div>
                       </div>
 
-                      {redeemError && (
-                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                          <AlertCircle size={15} className="shrink-0 text-rose-600" />
-                          <span>{redeemError}</span>
+                      {/* Input Style Code Form */}
+                      <div className="space-y-3 pt-1">
+                        <div>
+                          <label className={cn("text-xs font-bold uppercase tracking-wider block mb-2", isBlueRilis ? "text-slate-300" : "text-slate-700")}>
+                            {lang === 'id' ? 'Masukkan Kode Redeem Style (Stley Code)' : 'Enter Style Redeem Code'}
+                          </label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={styleCodeInput}
+                              onChange={(e) => setStyleCodeInput(e.target.value.toUpperCase())}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !styleRedeemLoading && styleCodeInput.trim()) {
+                                  submitStyleRedeem(styleCodeInput);
+                                }
+                              }}
+                              placeholder="Contoh: BFNEON2026 / BLUERILIS"
+                              className={cn(
+                                "flex-1 rounded-xl px-4 py-3 font-mono text-sm tracking-widest uppercase outline-none transition-all",
+                                isBlueRilis
+                                  ? "bg-slate-900/60 border border-blue-500/30 text-white placeholder-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
+                                  : "bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-500/20"
+                              )}
+                              disabled={styleRedeemLoading}
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const clipText = await navigator.clipboard.readText();
+                                  if (clipText) setStyleCodeInput(clipText.trim().toUpperCase());
+                                } catch {}
+                              }}
+                              className={cn(
+                                "px-3.5 py-3 rounded-xl font-semibold text-xs transition-colors cursor-pointer shrink-0 flex items-center gap-1.5",
+                                isBlueRilis
+                                  ? "bg-white/[0.08] hover:bg-white/[0.14] text-slate-200 border border-white/10"
+                                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+                              )}
+                              title="Tempel dari Clipboard"
+                            >
+                              <Copy size={14} />
+                              <span>Paste</span>
+                            </button>
+                          </div>
                         </div>
-                      )}
 
-                      {redeemSuccessMsg && (
-                        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
-                          <Check size={15} className="shrink-0 text-emerald-600 stroke-[3]" />
-                          <span>{redeemSuccessMsg}</span>
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => submitRedeemCode(redeemCodeInput)}
-                        disabled={redeemLoading || !redeemCodeInput.trim()}
-                        className="w-full py-3.5 px-5 rounded-xl font-semibold text-sm text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        {redeemLoading ? (
-                          <>
-                            <Loader2 size={16} className="animate-spin" />
-                            <span>{lang === 'id' ? 'Memvalidasi Kode...' : 'Validating Code...'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles size={16} />
-                            <span>{lang === 'id' ? 'Redeem Kode & Aktifkan No Limit' : 'Redeem Code & Activate No Limit'}</span>
-                          </>
+                        {styleRedeemError && (
+                          <div className={cn(
+                            "p-3 rounded-xl text-xs flex items-center gap-2 border",
+                            isBlueRilis 
+                              ? "bg-rose-950/40 border-rose-500/30 text-rose-300" 
+                              : "bg-rose-50 border-rose-200 text-rose-700"
+                          )}>
+                            <AlertCircle size={15} className="shrink-0 text-rose-500" />
+                            <span>{styleRedeemError}</span>
+                          </div>
                         )}
-                      </button>
+
+                        {styleRedeemSuccessMsg && (
+                          <div className={cn(
+                            "p-3 rounded-xl text-xs flex items-center justify-between gap-2 border",
+                            isBlueRilis 
+                              ? "bg-blue-950/40 border-blue-500/30 text-blue-200" 
+                              : "bg-blue-50 border-blue-200 text-blue-800"
+                          )}>
+                            <div className="flex items-center gap-2">
+                              <Sparkles size={16} className="shrink-0 text-blue-500" />
+                              <span>{styleRedeemSuccessMsg}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCurrentView('style_app')}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors shrink-0"
+                            >
+                              Lihat Style App
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="flex flex-col sm:flex-row gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => submitStyleRedeem(styleCodeInput)}
+                            disabled={styleRedeemLoading || !styleCodeInput.trim()}
+                            className={cn(
+                              "flex-1 py-3 px-5 rounded-xl font-semibold text-sm transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed",
+                              isBlueRilis
+                                ? "bg-blue-600/80 hover:bg-blue-500 text-white border border-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.35)]"
+                                : "bg-blue-600 hover:bg-blue-700 text-white"
+                            )}
+                          >
+                            {styleRedeemLoading ? (
+                              <>
+                                <Loader2 size={16} className="animate-spin" />
+                                <span>{lang === 'id' ? 'Memvalidasi Style Code...' : 'Validating Style Code...'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles size={16} />
+                                <span>{lang === 'id' ? 'Redeem Style (Klaim Style)' : 'Redeem Style Code'}</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setCurrentView('style_app')}
+                            className={cn(
+                              "py-3 px-4 rounded-xl font-semibold text-xs transition-all border flex items-center justify-center gap-1.5 cursor-pointer shrink-0",
+                              isBlueRilis
+                                ? "bg-white/[0.06] hover:bg-white/[0.12] text-slate-200 border-white/10"
+                                : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200"
+                            )}
+                          >
+                            <Palette size={15} />
+                            <span>{lang === 'id' ? 'Buka Style App' : 'Open Style App'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* View: STYLE APP (Pilihan Tema: Normal Style & Blue Rilis Style) */}
+                {currentView === 'style_app' && (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div>
+                      <h3 className={cn("text-2xl font-bold mb-1", isBlueRilis ? "text-white" : "text-slate-900")}>
+                        {lang === 'id' ? 'Pengaturan Style App' : 'Style App Settings'}
+                      </h3>
+                      <p className={cn("text-sm", isBlueRilis ? "text-slate-400" : "text-slate-500")}>
+                        {lang === 'id'
+                          ? 'Pilih gaya tampilan visual antarmuka aplikasi. Blue Rilis Style membutuhkan penukaran kode di Style Redeem.'
+                          : 'Choose your application visual interface appearance. Blue Rilis Style requires redeeming a code in Style Redeem.'}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* 1. NORMAL STYLE (DEFAULT) */}
+                      <div className={cn(
+                        "p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4",
+                        currentAppStyle === 'normal'
+                          ? "ring-2 ring-blue-500/40 border-blue-500 bg-blue-50/20"
+                          : (isBlueRilis ? "bg-white/[0.04] backdrop-blur-md border-blue-500/15" : "bg-white border-slate-200")
+                      )}>
+                        <div className="space-y-3">
+                          {/* Mini Preview Box */}
+                          <div className="h-28 rounded-xl bg-slate-100 border border-slate-200 p-3 flex flex-col justify-between overflow-hidden relative shadow-inner">
+                            <div className="flex items-center justify-between">
+                              <div className="h-2.5 w-16 bg-slate-300 rounded-full" />
+                              <div className="h-4 w-4 bg-blue-500 rounded-md" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <div className="h-2 w-3/4 bg-slate-200 rounded-full" />
+                              <div className="h-2 w-1/2 bg-slate-200 rounded-full" />
+                            </div>
+                            <div className="h-6 w-full bg-white border border-slate-300 rounded-lg flex items-center px-2 justify-between">
+                              <div className="h-1.5 w-20 bg-slate-200 rounded-full" />
+                              <div className="h-3.5 w-3.5 bg-blue-600 rounded-md" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className={cn("font-bold text-base", isBlueRilis ? "text-white" : "text-slate-900")}>
+                                1. Normal Style
+                              </h4>
+                              <span className="text-[10px] font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full font-mono">
+                                Default
+                              </span>
+                            </div>
+                            <p className={cn("text-xs mt-1.5 leading-relaxed", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
+                              {lang === 'id'
+                                ? 'Style aplikasi pada umumnya, tampilan bawaan bersih dan netral tanpa modifikasi khusus.'
+                                : 'Standard app style, clean and light default interface.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectAppStyle('normal')}
+                          disabled={currentAppStyle === 'normal'}
+                          className={cn(
+                            "w-full py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                            currentAppStyle === 'normal'
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 cursor-default"
+                              : "bg-slate-900 hover:bg-slate-800 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs"
+                          )}
+                        >
+                          {currentAppStyle === 'normal' ? (
+                            <>
+                              <Check size={14} className="stroke-[3]" />
+                              <span>{lang === 'id' ? 'Aktif Saat Ini' : 'Currently Active'}</span>
+                            </>
+                          ) : (
+                            <span>{lang === 'id' ? 'Terapkan Normal Style' : 'Apply Normal Style'}</span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* 2. BLUE RILIS STYLE (EKSKLUSIF) */}
+                      <div className={cn(
+                        "p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4",
+                        currentAppStyle === 'blue_rilis'
+                          ? "ring-2 ring-blue-500/50 border-blue-400 bg-blue-950/30"
+                          : (isBlueRilis ? "bg-white/[0.04] backdrop-blur-md border-blue-500/15" : "bg-white border-slate-200")
+                      )}>
+                        <div className="space-y-3">
+                          {/* Mini Preview Box (Blue Rilis with Glass Matte & Blue Halo) */}
+                          <div className="h-28 rounded-xl bg-[#070b14] border border-blue-500/30 p-3 flex flex-col justify-between overflow-hidden relative shadow-[0_0_20px_rgba(37,99,235,0.25)]">
+                            <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none" />
+                            <div className="flex items-center justify-between relative z-1">
+                              <div className="h-2.5 w-16 bg-blue-300/40 rounded-full" />
+                              <div className="h-4 w-4 bg-blue-500/60 border border-blue-400/40 rounded-md backdrop-blur-xs" />
+                            </div>
+                            <div className="space-y-1.5 relative z-1">
+                              <div className="h-2 w-3/4 bg-blue-200/20 rounded-full" />
+                              <div className="h-2 w-1/2 bg-blue-200/15 rounded-full" />
+                            </div>
+                            {/* Glass Matte Input Preview with Blue Halo Glow */}
+                            <div className="h-6 w-full bg-white/[0.08] backdrop-blur-md border border-blue-400/30 rounded-lg flex items-center px-2 justify-between relative shadow-[0_4px_12px_rgba(37,99,235,0.4)]">
+                              <div className="h-1.5 w-20 bg-blue-200/30 rounded-full" />
+                              <div className="h-3.5 w-3.5 bg-blue-500/70 border border-blue-300/40 rounded-md shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                              <div className="absolute -bottom-0.5 inset-x-2 h-1 bg-blue-500/70 blur-xs rounded-full" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className={cn("font-bold text-base", isBlueRilis ? "text-white" : "text-slate-900")}>
+                                2. Blue Rilis Style
+                              </h4>
+                              <span className="text-[10px] font-bold uppercase bg-blue-500/20 text-blue-400 border border-blue-400/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                                <Sparkles size={11} className="text-blue-400" />
+                                Glass Matte
+                              </span>
+                            </div>
+                            <p className={cn("text-xs mt-1.5 leading-relaxed", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
+                              {lang === 'id'
+                                ? 'Background hitam kebiruan gelap, input & tombol Glass Matte dengan sinar biru menyala, serta panel frosted eksklusif.'
+                                : 'Deep dark blue backdrop, glass matte input & send button with glowing blue halo, and frosted UI surfaces.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {unlockedStyles.includes('blue_rilis') ? (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectAppStyle('blue_rilis')}
+                            disabled={currentAppStyle === 'blue_rilis'}
+                            className={cn(
+                              "w-full py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                              currentAppStyle === 'blue_rilis'
+                                ? "bg-blue-600/30 text-blue-300 border border-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.3)] cursor-default"
+                                : "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+                            )}
+                          >
+                            {currentAppStyle === 'blue_rilis' ? (
+                              <>
+                                <Check size={14} className="stroke-[3]" />
+                                <span>{lang === 'id' ? 'Aktif Saat Ini' : 'Currently Active'}</span>
+                              </>
+                            ) : (
+                              <span>{lang === 'id' ? 'Terapkan Blue Rilis Style' : 'Apply Blue Rilis Style'}</span>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-xl">
+                              <span className="flex items-center gap-1.5">
+                                <Lock size={12} />
+                                {lang === 'id' ? 'Style ini terkunci' : 'Style is locked'}
+                              </span>
+                              <span className="font-mono text-[10px]">Perlu Redeem</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setCurrentView('redeem')}
+                              className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                            >
+                              <Sparkles size={14} />
+                              <span>{lang === 'id' ? 'Tukarkan di Style Redeem' : 'Redeem in Style Redeem'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}

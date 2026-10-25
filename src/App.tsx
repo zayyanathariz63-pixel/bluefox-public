@@ -78,6 +78,7 @@ import {
 } from './lib/reasoning';
 import { safeSaveSessionsToLocal, autoPurgeMediaIfStorageFull } from './lib/storageManager';
 import { ShareMode, parseSharedDataFromUrl, getSharedChatsRegistry } from './lib/shareChat';
+import { getAppStyle, AppStyle } from './lib/styleManager';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -382,13 +383,27 @@ export default function App() {
     return false;
   });
 
+  // Status Gaya Tampilan Aplikasi (Normal vs Blue Rilis)
+  const [appStyle, setAppStyle] = useState<AppStyle>(() => getAppStyle());
+
   useEffect(() => {
     const syncDevMode = () => {
       setIsDevMode(localStorage.getItem('tmpa_dev_mode') === 'true');
     };
+    const syncAppStyle = () => {
+      setAppStyle(getAppStyle());
+    };
     window.addEventListener('storage', syncDevMode);
-    return () => window.removeEventListener('storage', syncDevMode);
+    window.addEventListener('storage', syncAppStyle);
+    window.addEventListener('tmpa_app_style_changed', syncAppStyle);
+    return () => {
+      window.removeEventListener('storage', syncDevMode);
+      window.removeEventListener('storage', syncAppStyle);
+      window.removeEventListener('tmpa_app_style_changed', syncAppStyle);
+    };
   }, []);
+
+  const isBlueRilis = appStyle === 'blue_rilis';
 
   const [usageEvents, setUsageEvents] = useState<{h: number, w: number, ts: number}[]>(() => {
     try {
@@ -3114,21 +3129,50 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       )}
       
       {!showSplash && !authChecking && !authError && appState === 'chat' && (
-        <div className="flex flex-col h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-blue-600/20 overflow-hidden relative app-clean-grid">
+        <div className={cn(
+          "flex flex-col h-screen font-sans selection:bg-blue-600/20 overflow-hidden relative transition-colors",
+          isBlueRilis 
+            ? "bg-[#070b14] text-slate-100" 
+            : "bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 app-clean-grid"
+        )}>
+          {/* Subtle light & dark blue backdrop glow for Blue Rilis Home */}
+          {isBlueRilis && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
+              <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[650px] h-[350px] bg-gradient-to-b from-blue-600/20 via-cyan-500/10 to-transparent blur-3xl rounded-full" />
+              <div className="absolute -bottom-40 right-10 w-[500px] h-[350px] bg-gradient-to-t from-blue-900/30 via-blue-800/10 to-transparent blur-3xl rounded-full" />
+              <div className="absolute -bottom-40 left-10 w-[500px] h-[350px] bg-gradient-to-t from-indigo-950/25 via-sky-900/10 to-transparent blur-3xl rounded-full" />
+            </div>
+          )}
+
         {/* Header */}
-      <header className="sticky top-0 z-20 bg-white/90 dark:bg-slate-950/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 shadow-xs">
+        <header className={cn(
+          "sticky top-0 z-20 backdrop-blur-xl shadow-xs transition-colors",
+          isBlueRilis 
+            ? "bg-[#090f1d]/85 border-b border-blue-500/25 text-white" 
+            : "bg-white/90 dark:bg-slate-950/90 border-b border-slate-200/80 dark:border-slate-800/80"
+        )}>
         <div className="max-w-5xl mx-auto px-3 md:px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-1">
             <button 
               onClick={() => setIsSidebarOpen(true)}
-              className="w-10 h-10 -ml-2 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              className={cn(
+                "w-10 h-10 -ml-2 rounded-xl flex items-center justify-center transition-colors cursor-pointer",
+                isBlueRilis 
+                  ? "text-slate-300 hover:text-white hover:bg-slate-800/60" 
+                  : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              )}
               title={lang === 'id' ? "Buka Menu & Riwayat" : "Open Menu"}
             >
               <Menu size={20} />
             </button>
             <button 
               onClick={startNewChat}
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+              className={cn(
+                "w-10 h-10 rounded-xl flex items-center justify-center transition-colors cursor-pointer",
+                isBlueRilis 
+                  ? "text-slate-300 hover:text-white hover:bg-slate-800/60" 
+                  : "text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60"
+              )}
               title={lang === 'id' ? "Percakapan Baru" : "New Chat"}
             >
               <SquarePen size={18} />
@@ -3149,7 +3193,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               return (
                 <div 
                   onClick={() => setIsModelSelectorOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-200 active:scale-95 shadow-xs"
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-1.5 rounded-full transition-colors cursor-pointer text-xs font-semibold active:scale-95 shadow-xs",
+                    isBlueRilis 
+                      ? "bg-slate-900/80 hover:bg-slate-850 border border-blue-500/30 text-slate-200" 
+                      : "bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200"
+                  )}
                   title="Pilih Model AI & Smart Select"
                 >
                   <span className="flex items-center gap-1.5">
@@ -3440,6 +3489,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               disabled={isUsageLimitReached}
               onOpenMotionManual={() => setIsMotionManualModalOpen(true)}
               onOpenMotionPanel={() => setIsMotionPanelOpen(true)}
+              appStyle={appStyle}
             />
           </>
         )}
@@ -3473,7 +3523,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 bottom-0 w-[280px] bg-white border-r border-slate-200 z-50 flex flex-col text-slate-900 shadow-2xl"
+              className={cn(
+                "fixed top-0 left-0 bottom-0 w-[280px] z-50 flex flex-col shadow-2xl transition-colors",
+                isBlueRilis 
+                  ? "bg-[#090f1d]/90 backdrop-blur-2xl border-r border-blue-500/20 text-slate-100 shadow-[0_0_50px_rgba(15,23,42,0.8)]" 
+                  : "bg-white border-r border-slate-200 text-slate-900"
+              )}
             >
               <div className="p-4 pt-6 flex-1 flex flex-col gap-1 overflow-y-auto">
                 {/* 1. BAGIAN ATAS: Chat Baru & Menu Utama (Store, MCP, Web Utama, Setting) */}
@@ -3653,7 +3708,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               </div>
 
               {/* 3. BAGIAN BAWAH: Profil User & Logout */}
-              <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex flex-col gap-3">
+              <div className={cn(
+                "p-4 border-t flex flex-col gap-3 transition-colors",
+                isBlueRilis ? "border-blue-500/20 bg-slate-900/60" : "border-slate-200 bg-slate-50/50"
+              )}>
                 <div className="flex items-center gap-3 px-2">
                   <UserGradientAvatar 
                     userId={user?.id}
@@ -3664,14 +3722,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   />
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-1">
-                      <span className="text-sm font-semibold text-slate-900 truncate">
+                      <span className={cn(
+                        "text-sm font-semibold truncate",
+                        isBlueRilis ? "text-slate-100" : "text-slate-900"
+                      )}>
                         {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                       </span>
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-600 shrink-0">
+                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500 shrink-0">
                         {userTier}
                       </span>
                     </div>
-                    <span className="text-xs text-slate-500 truncate" title={user?.email || ''}>
+                    <span className={cn(
+                      "text-xs truncate",
+                      isBlueRilis ? "text-slate-400" : "text-slate-500"
+                    )} title={user?.email || ''}>
                       {user?.email || 'user@tmpa.example'}
                     </span>
                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -3706,13 +3770,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       setIsChooseAccountOpen(true);
                       setIsSidebarOpen(false);
                     }}
-                    className="flex items-center justify-between w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-slate-700 hover:text-blue-700 transition-all text-sm font-semibold cursor-pointer shadow-2xs group"
+                    className={cn(
+                      "flex items-center justify-between w-full px-3.5 py-2.5 rounded-xl border text-sm font-semibold cursor-pointer shadow-2xs group transition-all",
+                      isBlueRilis 
+                        ? "border-blue-500/30 bg-slate-800/60 hover:bg-slate-750 text-slate-200 hover:text-white" 
+                        : "border-slate-200 bg-white hover:bg-blue-50/70 hover:border-blue-300 text-slate-700 hover:text-blue-700"
+                    )}
                   >
                     <div className="flex items-center gap-2.5">
-                      <Users size={17} className="text-blue-600 group-hover:scale-110 transition-transform" />
+                      <Users size={17} className="text-blue-500 group-hover:scale-110 transition-transform" />
                       <span>{lang === 'id' ? 'Chos account' : 'Choose account'}</span>
                     </div>
-                    <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-600 -rotate-90 transition-transform" />
+                    <ChevronDown size={15} className="text-slate-400 group-hover:text-blue-500 -rotate-90 transition-transform" />
                   </button>
 
                   {/* 2. Logout pada umumnya */}
@@ -4607,6 +4676,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           });
         }}
         onDevModeChange={(active) => setIsDevMode(active)}
+        appStyle={appStyle}
       />
 
       <ConnectorsModal

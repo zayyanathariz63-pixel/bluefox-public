@@ -9,6 +9,7 @@ import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/
 import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompressor';
 import { extractTextFromPdf } from '../lib/pdfReader';
 import { MOTION_PRESETS } from '../lib/motion';
+import { getAppStyle, AppStyle } from '../lib/styleManager';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[]) => void;
@@ -24,6 +25,7 @@ interface ChatInputProps {
   disabled?: boolean;
   onOpenMotionManual?: () => void;
   onOpenMotionPanel?: () => void;
+  appStyle?: AppStyle;
 }
 
 interface CustomErrorModal {
@@ -52,9 +54,32 @@ export function ChatInput({
   isVisionActive,
   disabled,
   onOpenMotionManual,
-  onOpenMotionPanel
+  onOpenMotionPanel,
+  appStyle: propAppStyle
 }: ChatInputProps) {
   const { lang, t } = useLanguage();
+  const [currentStyle, setCurrentStyle] = useState<AppStyle>(() => propAppStyle || getAppStyle());
+
+  useEffect(() => {
+    if (propAppStyle) {
+      setCurrentStyle(propAppStyle);
+    }
+  }, [propAppStyle]);
+
+  useEffect(() => {
+    const handleStyleChange = () => {
+      setCurrentStyle(getAppStyle());
+    };
+    window.addEventListener('tmpa_app_style_changed', handleStyleChange);
+    window.addEventListener('storage', handleStyleChange);
+    return () => {
+      window.removeEventListener('tmpa_app_style_changed', handleStyleChange);
+      window.removeEventListener('storage', handleStyleChange);
+    };
+  }, []);
+
+  const isBlueRilis = currentStyle === 'blue_rilis';
+
   const [input, setInput] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -923,14 +948,23 @@ export function ChatInput({
         <AnimatePresence>
           {isPopupOpen && (
             <motion.div
+              ref={popupRef}
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
               transition={{ duration: 0.15 }}
-              className="absolute bottom-full left-0 mb-3 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col backdrop-blur-xl text-slate-900"
+              className={cn(
+                "absolute bottom-full left-0 mb-3 w-72 rounded-2xl shadow-2xl z-20 overflow-hidden flex flex-col backdrop-blur-xl border transition-colors",
+                isBlueRilis 
+                  ? "bg-[#090f1d]/95 border-blue-500/30 text-slate-100 shadow-[0_8px_32px_rgba(15,23,42,0.9)]" 
+                  : "bg-white border-slate-200 text-slate-900"
+              )}
             >
               {/* Opsi 1: Upload File Lengkap (Foto, Video, Audio, Dokumen) */}
-              <div className="p-2 border-b border-slate-100 bg-slate-50/70">
+              <div className={cn(
+                "p-2 border-b",
+                isBlueRilis ? "border-blue-500/20 bg-slate-900/60" : "border-slate-100 bg-slate-50/70"
+              )}>
                 <button
                   type="button"
                   onClick={() => {
@@ -941,8 +975,8 @@ export function ChatInput({
                   className={cn(
                     "w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
                     attachedMediaList.length >= 5
-                      ? "opacity-50 cursor-not-allowed bg-slate-100 border-transparent text-slate-400"
-                      : "hover:bg-blue-50 border-blue-200 bg-blue-50/50"
+                      ? (isBlueRilis ? "opacity-50 cursor-not-allowed bg-slate-900/40 border-transparent text-slate-500" : "opacity-50 cursor-not-allowed bg-slate-100 border-transparent text-slate-400")
+                      : (isBlueRilis ? "hover:bg-blue-900/40 border-blue-500/30 bg-blue-950/40 text-blue-200" : "hover:bg-blue-50 border-blue-200 bg-blue-50/50")
                   )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -950,15 +984,24 @@ export function ChatInput({
                       <Upload size={16} />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
+                      <div className={cn(
+                        "text-xs font-semibold transition-colors truncate",
+                        isBlueRilis ? "text-slate-100 group-hover:text-blue-300" : "text-slate-900 group-hover:text-blue-700"
+                      )}>
                         Pilih File dari Perangkat
                       </div>
-                      <div className="text-[10px] text-slate-500 truncate">
+                      <div className={cn(
+                        "text-[10px] truncate",
+                        isBlueRilis ? "text-slate-400" : "text-slate-500"
+                      )}>
                         PDF, WebP, PNG, GIF, TXT, MD, JSON, YAML, Kode
                       </div>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold text-cyan-700 bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 rounded-full shrink-0">
+                  <span className={cn(
+                    "text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0",
+                    isBlueRilis ? "text-cyan-300 bg-cyan-950/60 border-cyan-500/30" : "text-cyan-700 bg-cyan-50 border-cyan-200"
+                  )}>
                     File Pilihan
                   </span>
                 </button>
@@ -973,53 +1016,91 @@ export function ChatInput({
                     setMotionModeType('prompt');
                     textareaRef.current?.focus();
                   }}
-                  className="w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border border-blue-200/80 bg-blue-50/50 hover:bg-blue-50 transition-all text-left group cursor-pointer"
+                  className={cn(
+                    "w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
+                    isBlueRilis 
+                      ? "border-blue-500/30 bg-blue-950/40 hover:bg-blue-900/40" 
+                      : "border-blue-200/80 bg-blue-50/50 hover:bg-blue-50"
+                  )}
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
                       <Film size={16} />
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold text-slate-900 group-hover:text-blue-700 transition-colors truncate">
+                      <div className={cn(
+                        "text-xs font-semibold transition-colors truncate",
+                        isBlueRilis ? "text-slate-100 group-hover:text-blue-300" : "text-slate-900 group-hover:text-blue-700"
+                      )}>
                         Bluefox Motion
                       </div>
-                      <div className="text-[10px] text-slate-500 truncate">
+                      <div className={cn(
+                        "text-[10px] truncate",
+                        isBlueRilis ? "text-slate-400" : "text-slate-500"
+                      )}>
                         Animasi @motion & Kode Manual
                       </div>
                     </div>
                   </div>
-                  <span className="text-[10px] font-bold text-blue-700 bg-blue-100/70 border border-blue-200 px-1.5 py-0.5 rounded-full shrink-0">
+                  <span className={cn(
+                    "text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0",
+                    isBlueRilis ? "text-blue-300 bg-blue-950/60 border-blue-500/30" : "text-blue-700 bg-blue-100/70 border-blue-200"
+                  )}>
                     @motion
                   </span>
                 </button>
               </div>
 
               {/* Opsi 2: Daftar Konektor Aktif */}
-              <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Konektor Eksternal</span>
-                <span className="text-[10px] text-slate-500 font-medium">{activeConnectors.length} Aktif</span>
+              <div className={cn(
+                "px-3 py-2 border-b flex items-center justify-between",
+                isBlueRilis ? "bg-slate-900/80 border-blue-500/20" : "bg-slate-50 border-slate-100"
+              )}>
+                <span className={cn(
+                  "text-[11px] font-semibold uppercase tracking-wider",
+                  isBlueRilis ? "text-slate-400" : "text-slate-500"
+                )}>Konektor Eksternal</span>
+                <span className={cn(
+                  "text-[10px] font-medium",
+                  isBlueRilis ? "text-slate-400" : "text-slate-500"
+                )}>{activeConnectors.length} Aktif</span>
               </div>
 
-              <div className="max-h-[160px] overflow-y-auto w-full divide-y divide-slate-100">
+              <div className={cn(
+                "max-h-[160px] overflow-y-auto w-full divide-y",
+                isBlueRilis ? "divide-blue-500/10" : "divide-slate-100"
+              )}>
                 {activeConnectors.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-500">
+                  <div className={cn(
+                    "p-4 text-center text-xs",
+                    isBlueRilis ? "text-slate-400" : "text-slate-500"
+                  )}>
                     Belum ada konektor yang aktif.
                   </div>
                 ) : (
                   activeConnectors.map(connector => (
-                    <div key={connector.id} className="flex items-center justify-between px-3 py-2 hover:bg-slate-50 transition-colors">
+                    <div key={connector.id} className={cn(
+                      "flex items-center justify-between px-3 py-2 transition-colors",
+                      isBlueRilis ? "hover:bg-slate-800/50" : "hover:bg-slate-50"
+                    )}>
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <div className="w-5 h-5 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-600 shrink-0">
+                        <div className={cn(
+                          "w-5 h-5 rounded border flex items-center justify-center text-[9px] font-bold shrink-0",
+                          isBlueRilis ? "bg-slate-800 border-blue-500/30 text-blue-300" : "bg-slate-100 border-slate-200 text-slate-600"
+                        )}>
                           {connector.name.substring(0, 2).toUpperCase()}
                         </div>
-                        <span className="text-xs text-slate-800 font-medium truncate">{connector.name}</span>
+                        <span className={cn(
+                          "text-xs font-medium truncate",
+                          isBlueRilis ? "text-slate-200" : "text-slate-800"
+                        )}>{connector.name}</span>
                       </div>
                       <button
                         type="button"
                         onClick={() => onToggleConnector(connector.id)}
                         className={cn(
                           "relative inline-flex h-4 w-7 items-center rounded-full transition-colors shrink-0 cursor-pointer",
-                          connector.isActive ? "bg-blue-600" : "bg-slate-300"
+                          connector.isActive ? "bg-blue-600" : (isBlueRilis ? "bg-slate-700" : "bg-slate-300")
                         )}
                       >
                         <span
@@ -1040,7 +1121,12 @@ export function ChatInput({
                   setIsPopupOpen(false);
                   onShowAllConnectors();
                 }}
-                className="flex items-center justify-center gap-2 p-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors border-t border-slate-100 cursor-pointer"
+                className={cn(
+                  "flex items-center justify-center gap-2 p-2.5 text-xs font-semibold transition-colors border-t cursor-pointer",
+                  isBlueRilis 
+                    ? "text-slate-300 hover:text-white hover:bg-slate-800/60 border-blue-500/20" 
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-50 border-slate-100"
+                )}
               >
                 <MoreHorizontal size={14} />
                 Kelola Semua Konektor
@@ -1275,13 +1361,26 @@ export function ChatInput({
           )}
         </AnimatePresence>
 
+        {/* Glow halo biru di bawah kotak input khusus style Blue Rilis */}
+        {isBlueRilis && (
+          <div className="absolute -bottom-2 inset-x-8 h-5 bg-gradient-to-r from-blue-600/0 via-blue-500/50 to-blue-600/0 blur-lg rounded-full pointer-events-none z-0" />
+        )}
+
         <form 
           onSubmit={handleSubmit}
-          className="relative flex flex-col overflow-hidden rounded-2xl bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100 transition-all shadow-sm"
+          className={cn(
+            "relative z-10 flex flex-col overflow-hidden rounded-2xl transition-all shadow-sm",
+            isBlueRilis 
+              ? "backdrop-blur-xl bg-slate-900/65 border border-blue-400/35 text-white shadow-[0_8px_32px_rgba(30,58,138,0.3)] focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30" 
+              : "bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"
+          )}
         >
           {/* TULISAN @MOTION DI KIRI ATAS INPUT PROMPT DENGAN TANDA SILANG (X) */}
           {isMotionActive && (
-            <div className="px-3 pt-2 pb-1.5 flex items-center justify-between border-b border-blue-100/70 bg-blue-50/50 select-none">
+            <div className={cn(
+              "px-3 pt-2 pb-1.5 flex items-center justify-between border-b select-none",
+              isBlueRilis ? "border-blue-500/20 bg-blue-950/40" : "border-blue-100/70 bg-blue-50/50"
+            )}>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-600 text-white text-xs font-bold shadow-2xs">
                   <Sparkles size={11} className="text-blue-200" />
@@ -1298,12 +1397,18 @@ export function ChatInput({
                     <X size={12} />
                   </button>
                 </span>
-                <span className="text-[11px] text-blue-600 font-medium hidden sm:inline">
+                <span className={cn(
+                  "text-[11px] font-medium hidden sm:inline",
+                  isBlueRilis ? "text-blue-300" : "text-blue-600"
+                )}>
                   {lang === 'id' ? 'Mode Bluefox Motion Aktif' : 'Bluefox Motion Active'}
                 </span>
               </div>
 
-              <span className="text-[10px] text-slate-400 font-mono">
+              <span className={cn(
+                "text-[10px] font-mono",
+                isBlueRilis ? "text-slate-400" : "text-slate-400"
+              )}>
                 {lang === 'id' ? 'Klik tanda silang (X) atau tekan Ctrl+X untuk hapus' : 'Click X or Ctrl+X to remove'}
               </span>
             </div>
@@ -1317,14 +1422,18 @@ export function ChatInput({
                 onClick={() => setIsPopupOpen(!isPopupOpen)}
                 className={cn(
                   "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
-                  isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
-                    ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
-                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                  isBlueRilis
+                    ? (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
+                        ? "text-blue-300 bg-blue-950/80 border border-blue-500/40 shadow-xs"
+                        : "text-slate-400 hover:text-white hover:bg-slate-800/60")
+                    : (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
+                        ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")
                 )}
                 title="Konektor & Upload File"
               >
                 {isProcessingMedia ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
                 ) : (
                   <Link2 className="w-5 h-5" />
                 )}
@@ -1341,14 +1450,17 @@ export function ChatInput({
                     exit={{ opacity: 0, y: 10 }}
                     className="w-full flex items-center justify-between px-2 pr-28"
                   >
-                    <div className="text-slate-800 text-sm font-medium truncate flex-1 pl-1">
+                    <div className={cn(
+                      "text-sm font-medium truncate flex-1 pl-1",
+                      isBlueRilis ? "text-slate-200" : "text-slate-800"
+                    )}>
                       {recordingText || "Mendengarkan..."}
                     </div>
                     <div className="flex items-center justify-center gap-1 h-6 mx-2 shrink-0">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <motion.div
                           key={i}
-                          className="w-1 bg-blue-600 rounded-full"
+                          className="w-1 bg-blue-500 rounded-full"
                           animate={{ height: ['40%', '100%', '40%'] }}
                           transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
                         />
@@ -1374,7 +1486,10 @@ export function ChatInput({
                             ? (lang === 'id' ? `Ketik pertanyaan tentang ${attachedMediaList.length} file terlampir ini...` : `Ask about these ${attachedMediaList.length} attached files...`)
                             : t.inputPlaceholder
                     }
-                    className="w-full max-h-[150px] sm:max-h-[200px] bg-transparent text-slate-800 placeholder:text-slate-400 resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto"
+                    className={cn(
+                      "w-full max-h-[150px] sm:max-h-[200px] bg-transparent resize-none px-2 py-3.5 sm:py-4 pr-24 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto",
+                      isBlueRilis ? "text-white placeholder:text-slate-400/80" : "text-slate-800 placeholder:text-slate-400"
+                    )}
                     rows={1}
                     disabled={isLoading || disabled}
                   />
@@ -1399,7 +1514,9 @@ export function ChatInput({
                  disabled={isLoading || disabled}
                  className={cn(
                    "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
-                   (isLoading || disabled) ? "bg-slate-100 text-slate-400 cursor-not-allowed" : "bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer hover:bg-slate-200"
+                   (isLoading || disabled) 
+                     ? (isBlueRilis ? "bg-slate-800/40 text-slate-600 cursor-not-allowed" : "bg-slate-100 text-slate-400 cursor-not-allowed") 
+                     : (isBlueRilis ? "bg-slate-800/60 backdrop-blur-md border border-blue-400/20 text-slate-300 hover:text-white hover:bg-slate-700/60 cursor-pointer" : "bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer hover:bg-slate-200")
                  )}
                  title="Bicara"
                >
@@ -1411,7 +1528,12 @@ export function ChatInput({
               <button
                 type="button"
                 onClick={onStop}
-                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200 cursor-pointer"
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors cursor-pointer",
+                  isBlueRilis 
+                    ? "bg-slate-800/70 text-slate-300 hover:text-white hover:bg-slate-700/70 border border-blue-400/20" 
+                    : "bg-slate-100 text-slate-600 hover:text-slate-900 hover:bg-slate-200"
+                )}
                 title="Hentikan respons"
               >
                 <Square className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
@@ -1421,10 +1543,14 @@ export function ChatInput({
                 type="submit"
                 disabled={(!input.trim() && attachedMediaList.length === 0) || disabled || isRecording}
                 className={cn(
-                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
+                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-all",
                   (input.trim() || attachedMediaList.length > 0) && !disabled && !isRecording
-                    ? "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-sm shadow-blue-600/20"
-                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    ? (isBlueRilis 
+                        ? "backdrop-blur-md bg-blue-600/70 hover:bg-blue-500/80 text-white border border-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.45)] cursor-pointer" 
+                        : "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-sm shadow-blue-600/20")
+                    : (isBlueRilis 
+                        ? "bg-slate-800/40 backdrop-blur-md border border-slate-700/40 text-slate-500 cursor-not-allowed" 
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed")
                 )}
               >
                 <Send className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
@@ -1432,6 +1558,11 @@ export function ChatInput({
             )}
           </div>
         </div>
+
+        {/* Garis aksen biru di dasar kotak input pada mode Blue Rilis */}
+        {isBlueRilis && (
+          <div className="absolute bottom-0 inset-x-6 h-[1.5px] bg-gradient-to-r from-transparent via-blue-500/80 to-transparent blur-[0.5px] pointer-events-none" />
+        )}
       </form>
       </div>
       <div className="text-center mt-2 text-xs text-slate-400 font-medium">
