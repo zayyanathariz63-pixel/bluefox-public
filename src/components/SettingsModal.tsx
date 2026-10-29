@@ -617,6 +617,38 @@ export function SettingsModal({
                   </div>
                 </button>
 
+                {/* 6.7 Platform Integrasi MCP */}
+                <button
+                  onClick={() => setCurrentView('integrations')}
+                  className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
+                >
+                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-blue-50">
+                    <Layers size={20} strokeWidth={2} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                        Integrasi Platform MCP
+                      </h3>
+                      {isUserAdmin(user) ? (
+                        <span className="text-[10px] font-bold uppercase bg-amber-500/15 text-amber-700 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                          <ShieldCheck size={11} className="text-amber-600" />
+                          Akses Admin
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold uppercase bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-mono">
+                          Coming Soon
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 mt-0.5">
+                      {isUserAdmin(user) 
+                        ? 'Hubungkan Supabase, Google, GitHub, Vercel dan 11 platform MCP eksternal.'
+                        : 'Ekosistem integrasi database dan aplikasi produktivitas MCP.'}
+                    </p>
+                  </div>
+                </button>
+
                 {/* 7. Delete (Interactive) */}
                 <button
                   onClick={() => {
@@ -680,7 +712,7 @@ export function SettingsModal({
           {/* Subview Integrations */}
           {currentView === 'integrations' && (
             <div className="flex-1 overflow-y-auto bg-white flex flex-col w-full h-full text-slate-900 app-clean-grid">
-              <IntegrationsPage onBack={() => setCurrentView('connected_apps')} isStandalone={false} />
+              <IntegrationsPage onBack={() => setCurrentView('menu')} isStandalone={false} user={user} />
             </div>
           )}
 

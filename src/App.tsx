@@ -3091,7 +3091,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       )}
 
       {!showSplash && !authChecking && !authError && appState === 'integrations' && (
-        <IntegrationsPage onBack={() => setAppState(user ? 'chat' : 'landing')} />
+        <IntegrationsPage onBack={() => setAppState(user ? 'chat' : 'landing')} user={user} />
       )}
 
       {!showSplash && !authChecking && !authError && appState === 'landing' && (
@@ -4673,6 +4673,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           setAppState('integrations');
           setIsConnectorsModalOpen(false);
         }}
+        user={user}
       />
 
       <MediaScreenViewer 

@@ -1,8 +1,9 @@
-import { X, Layers, ArrowRight } from 'lucide-react';
+import { X, Layers, ArrowRight, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Connector } from '../types';
 import { useState } from 'react';
+import { isUserAdmin } from '../lib/accountManager';
 
 interface ConnectorsModalProps {
   isOpen: boolean;
@@ -11,9 +12,10 @@ interface ConnectorsModalProps {
   onToggleConnector: (id: string) => void;
   onAddConnector: (id: string, apiKey: string) => void;
   onOpenIntegrations?: () => void;
+  user?: any;
 }
 
-export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector, onAddConnector, onOpenIntegrations }: ConnectorsModalProps) {
+export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector, onAddConnector, onOpenIntegrations, user }: ConnectorsModalProps) {
   const [configuringId, setConfiguringId] = useState<string | null>(null);
   const [apiKeyInput, setApiKeyInput] = useState('');
 
@@ -59,17 +61,28 @@ export function ConnectorsModal({ isOpen, onClose, connectors, onToggleConnector
                     <h4 className="text-sm font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
                       Integrasi Platform MCP TMPA (11 Layanan)
                     </h4>
-                    <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-mono">
-                      Coming Soon
-                    </span>
+                    {isUserAdmin(user) ? (
+                      <span className="text-[10px] font-bold uppercase bg-amber-500/15 text-amber-700 border border-amber-500/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                        <ShieldCheck size={11} className="text-amber-600" />
+                        Akses Admin
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-mono">
+                        Coming Soon
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-slate-500">
-                    Supabase, Google Workspace, GitHub, Vercel, Figma, Airtable, Make, dll.
+                    {isUserAdmin(user)
+                      ? 'Akses penuh ke ekosistem 11 platform integrasi MCP untuk Administrator.'
+                      : 'Supabase, Google Workspace, GitHub, Vercel, Figma, Airtable, Make, dll.'}
                   </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-amber-600 font-semibold hidden sm:inline">Coming Soon</span>
+                <span className={`text-xs font-semibold hidden sm:inline ${isUserAdmin(user) ? 'text-blue-600 font-bold' : 'text-amber-600'}`}>
+                  {isUserAdmin(user) ? 'Buka MCP' : 'Coming Soon'}
+                </span>
                 <ArrowRight size={18} className="text-blue-600 group-hover:translate-x-1 transition-transform" />
               </div>
             </button>
