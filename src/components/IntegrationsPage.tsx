@@ -973,10 +973,22 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-1.5 leading-relaxed">
                 <div className="flex items-center gap-1.5 font-bold text-amber-300">
                   <AlertTriangle size={14} />
-                  <span>Penyebab Error 401 "The OAuth client was not found":</span>
+                  <span>
+                    {configModalProvider === 'supabase' 
+                      ? 'Integrasi Supabase Management API OAuth:' 
+                      : 'Penyebab Error 401 "The OAuth client was not found":'}
+                  </span>
                 </div>
                 <p>
-                  Google membutuhkan <strong>Client ID resmi</strong> Anda (contoh: <code>123456...apps.googleusercontent.com</code>). Jika variabel di Vercel belum terbaca saat build atau nama variabel berbeda, Anda dapat menempelkannya langsung di bawah ini.
+                  {configModalProvider === 'supabase' ? (
+                    <>
+                      Supabase membutuhkan <strong>OAuth App Client ID</strong> dari akun Supabase Anda. Anda dapat menempelkannya langsung di bawah ini atau memasukkannya ke Environment Variables Vercel (<code>VITE_SUPABASE_CLIENT_ID</code>).
+                    </>
+                  ) : (
+                    <>
+                      Platform ini membutuhkan <strong>Client ID resmi</strong> Anda. Jika variabel di Vercel belum terbaca saat build atau nama variabel berbeda, Anda dapat menempelkannya langsung di bawah ini.
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -993,6 +1005,8 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
                     placeholder={
                       configModalProvider === 'google' 
                         ? '123456789-xxxxxxxx.apps.googleusercontent.com' 
+                        : configModalProvider === 'supabase'
+                        ? 'Contoh: cb123456-789a-bcde-f012-3456789abcde'
                         : 'Masukkan Client ID platform...'
                     }
                     className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder:text-slate-500 font-mono focus:outline-none focus:border-blue-500 pr-20"
@@ -1012,16 +1026,21 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
                 </div>
               </div>
 
-              {/* Panduan Pengaturan Vercel & Google Cloud */}
+              {/* Panduan Pengaturan Vercel & Platform Provider */}
               <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 text-[11px] text-slate-400 space-y-2">
                 <div className="font-semibold text-slate-300">
-                  Panduan Pengaturan di Vercel & Google Cloud Console:
+                  {configModalProvider === 'supabase' 
+                    ? 'Panduan Pengaturan OAuth di Panel Supabase & Vercel:'
+                    : 'Panduan Pengaturan di Vercel & Konsol OAuth:'}
                 </div>
                 <p>
-                  1. <strong>Di Vercel Environment Variables:</strong> Pastikan nama variabel adalah <code className="text-blue-300">VITE_{configModalProvider.toUpperCase()}_CLIENT_ID</code> atau <code className="text-blue-300">{configModalProvider.toUpperCase()}_CLIENT_ID</code>.
+                  1. <strong>Di Vercel Environment Variables:</strong> Pastikan variabel <code className="text-blue-300">VITE_{configModalProvider.toUpperCase()}_CLIENT_ID</code> sudah terdaftar di Vercel Environment Variables dan file .env.
                 </p>
                 <p>
-                  2. <strong>Di Google Cloud Console (Authorized redirect URIs):</strong> Pastikan Anda telah memasukkan URL redirect ini:
+                  2. <strong>Di Pengaturan OAuth App {configModalProvider === 'supabase' ? 'Supabase' : 'Provider'}:</strong>{' '}
+                  {configModalProvider === 'supabase' 
+                    ? 'Pada panel akun Supabase (Dashboard > Account > OAuth Apps), pastikan Redirect URL sudah diatur ke:' 
+                    : 'Pastikan Authorized redirect URI sudah diatur ke:'}
                 </p>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-white/10 font-mono text-slate-200 text-[10px] break-all">
                   <span>{REDIRECT_URI}</span>
