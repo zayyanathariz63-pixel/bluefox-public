@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  ArrowLeft, User, Activity, Shield, Settings2, Link2, 
+  ArrowLeft, User, Activity, Shield, ShieldCheck, Settings2, Link2, 
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
   HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2,
@@ -12,6 +12,7 @@ import { IntegrationsPage } from './IntegrationsPage';
 import { RemoteControlPage } from './RemoteControlPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { supabase, getModelDisplayName, isLocalDevMode, setLocalDevMode } from '../lib/supabase';
+import { isUserAdmin } from '../lib/accountManager';
 import { 
   AppStyle, 
   getAppStyle, 
@@ -890,6 +891,14 @@ export function SettingsModal({
                         <div className="bg-white p-4 rounded-xl border border-slate-200 text-blue-600 font-bold text-sm tracking-wide shadow-xs uppercase">
                           {userTier || 'FREE (DEFAULT)'}
                         </div>
+                        {isUserAdmin(user) && (
+                          <div className="mt-2 flex items-center">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 text-amber-700 font-bold text-xs uppercase tracking-wider shadow-2xs">
+                              <ShieldCheck size={14} className="text-amber-600" />
+                              <span>Admin</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-1.5">

@@ -20,6 +20,35 @@ export interface SavedAccount {
 const STORAGE_KEY = 'tmpa_saved_accounts';
 
 /**
+ * Mengecek apakah akun yang sedang login memiliki hak akses Admin.
+ * Kriteria: email zayyanathariz63@gmail.com atau zayyanathariz63-pixel
+ */
+export function isUserAdmin(emailOrUser?: string | { email?: string; user_metadata?: any; name?: string } | null): boolean {
+  if (!emailOrUser) return false;
+  let email = '';
+  let metaName = '';
+  let directName = '';
+
+  if (typeof emailOrUser === 'string') {
+    email = emailOrUser.toLowerCase().trim();
+  } else {
+    email = (emailOrUser.email || '').toLowerCase().trim();
+    metaName = (emailOrUser.user_metadata?.full_name || emailOrUser.user_metadata?.user_name || '').toLowerCase().trim();
+    directName = (emailOrUser.name || '').toLowerCase().trim();
+  }
+
+  return (
+    email === 'zayyanathariz63@gmail.com' ||
+    email.includes('zayyanathariz63-pixel') ||
+    email.includes('zayyanathariz63') ||
+    metaName.includes('zayyanathariz63-pixel') ||
+    metaName.includes('zayyanathariz63') ||
+    directName.includes('zayyanathariz63-pixel') ||
+    directName.includes('zayyanathariz63')
+  );
+}
+
+/**
  * Mendapatkan atau membuat ID unik untuk user/perangkat yang disimpan di local bernama "tmpa_device_id"
  */
 export function getOrCreateDeviceId(): string {

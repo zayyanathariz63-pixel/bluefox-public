@@ -10,7 +10,8 @@ import {
   getSavedAccounts, 
   removeSavedAccount, 
   getOrCreateDeviceId,
-  syncDeviceAccountsFromServer 
+  syncDeviceAccountsFromServer,
+  isUserAdmin
 } from '../lib/accountManager';
 import { useLanguage } from '../lib/i18n';
 
@@ -158,15 +159,23 @@ export function ChooseAccountModal({
                     className="w-11 h-11 rounded-xl shrink-0"
                   />
                   <div className="flex flex-col min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">
                         {acc.name || acc.email?.split('@')[0] || 'TMPA User'}
                       </span>
-                      {acc.tier && (
-                        <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 shrink-0">
-                          {acc.tier}
-                        </span>
-                      )}
+                      <div className="flex flex-col items-end shrink-0">
+                        {acc.tier && (
+                          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded-md bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                            {acc.tier}
+                          </span>
+                        )}
+                        {isUserAdmin(acc) && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[9px] font-extrabold uppercase tracking-wider shadow-2xs">
+                            <ShieldCheck size={9} className="text-amber-500" />
+                            <span>Admin</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <span className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">

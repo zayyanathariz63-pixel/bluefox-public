@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users, ShieldCheck } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
@@ -27,7 +27,8 @@ import {
   switchSavedAccount,
   getOrCreateDeviceId,
   registerAccountDeviceSession,
-  getSavedAccounts
+  getSavedAccounts,
+  isUserAdmin
 } from './lib/accountManager';
 import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse, invokeMotionGenerator } from './lib/motion';
 import { useLanguage } from './lib/i18n';
@@ -1732,13 +1733,16 @@ export default function App() {
         const subCmd = lowerText.replace(/^@bluefox\s*/, '').trim();
 
         if (subCmd.startsWith('profile')) {
+          const adminRowEn = isUserAdmin(user) ? '\n| **Role / Privilege** | `[ADMINISTRATOR]` |' : '';
+          const adminRowId = isUserAdmin(user) ? '\n| **Peran / Hak Akses** | `[ADMINISTRATOR]` |' : '';
+
           systemReply = lang === 'en' ? `### User Profile (Bluefox System Controller)
 
 | Account Data | Information Detail |
 | :--- | :--- |
 | **User ID** | \`${user?.id || 'guest-user'}\` |
 | **Active Email** | \`${user?.email || 'user@example.com'}\` |
-| **Tier / Plan** | \`${userTier || 'Tier 1 Pro'}\` |
+| **Tier / Plan** | \`${userTier || 'Tier 1 Pro'}\` |${adminRowEn}
 | **Active Session ID** | \`${currentSessionId || 'New Session'}\` |
 | **Authentication Status** | \`[VERIFIED & ACTIVE]\` |
 | **System Time** | \`${new Date().toLocaleString('en-US')}\` |`
@@ -1748,7 +1752,7 @@ export default function App() {
 | :--- | :--- |
 | **User ID** | \`${user?.id || 'guest-user'}\` |
 | **Email Aktif** | \`${user?.email || 'user@example.com'}\` |
-| **Paket / Tier** | \`${userTier || 'Tier 1 Pro'}\` |
+| **Paket / Tier** | \`${userTier || 'Tier 1 Pro'}\` |${adminRowId}
 | **Sesi ID Aktif** | \`${currentSessionId || 'Sesi Baru'}\` |
 | **Status Autentikasi** | \`[TERVERIFIKASI & AKTIF]\` |
 | **Waktu Sistem** | \`${new Date().toLocaleString('id-ID')}\` |`;
@@ -3698,9 +3702,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       )}>
                         {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'TMPA User'}
                       </span>
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500 shrink-0">
-                        {userTier}
-                      </span>
+                      <div className="flex flex-col items-end shrink-0">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500">
+                          {userTier}
+                        </span>
+                        {isUserAdmin(user) && (
+                          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[9px] font-extrabold uppercase tracking-wider shadow-2xs">
+                            <ShieldCheck size={10} className="text-amber-500" />
+                            <span>Admin</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span className={cn(
                       "text-xs truncate",
