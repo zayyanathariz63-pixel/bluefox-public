@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Sparkles, Layers, Globe, Database, Github, Server, Rocket,
   ShieldCheck, Check, ExternalLink, RefreshCw, Key, Copy, AlertCircle,
-  Radio, Cpu, Code2, Link, Zap, Lock, Unlock, Eye, HelpCircle
+  Radio, Cpu, Code2, Link, Zap, Lock, Unlock, Eye, HelpCircle, X,
+  AlertTriangle, Settings
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useLanguage } from '../lib/i18n';
 import { supabase } from '../lib/supabase';
 import { isUserAdmin } from '../lib/accountManager';
+import { getProviderClientId, setProviderClientId, isValidClientId } from '../lib/env';
 
 interface IntegrationsPageProps {
   onBack?: () => void;
@@ -42,6 +44,10 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'developer' | 'productivity' | 'design' | 'automation'>('all');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+
+  // Modal konfigurasi Client ID (jika env Vercel belum redeploy atau admin ingin input langsung)
+  const [configModalProvider, setConfigModalProvider] = useState<string | null>(null);
+  const [configModalInput, setConfigModalInput] = useState<string>('');
 
   // Status koneksi lokal yang tersimpan
   const [connectedProviders, setConnectedProviders] = useState<Record<string, boolean>>(() => {
@@ -78,7 +84,7 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
   const SUPABASE_BASE_URL = (import.meta as any)?.env?.VITE_SUPABASE_URL || 'https://jjlanjshpyklqayjzxyy.supabase.co';
   const REDIRECT_URI = `${SUPABASE_BASE_URL}/functions/v1/TMPA-MCP`;
 
-  async function handleOAuthConnect(providerId: string) {
+  async function handleOAuthConnect(providerId: string, overrideClientId?: string) {
     try {
       setConnectingProvider(providerId);
       const { data: { user } } = await supabase.auth.getUser();
@@ -90,56 +96,60 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
         return;
       }
 
-      // Menyimpan data user dan provider ke dalam state agar dibaca backend
+      // Ambil Client ID dari override, env Vercel, atau localStorage
+      const effectiveClientId = (overrideClientId || getProviderClientId(providerId) || '').trim();
+
+      // CEK VALIDASI CLIENT ID:
+      // Jika Client ID belum ada di Vercel atau belum terbaca, cegah redirect ke Google!
+      // Ini mencegah munculnya "Error 401: invalid_client - The OAuth client was not found".
+      if (!isValidClientId(effectiveClientId)) {
+        setConnectingProvider(null);
+        setConfigModalProvider(providerId);
+        setConfigModalInput(effectiveClientId);
+        return;
+      }
+
+      // Menyimpan data user dan provider ke dalam state agar dibaca backend Edge Function
       const statePayload = encodeURIComponent(
         JSON.stringify({ userId: currentUser.id, provider: providerId })
       );
 
       let oauthUrl = "";
-      const metaEnv = (import.meta as any)?.env || {};
 
       switch (providerId) {
         case "google": {
-          const clientId = metaEnv.VITE_GOOGLE_CLIENT_ID || "google-client";
           const scopes = encodeURIComponent(
             "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/spreadsheets"
           );
-          oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${scopes}&state=${statePayload}&access_type=offline&prompt=consent`;
+          oauthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=${scopes}&state=${statePayload}&access_type=offline&prompt=consent`;
           break;
         }
         case "vercel": {
-          const clientId = metaEnv.VITE_VERCEL_CLIENT_ID || "vercel-client";
-          oauthUrl = `https://vercel.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
+          oauthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
           break;
         }
         case "github": {
-          const clientId = metaEnv.VITE_GITHUB_CLIENT_ID || "github-client";
-          oauthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=repo%20read:user&state=${statePayload}`;
+          oauthUrl = `https://github.com/login/oauth/authorize?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=repo%20read:user&state=${statePayload}`;
           break;
         }
         case "supabase": {
-          const clientId = metaEnv.VITE_SUPABASE_CLIENT_ID || "supabase-client";
-          oauthUrl = `https://api.supabase.com/v1/oauth/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
+          oauthUrl = `https://api.supabase.com/v1/oauth/authorize?client_id=${encodeURIComponent(effectiveClientId)}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
           break;
         }
         case "netlify": {
-          const clientId = metaEnv.VITE_NETLIFY_CLIENT_ID || "netlify-client";
-          oauthUrl = `https://app.netlify.com/authorize?client_id=${clientId}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
+          oauthUrl = `https://app.netlify.com/authorize?client_id=${encodeURIComponent(effectiveClientId)}&response_type=token&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&state=${statePayload}`;
           break;
         }
         case "figma": {
-          const clientId = metaEnv.VITE_FIGMA_CLIENT_ID || "figma-client";
-          oauthUrl = `https://www.figma.com/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=files:read&state=${statePayload}&response_type=code`;
+          oauthUrl = `https://www.figma.com/oauth?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=files:read&state=${statePayload}&response_type=code`;
           break;
         }
         case "airtable": {
-          const clientId = metaEnv.VITE_AIRTABLE_CLIENT_ID || "airtable-client";
-          oauthUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=data.records:read%20data.records:write&state=${statePayload}`;
+          oauthUrl = `https://airtable.com/oauth2/v1/authorize?client_id=${encodeURIComponent(effectiveClientId)}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=code&scope=data.records:read%20data.records:write&state=${statePayload}`;
           break;
         }
         default: {
           showToast(isId ? `Menghubungkan layanan ${providerId}...` : `Connecting ${providerId}...`);
-          // Tandai koneksi lokal aktif untuk demonstrasi admin
           const updated = { ...connectedProviders, [providerId]: true };
           setConnectedProviders(updated);
           localStorage.setItem('tmpa_mcp_connected_providers', JSON.stringify(updated));
@@ -149,7 +159,6 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
       }
 
       if (oauthUrl) {
-        // Simpan status sementara sebelum redirect
         const updated = { ...connectedProviders, [providerId]: true };
         setConnectedProviders(updated);
         localStorage.setItem('tmpa_mcp_connected_providers', JSON.stringify(updated));
@@ -168,6 +177,28 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
     setConnectedProviders(updated);
     localStorage.setItem('tmpa_mcp_connected_providers', JSON.stringify(updated));
     showToast(isId ? `Koneksi ${providerId} diputuskan.` : `Disconnected ${providerId}.`);
+  };
+
+  const handleSaveModalClientId = (andConnect: boolean = false) => {
+    if (!configModalProvider) return;
+    const trimmed = configModalInput.trim();
+    if (!isValidClientId(trimmed)) {
+      alert(isId 
+        ? "Format Client ID tidak valid. Pastikan bukan string placeholder atau kosong." 
+        : "Invalid Client ID format. Please make sure it is not empty or a dummy placeholder.");
+      return;
+    }
+
+    setProviderClientId(configModalProvider, trimmed);
+    const targetProvider = configModalProvider;
+    setConfigModalProvider(null);
+    showToast(isId ? `Client ID ${targetProvider} berhasil disimpan!` : `Client ID for ${targetProvider} saved!`);
+
+    if (andConnect) {
+      setTimeout(() => {
+        handleOAuthConnect(targetProvider, trimmed);
+      }, 300);
+    }
   };
 
   // 11 Layanan MCP Platform TMPA
@@ -692,11 +723,11 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
                   <Copy size={14} />
                 </button>
               </p>
-              <p className="text-xs text-slate-400">
-                {isId 
-                  ? 'Setiap permintaan koneksi OAuth akan membawa payload user ID dan provider ke endpoint serverless di atas.'
-                  : 'Every OAuth connection request passes user ID and provider parameters to the serverless endpoint above.'}
-              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-400">
+                <span>
+                  Authorized Redirect URI: <strong className="text-blue-300 font-mono">{REDIRECT_URI}</strong>
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row md:flex-col gap-2.5 shrink-0">
@@ -759,6 +790,8 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
             const Icon = service.icon;
             const isConnected = Boolean(connectedProviders[service.id]);
             const isConnecting = connectingProvider === service.id;
+            const currentClientId = getProviderClientId(service.id);
+            const hasValidClientId = isValidClientId(currentClientId);
 
             return (
               <div
@@ -778,22 +811,49 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
                         <h3 className="font-bold text-white text-base leading-snug">
                           {service.name}
                         </h3>
-                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                          ID: {service.id}
-                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                            ID: {service.id}
+                          </span>
+                          {/* Client ID Status Pill */}
+                          {hasValidClientId ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-mono font-semibold" title={currentClientId}>
+                              <Check size={10} className="stroke-[3]" /> Client ID Aktif
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-amber-400 font-mono font-semibold">
+                              <AlertCircle size={10} /> Client ID Perlu Diatur
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {isConnected ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-[10px] font-extrabold uppercase">
-                        <Check size={11} className="stroke-[3]" />
-                        <span>Terhubung</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-medium border border-slate-700">
-                        Belum Aktif
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Tombol Pengaturan Client ID */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfigModalProvider(service.id);
+                          setConfigModalInput(currentClientId);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        title="Atur / Cek Client ID"
+                      >
+                        <Key size={13} />
+                      </button>
+
+                      {isConnected ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 text-[10px] font-extrabold uppercase">
+                          <Check size={11} className="stroke-[3]" />
+                          <span>Terhubung</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-medium border border-slate-700">
+                          Belum Aktif
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Description */}
@@ -876,6 +936,138 @@ export function IntegrationsPage({ onBack, user: propUser }: IntegrationsPagePro
           </p>
         </div>
       </main>
+
+      {/* Modal Dialog: Atur / Masukkan Client ID OAuth */}
+      <AnimatePresence>
+        {configModalProvider && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-lg bg-[#0d1527] border border-blue-500/30 rounded-3xl p-6 shadow-2xl text-slate-100 space-y-5"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600/20 border border-blue-400/30 text-blue-400 flex items-center justify-center">
+                    <Key size={18} />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base text-white">
+                      Konfigurasi Client ID: <span className="capitalize text-blue-400">{configModalProvider}</span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Mencegah Error 401 (invalid_client) saat login OAuth
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setConfigModalProvider(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Notice Box */}
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-1.5 leading-relaxed">
+                <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                  <AlertTriangle size={14} />
+                  <span>Penyebab Error 401 "The OAuth client was not found":</span>
+                </div>
+                <p>
+                  Google membutuhkan <strong>Client ID resmi</strong> Anda (contoh: <code>123456...apps.googleusercontent.com</code>). Jika variabel di Vercel belum terbaca saat build atau nama variabel berbeda, Anda dapat menempelkannya langsung di bawah ini.
+                </p>
+              </div>
+
+              {/* Form Input */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider block">
+                  OAuth Client ID {configModalProvider.toUpperCase()}
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={configModalInput}
+                    onChange={(e) => setConfigModalInput(e.target.value)}
+                    placeholder={
+                      configModalProvider === 'google' 
+                        ? '123456789-xxxxxxxx.apps.googleusercontent.com' 
+                        : 'Masukkan Client ID platform...'
+                    }
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-xs sm:text-sm text-white placeholder:text-slate-500 font-mono focus:outline-none focus:border-blue-500 pr-20"
+                  />
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const clip = await navigator.clipboard.readText();
+                        if (clip) setConfigModalInput(clip.trim());
+                      } catch {}
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2.5 py-1 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                  >
+                    Paste
+                  </button>
+                </div>
+              </div>
+
+              {/* Panduan Pengaturan Vercel & Google Cloud */}
+              <div className="p-3.5 rounded-2xl bg-black/40 border border-white/5 text-[11px] text-slate-400 space-y-2">
+                <div className="font-semibold text-slate-300">
+                  Panduan Pengaturan di Vercel & Google Cloud Console:
+                </div>
+                <p>
+                  1. <strong>Di Vercel Environment Variables:</strong> Pastikan nama variabel adalah <code className="text-blue-300">VITE_{configModalProvider.toUpperCase()}_CLIENT_ID</code> atau <code className="text-blue-300">{configModalProvider.toUpperCase()}_CLIENT_ID</code>.
+                </p>
+                <p>
+                  2. <strong>Di Google Cloud Console (Authorized redirect URIs):</strong> Pastikan Anda telah memasukkan URL redirect ini:
+                </p>
+                <div className="flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-white/10 font-mono text-slate-200 text-[10px] break-all">
+                  <span>{REDIRECT_URI}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(REDIRECT_URI);
+                      showToast(isId ? 'Redirect URI berhasil disalin!' : 'Redirect URI copied!');
+                    }}
+                    className="p-1 rounded bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 shrink-0 ml-2 cursor-pointer"
+                    title="Salin URI"
+                  >
+                    <Copy size={12} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfigModalProvider(null)}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveModalClientId(false)}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  Simpan Saja
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveModalClientId(true)}
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-lg shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink size={13} />
+                  <span>Simpan & Lanjutkan OAuth</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Footer */}
       <footer className="py-6 px-4 text-center text-xs text-slate-500 border-t border-slate-900 mt-12">

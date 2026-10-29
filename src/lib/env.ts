@@ -98,86 +98,153 @@ export const MCP_CLIENT_IDS = {
       "VITE_SUPABASE_CLIENT_ID",
       "NEXT_PUBLIC_SUPABASE_CLIENT_ID",
       "SUPABASE_CLIENT_ID",
-    ], "supabase-client");
+      "tmpa_mcp_supabase_client_id"
+    ], "");
   },
   get google(): string {
     return getEnvAny([
       "VITE_GOOGLE_CLIENT_ID",
       "NEXT_PUBLIC_GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_ID",
-    ], "google-client");
+      "tmpa_mcp_google_client_id"
+    ], "");
   },
   get github(): string {
     return getEnvAny([
       "VITE_GITHUB_CLIENT_ID",
       "NEXT_PUBLIC_GITHUB_CLIENT_ID",
       "GITHUB_CLIENT_ID",
-    ], "github-client");
+      "tmpa_mcp_github_client_id"
+    ], "");
   },
   get vercel(): string {
     return getEnvAny([
       "VITE_VERCEL_CLIENT_ID",
       "NEXT_PUBLIC_VERCEL_CLIENT_ID",
       "VERCEL_CLIENT_ID",
-    ], "vercel-client");
+      "tmpa_mcp_vercel_client_id"
+    ], "");
   },
   get netlify(): string {
     return getEnvAny([
       "VITE_NETLIFY_CLIENT_ID",
       "NEXT_PUBLIC_NETLIFY_CLIENT_ID",
       "NETLIFY_CLIENT_ID",
-    ], "netlify-client");
+      "tmpa_mcp_netlify_client_id"
+    ], "");
   },
   get figma(): string {
     return getEnvAny([
       "VITE_FIGMA_CLIENT_ID",
       "NEXT_PUBLIC_FIGMA_CLIENT_ID",
       "FIGMA_CLIENT_ID",
-    ], "figma-client");
+      "tmpa_mcp_figma_client_id"
+    ], "");
   },
   get airtable(): string {
     return getEnvAny([
       "VITE_AIRTABLE_CLIENT_ID",
       "NEXT_PUBLIC_AIRTABLE_CLIENT_ID",
       "AIRTABLE_CLIENT_ID",
-    ], "airtable-client");
+      "tmpa_mcp_airtable_client_id"
+    ], "");
   },
   get canva(): string {
     return getEnvAny([
       "VITE_CANVA_CLIENT_ID",
       "NEXT_PUBLIC_CANVA_CLIENT_ID",
       "CANVA_CLIENT_ID",
-    ], "canva-client");
+      "tmpa_mcp_canva_client_id"
+    ], "");
   },
 };
+
+/**
+ * Validasi apakah Client ID adalah nilai nyata (bukan placeholder dummy)
+ */
+export function isValidClientId(clientId: string): boolean {
+  if (!clientId || typeof clientId !== 'string') return false;
+  const trimmed = clientId.trim();
+  if (trimmed.length < 5) return false;
+  if (
+    trimmed.includes('YOUR_') || 
+    trimmed.endsWith('-client') || 
+    trimmed === 'google-client' ||
+    trimmed === 'supabase-client' ||
+    trimmed === 'vercel-client' ||
+    trimmed === 'github-client'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Menyimpan Client ID kustom secara lokal (misal jika belum sempat redeploy di Vercel)
+ */
+export function setProviderClientId(providerId: string, clientId: string): void {
+  if (typeof window !== 'undefined') {
+    const key = `tmpa_mcp_${providerId.toLowerCase()}_client_id`;
+    if (clientId && clientId.trim()) {
+      localStorage.setItem(key, clientId.trim());
+      // Kompatibilitas format umum
+      localStorage.setItem(`VITE_${providerId.toUpperCase()}_CLIENT_ID`, clientId.trim());
+    } else {
+      localStorage.removeItem(key);
+      localStorage.removeItem(`VITE_${providerId.toUpperCase()}_CLIENT_ID`);
+    }
+  }
+}
 
 /**
  * Mendapatkan Client ID untuk provider tertentu dengan deteksi otomatis
  */
 export function getProviderClientId(providerId: string): string {
-  switch (providerId) {
+  const pid = (providerId || '').toLowerCase().trim();
+  let found = "";
+
+  switch (pid) {
     case "user_supabase":
     case "supabase":
-      return MCP_CLIENT_IDS.supabase;
+      found = MCP_CLIENT_IDS.supabase;
+      break;
     case "google":
-      return MCP_CLIENT_IDS.google;
+      found = MCP_CLIENT_IDS.google;
+      break;
     case "github":
-      return MCP_CLIENT_IDS.github;
+      found = MCP_CLIENT_IDS.github;
+      break;
     case "vercel":
-      return MCP_CLIENT_IDS.vercel;
+      found = MCP_CLIENT_IDS.vercel;
+      break;
     case "netlify":
-      return MCP_CLIENT_IDS.netlify;
+      found = MCP_CLIENT_IDS.netlify;
+      break;
     case "figma":
-      return MCP_CLIENT_IDS.figma;
+      found = MCP_CLIENT_IDS.figma;
+      break;
     case "airtable":
-      return MCP_CLIENT_IDS.airtable;
+      found = MCP_CLIENT_IDS.airtable;
+      break;
     case "canva":
-      return MCP_CLIENT_IDS.canva;
+      found = MCP_CLIENT_IDS.canva;
+      break;
     default:
-      return getEnvAny([
-        `VITE_${providerId.toUpperCase()}_CLIENT_ID`,
-        `NEXT_PUBLIC_${providerId.toUpperCase()}_CLIENT_ID`,
-        `${providerId.toUpperCase()}_CLIENT_ID`,
-      ]);
+      found = getEnvAny([
+        `VITE_${pid.toUpperCase()}_CLIENT_ID`,
+        `NEXT_PUBLIC_${pid.toUpperCase()}_CLIENT_ID`,
+        `${pid.toUpperCase()}_CLIENT_ID`,
+        `tmpa_mcp_${pid}_client_id`
+      ], "");
+      break;
   }
+
+  // Cek juga fallback langsung dari localStorage jika build belum ter-update
+  if (!found && typeof window !== 'undefined') {
+    found = localStorage.getItem(`tmpa_mcp_${pid}_client_id`) || 
+            localStorage.getItem(`VITE_${pid.toUpperCase()}_CLIENT_ID`) || 
+            localStorage.getItem(`${pid.toUpperCase()}_CLIENT_ID`) || "";
+  }
+
+  return (found || "").trim();
 }
