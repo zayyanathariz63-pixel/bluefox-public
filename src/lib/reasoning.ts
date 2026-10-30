@@ -61,9 +61,9 @@ export const SMART_SELECT_CONFIG: Record<'none' | 'low' | 'medium' | 'high', Sma
  * Smart Select - Mengatur level penalaran/thinking AI dari 'none' sampai 'high'
  * Nilai yang dapat ditarik: none (0) -> low (1) -> medium (2) -> high (3)
  * Jika mode 'auto', sistem menarik otomatis sesuai model:
- * 1. Bluefox pro (agnes-2.5-flash) -> 'high'
- * 2. Bluefox standar (tencent-hy3-free) -> 'medium'
- * 3. Bluefox dilo (laguna-s-2.1) -> 'low'
+ * 1. Bluefox Pro (agnes-3.0-flash) -> 'high'
+ * 2. Bluefox Standard (agnes-2.5-flash) -> 'medium'
+ * 3. Bluefox Dilo (deepseek-v4.1-flash-free) -> 'low'
  */
 export function getSmartSelectEffort(
   modelId: string,
@@ -75,16 +75,16 @@ export function getSmartSelectEffort(
 
   // Jika mode Auto:
   const clean = (modelId || '').toLowerCase();
-  if (clean.includes('agnes') || clean.includes('pro') || clean.includes('deepseek') || clean.includes('v2') || clean.includes('qwen')) {
-    return 'high';
-  }
-  if (clean.includes('laguna') || clean.includes('dilo') || clean.includes('longcat') || clean.includes('nemotron')) {
+  if (clean.includes('dilo') || clean.includes('deepseek') || clean.includes('laguna') || clean.includes('nemotron')) {
     return 'low';
   }
-  if (clean.includes('jev') || clean.includes('tencent') || clean.includes('standard') || clean.includes('standar')) {
+  if (clean.includes('2.5') || clean.includes('standard') || clean.includes('standar') || clean.includes('tencent') || clean.includes('jev')) {
     return 'medium';
   }
-  return 'medium';
+  if (clean.includes('3.0') || clean.includes('pro') || clean.includes('agnes') || clean.includes('v2') || clean.includes('qwen')) {
+    return 'high';
+  }
+  return 'high';
 }
 
 // Backward compatibility alias for existing calls

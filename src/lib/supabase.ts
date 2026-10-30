@@ -62,29 +62,56 @@ export const exchangeSsoTicket = async (ticketId: string) => {
  * Pemanggilan langsung ke Supabase Edge Function 'bluefox-processor-'
  * Endpoint: https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-
  */
+export const BLUEFOX_MODELS = [
+  {
+    id: "bluefox-dilo",
+    name: "Bluefox Dilo",
+    upstreamModel: "deepseek-v4.1-flash-free",
+    description: "Cepat dan efisien untuk interaksi harian"
+  },
+  {
+    id: "bluefox-standard",
+    name: "Bluefox Standard",
+    upstreamModel: "agnes-2.5-flash",
+    description: "Model standar yang stabil dan serbaguna"
+  },
+  {
+    id: "bluefox-pro",
+    name: "Bluefox Pro",
+    upstreamModel: "agnes-3.0-flash",
+    description: "Model flagship dengan kemampuan vision dan pemrosesan tinggi"
+  }
+];
+
 export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal) {
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
   // Pastikan ID model selalu terisi sesuai spesifikasi Edge Function:
-  // 1. Bluefox pro --> agnes-2.5-flash
-  // 2. Bluefox standard --> jev
-  // 3. Bluefox Dilo --> laguna-s-2.1
+  // 1. Bluefox Pro --> agnes-3.0-flash
+  // 2. Bluefox Standard --> agnes-2.5-flash
+  // 3. Bluefox Dilo --> deepseek-v4.1-flash-free
   const safePayload: any = { ...(payload || {}) };
 
   // Deteksi apakah request ini untuk 3 model bawaan Bluefox
   const isBluefoxModel = 
     safePayload.is_bluefox_native === true ||
     safePayload.isBluefoxNative === true ||
+    safePayload.model === 'agnes-3.0-flash' || 
     safePayload.model === 'agnes-2.5-flash' || 
+    safePayload.model === 'deepseek-v4.1-flash-free' || 
     safePayload.model === 'jev' || 
     safePayload.model === 'laguna-s-2.1' ||
     safePayload.model === 'tencent-hy3-free' ||
+    safePayload.model_id === 'agnes-3.0-flash' || 
     safePayload.model_id === 'agnes-2.5-flash' || 
+    safePayload.model_id === 'deepseek-v4.1-flash-free' || 
     safePayload.model_id === 'jev' || 
     safePayload.model_id === 'laguna-s-2.1' ||
     safePayload.model_id === 'tencent-hy3-free' ||
+    safePayload.selected_model === 'agnes-3.0-flash' ||
     safePayload.selected_model === 'agnes-2.5-flash' ||
+    safePayload.selected_model === 'deepseek-v4.1-flash-free' ||
     safePayload.selected_model === 'tencent-hy3-free' ||
     safePayload.selected_model === 'laguna-s-2.1';
 
@@ -101,14 +128,14 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   delete safePayload.custom_api_id;
 
   // Normalisasi ID model resmi
-  let normalized = 'agnes-2.5-flash';
+  let normalized = 'agnes-3.0-flash';
   const m = (safePayload.model_id || safePayload.model || safePayload.selected_model || '').toLowerCase();
-  if (m.includes('laguna') || m.includes('dilo')) {
-    normalized = 'laguna-s-2.1';
-  } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev')) {
-    normalized = 'jev';
-  } else {
+  if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
+    normalized = 'deepseek-v4.1-flash-free';
+  } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev')) {
     normalized = 'agnes-2.5-flash';
+  } else {
+    normalized = 'agnes-3.0-flash';
   }
 
   safePayload.is_bluefox_native = true;
@@ -930,26 +957,24 @@ export async function resetUserLimits(userId: string) {
  */
 export const DEFAULT_MODELS: Record<string, string> = {
   // Lineup Model Aktif
+  "agnes-3.0-flash": "agnes-3.0-flash",
   "agnes-2.5-flash": "agnes-2.5-flash",
-  "tencent-hy3-free": "jev",
-  "tencent_hy3_free": "jev",
-  "laguna-s-2.1": "laguna-s-2.1",
-  "jev": "jev",
+  "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
 
   // Nama Display & Aliases
-  "bluefox-pro": "agnes-2.5-flash",
-  "bluefox_pro": "agnes-2.5-flash",
-  "bluefox-standard": "jev",
-  "bluefox_standard": "jev",
-  "bluefox_standar": "jev",
-  "bluefox-dilo": "laguna-s-2.1",
-  "bluefox_dilo": "laguna-s-2.1",
-  "dilo": "laguna-s-2.1",
-  "tmpa_v2": "jev",
-  "tmpa_v1": "laguna-s-2.1",
-  "longcat-2.0-free": "laguna-s-2.1",
-  "deepseek-v4.1-flash-free": "agnes-2.5-flash",
-  "agnes-2.0-flash": "agnes-2.5-flash",
+  "bluefox-pro": "agnes-3.0-flash",
+  "bluefox_pro": "agnes-3.0-flash",
+  "pro": "agnes-3.0-flash",
+  "bluefox-standard": "agnes-2.5-flash",
+  "bluefox_standard": "agnes-2.5-flash",
+  "bluefox_standar": "agnes-2.5-flash",
+  "standard": "agnes-2.5-flash",
+  "jev": "agnes-2.5-flash",
+  "tencent-hy3-free": "agnes-2.5-flash",
+  "bluefox-dilo": "deepseek-v4.1-flash-free",
+  "bluefox_dilo": "deepseek-v4.1-flash-free",
+  "dilo": "deepseek-v4.1-flash-free",
+  "laguna-s-2.1": "deepseek-v4.1-flash-free",
 };
 
 /**
@@ -958,14 +983,14 @@ export const DEFAULT_MODELS: Record<string, string> = {
 export function getModelDisplayName(modelId?: string): string {
   if (!modelId) return 'bluefox pro';
   const clean = modelId.toLowerCase();
-  if (clean.includes('pro') || clean.includes('agnes') || clean.includes('deepseek') || clean.includes('v2') || clean.includes('qwen')) {
-    return 'bluefox pro';
+  if (clean.includes('dilo') || clean.includes('deepseek') || clean.includes('laguna') || clean.includes('nemotron')) {
+    return 'bluefox Dilo';
   }
-  if (clean.includes('jev') || clean.includes('tencent') || clean.includes('standard') || clean.includes('standar') || clean.includes('v1') || clean.includes('gpt')) {
+  if (clean.includes('2.5') || clean.includes('standard') || clean.includes('standar') || clean.includes('jev') || clean.includes('tencent')) {
     return 'bluefox standard';
   }
-  if (clean.includes('laguna') || clean.includes('dilo') || clean.includes('longcat') || clean.includes('nemotron')) {
-    return 'bluefox Dilo';
+  if (clean.includes('3.0') || clean.includes('pro') || clean.includes('agnes') || clean.includes('v2')) {
+    return 'bluefox pro';
   }
   return 'bluefox pro';
 }
@@ -1156,7 +1181,14 @@ export async function consumeAiLimit(
     let deltaWeekly = 0;
 
     const m = (model || '').toLowerCase();
-    if (m.includes('pro') || m.includes('agnes') || m.includes('deepseek') || m.includes('v2')) {
+    if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
+      delta5h = 2; // Bluefox dilo: 5 jam: 2%, seminggu: 2%
+      deltaWeekly = 2;
+    } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
+      delta5h = 2; // Bluefox standard: 5 jam: 2%, seminggu: 3%
+      deltaWeekly = 3;
+    } else {
+      // Bluefox pro (agnes-3.0-flash / default)
       if (isVision) {
         delta5h = 5; // Bluefox pro vision: 5 jam: 5%, seminggu: 7%
         deltaWeekly = 7;
@@ -1164,15 +1196,6 @@ export async function consumeAiLimit(
         delta5h = 3; // Bluefox pro standard: 5 jam: 3%, seminggu: 4%
         deltaWeekly = 4;
       }
-    } else if (m.includes('standard') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
-      delta5h = 2; // Bluefox standard: 5 jam: 2%, seminggu: 3%
-      deltaWeekly = 3;
-    } else if (m.includes('dilo') || m.includes('laguna')) {
-      delta5h = 2; // Bluefox dilo: 5 jam: 2%, seminggu: 2%
-      deltaWeekly = 2;
-    } else {
-      delta5h = 2;
-      deltaWeekly = 3;
     }
 
     if (searchMode) {
@@ -1220,8 +1243,8 @@ export async function consumeAiLimit(
     // Panggil RPC jika ada untuk sinkronisasi server-side (abaikan error jika RPC tidak ada)
     try {
       let rpcModel: 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo' = isVision ? 'v2_vision' : 'v2_non_vision';
-      if (m.includes('dilo') || m.includes('laguna')) rpcModel = 'dilo';
-      else if (m.includes('standard') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) rpcModel = 'v1';
+      if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) rpcModel = 'dilo';
+      else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) rpcModel = 'v1';
       supabase.rpc('consume_ai_limit', { p_user_id: userUuid, p_model: rpcModel }).then(() => {}, () => {});
     } catch {}
 

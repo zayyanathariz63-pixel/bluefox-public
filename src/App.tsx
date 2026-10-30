@@ -181,7 +181,8 @@ function parseBluefoxMessages(rows: any[]): Message[] {
   return result;
 }
 
-export type SupportedModel = 'agnes-2.5-flash' | 'tencent-hy3-free' | 'laguna-s-2.1';
+export { BLUEFOX_MODELS } from './lib/supabase';
+export type SupportedModel = 'agnes-3.0-flash' | 'agnes-2.5-flash' | 'deepseek-v4.1-flash-free';
 
 export default function App() {
   const { lang, changeLanguage, t } = useLanguage();
@@ -232,21 +233,21 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<SupportedModel>(() => {
     try {
       const saved = localStorage.getItem('tmpa_selected_model');
-      if (saved === 'agnes-2.5-flash' || saved === 'tencent-hy3-free' || saved === 'laguna-s-2.1') {
+      if (saved === 'agnes-3.0-flash' || saved === 'agnes-2.5-flash' || saved === 'deepseek-v4.1-flash-free') {
         return saved as SupportedModel;
       }
       // Migrasi model lama ke lineup baru:
-      if (saved === 'agnes-2.0-flash' || saved === 'bluefox_pro' || saved === 'deepseek-v4.1-flash-free') {
+      if (saved === 'agnes-2.5-flash' || saved === 'agnes-2.0-flash' || saved === 'bluefox_pro' || saved === 'bluefox-pro' || saved === 'pro') {
+        return 'agnes-3.0-flash';
+      }
+      if (saved === 'tencent-hy3-free' || saved === 'bluefox_standard' || saved === 'bluefox-standard' || saved === 'tmpa_v1' || saved === 'jev' || saved === 'standard') {
         return 'agnes-2.5-flash';
       }
-      if (saved === 'bluefox_standard' || saved === 'tmpa_v1') {
-        return 'tencent-hy3-free';
-      }
-      if (saved === 'bluefox_dilo' || saved === 'longcat-2.0-free' || saved === 'dilo') {
-        return 'laguna-s-2.1';
+      if (saved === 'laguna-s-2.1' || saved === 'bluefox_dilo' || saved === 'bluefox-dilo' || saved === 'dilo' || saved === 'longcat-2.0-free') {
+        return 'deepseek-v4.1-flash-free';
       }
     } catch {}
-    return 'agnes-2.5-flash';
+    return 'agnes-3.0-flash';
   });
   const [isVisionActive, setIsVisionActive] = useState<boolean>(() => {
     try {
@@ -342,7 +343,7 @@ export default function App() {
 
   const handleEnableVision = () => {
     setIsVisionActive(true);
-    setSelectedModel('agnes-2.5-flash');
+    setSelectedModel('agnes-3.0-flash');
     try {
       localStorage.setItem('tmpa_vision_active', 'true');
     } catch {}
@@ -358,8 +359,8 @@ export default function App() {
   };
 
   const handleSelectModel = (modelId: SupportedModel) => {
-    if (isVisionActive && modelId !== 'agnes-2.5-flash') {
-      setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Bluefox Pro (agnes-2.5-flash). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
+    if (isVisionActive && modelId !== 'agnes-3.0-flash') {
+      setVisionLockedNotice("Mode Vision sedang aktif: Model dikunci ke Bluefox Pro (agnes-3.0-flash). Nonaktifkan Vision di menu Vision jika ingin memilih model lain.");
       setTimeout(() => setVisionLockedNotice(null), 4000);
       return;
     }
@@ -448,25 +449,24 @@ export default function App() {
     }
 
     let h = 0, w = 0;
-    if (model === 'agnes-2.5-flash' || model === 'deepseek-v4.1-flash-free' || model === 'agnes-2.0-flash' || model === 'bluefox_pro' || model === 'qwen3_coder') {
-      if (isVision) {
-        h = 5; // Bluefox pro vision: 5% per 5 jam
-        w = 7; // Bluefox pro vision: 7% weekly
-      } else {
-        h = 3; // Bluefox pro standar: 3% per 5 jam
-        w = 4; // Bluefox pro standar: 4% weekly
-      }
-    } else if (model === 'tencent-hy3-free' || model === 'bluefox_standard' || model === 'tmpa_v1' || model === 'gpt_oss') {
-      // bluefox standard
-      h = 2; // 2% per 5 jam
-      w = 3; // 3% weekly
-    } else if (model === 'laguna-s-2.1' || model === 'bluefox_dilo' || model === 'dilo' || model === 'longcat-2.0-free' || model === 'mistral_nemotron') {
-      // bluefox Dilo
-      h = 2; // 2% per 5 jam
-      w = 2; // 2% weekly
-    } else {
+    const m = (model || '').toLowerCase();
+    if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna') || m.includes('longcat')) {
+      // Bluefox Dilo (deepseek-v4.1-flash-free): 5 jam: 2%, seminggu: 2%
+      h = 2;
+      w = 2;
+    } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
+      // Bluefox Standard (agnes-2.5-flash): 5 jam: 2%, seminggu: 3%
       h = 2;
       w = 3;
+    } else {
+      // Bluefox Pro (agnes-3.0-flash / default)
+      if (isVision) {
+        h = 5; // Bluefox Pro Vision: 5 jam: 5%, seminggu: 7%
+        w = 7;
+      } else {
+        h = 3; // Bluefox Pro: 5 jam: 3%, seminggu: 4%
+        w = 4;
+      }
     }
 
     if (searchMode) {
@@ -805,7 +805,7 @@ export default function App() {
           title: session?.title || 'Percakapan',
           messages: session?.messages || [],
           updatedAt: Date.now(),
-          model: (session?.model as any) || 'agnes-2.5-flash',
+          model: (session?.model as any) || 'agnes-3.0-flash',
           isPinned: false
         },
         ...prev
@@ -823,7 +823,7 @@ export default function App() {
           title: s.title || 'Percakapan',
           messages: [],
           updatedAt: s.updated_at ? new Date(s.updated_at).getTime() : Date.now(),
-          model: 'agnes-2.5-flash',
+          model: 'agnes-3.0-flash',
           isPinned: false
         }));
 
@@ -2328,36 +2328,37 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // =========================================================================
       // STRICT VERIFICATION: 3 MODEL BAWAAN BLUEFOX VS MODEL CUSTOM API
       // 1. Identifikasi apakah nama model yang dipilih cocok dengan 3 model bawaan Bluefox:
-      //    - agnes-2.5-flash (Bluefox Pro)
-      //    - tencent-hy3-free (Bluefox Standard)
-      //    - laguna-s-2.1 (Bluefox Dilo)
+      //    - agnes-3.0-flash (Bluefox Pro)
+      //    - agnes-2.5-flash (Bluefox Standard)
+      //    - deepseek-v4.1-flash-free (Bluefox Dilo)
       // =========================================================================
       // Ambil nama model yang dipilih user
-      const rawChosenName = (currentEffectiveModel || selectedModel || 'agnes-2.5-flash').trim();
+      const rawChosenName = (currentEffectiveModel || selectedModel || 'agnes-3.0-flash').trim();
 
       // Cek kecocokan terhadap 3 model bawaan Bluefox
-      const isAgnesMatch = 
-        rawChosenName === 'agnes-2.5-flash' || 
+      const isProMatch = 
+        rawChosenName === 'agnes-3.0-flash' || 
         rawChosenName === 'bluefox_pro' || 
-        rawChosenName === 'agnes-2.0-flash' ||
-        currentEffectiveModel === 'agnes-2.5-flash' ||
-        selectedModel === 'agnes-2.5-flash';
+        rawChosenName === 'bluefox-pro' ||
+        (selectedModel as string) === 'agnes-3.0-flash';
 
-      const isTencentMatch = 
-        rawChosenName === 'tencent-hy3-free' || 
+      const isStandardMatch = 
+        rawChosenName === 'agnes-2.5-flash' || 
         rawChosenName === 'bluefox_standard' || 
+        rawChosenName === 'bluefox-standard' || 
+        rawChosenName === 'tencent-hy3-free' || 
         rawChosenName === 'jev' || 
         rawChosenName === 'tmpa_v1' ||
-        currentEffectiveModel === 'tencent-hy3-free' ||
-        selectedModel === 'tencent-hy3-free';
+        (selectedModel as string) === 'agnes-2.5-flash';
 
-      const isLagunaMatch = 
-        rawChosenName === 'laguna-s-2.1' || 
+      const isDiloMatch = 
+        rawChosenName === 'deepseek-v4.1-flash-free' || 
         rawChosenName === 'bluefox_dilo' || 
+        rawChosenName === 'bluefox-dilo' || 
         rawChosenName === 'dilo' || 
+        rawChosenName === 'laguna-s-2.1' || 
         rawChosenName === 'longcat-2.0-free' ||
-        currentEffectiveModel === 'laguna-s-2.1' ||
-        selectedModel === 'laguna-s-2.1';
+        (selectedModel as string) === 'deepseek-v4.1-flash-free';
 
       const isMotionTriggered = lowerText.includes('@motion');
       const activeSystemPrompt = isMotionTriggered
@@ -2367,13 +2368,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         ? (customInstruction ? `${customInstruction}\n\n${BLUEFOX_MOTION_SYSTEM_PROMPT}` : BLUEFOX_MOTION_SYSTEM_PROMPT)
         : (customInstruction || "");
 
-      let internalModelId = 'agnes-2.5-flash';
-      if (isLagunaMatch) {
-        internalModelId = 'laguna-s-2.1';
-      } else if (isTencentMatch) {
-        internalModelId = 'jev';
-      } else {
+      let internalModelId = 'agnes-3.0-flash';
+      if (isDiloMatch) {
+        internalModelId = 'deepseek-v4.1-flash-free';
+      } else if (isStandardMatch) {
         internalModelId = 'agnes-2.5-flash';
+      } else {
+        internalModelId = 'agnes-3.0-flash';
       }
 
       const chatPayload: any = {
@@ -3156,9 +3157,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           {/* Model Selector Trigger & Dev Mode Badge */}
           <div className="flex items-center gap-2">
             {(() => {
-              const modelDisplayName = selectedModel === 'agnes-2.5-flash'
+              const modelDisplayName = selectedModel === 'agnes-3.0-flash'
                 ? 'bluefox pro' 
-                : selectedModel === 'tencent-hy3-free' 
+                : selectedModel === 'agnes-2.5-flash' 
                 ? 'bluefox standard' 
                 : 'bluefox Dilo';
               const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
@@ -3871,24 +3872,24 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                 )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4">
-                  {/* Bluefox Pro (agnes-2.5-flash) Choice */}
+                  {/* Bluefox Pro (agnes-3.0-flash) Choice */}
                   <button 
-                    onClick={() => handleSelectModel('agnes-2.5-flash')}
+                    onClick={() => handleSelectModel('agnes-3.0-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all cursor-pointer relative ${
-                      selectedModel === 'agnes-2.5-flash'
+                      selectedModel === 'agnes-3.0-flash'
                         ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm' 
                         : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'agnes-2.5-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        selectedModel === 'agnes-3.0-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Bot size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(() => {
-                          const effort = getSmartSelectEffort('agnes-2.5-flash', smartSelectLevel);
+                          const effort = getSmartSelectEffort('agnes-3.0-flash', smartSelectLevel);
                           return (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                               effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
@@ -3907,33 +3908,33 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         )}
                       </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox pro</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.5-flash</span>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Bluefox Pro</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-3.0-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model penalaran tingkat tinggi Agnes 2.5 Flash dengan pemahaman kode, analisis visual multimodal terpadu, pemrosesan dokumen, dan Smart Select hingga tingkat High.
+                      Model flagship dengan kemampuan vision dan pemrosesan tinggi untuk tugas kompleks dan penalaran mendalam.
                     </p>
                   </button>
 
-                  {/* bluefox standard (tencent-hy3-free) Choice */}
+                  {/* Bluefox Standard (agnes-2.5-flash) Choice */}
                   <button 
-                    onClick={() => handleSelectModel('tencent-hy3-free')}
+                    onClick={() => handleSelectModel('agnes-2.5-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
                         ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'tencent-hy3-free'
+                        : selectedModel === 'agnes-2.5-flash'
                           ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
                           : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'tencent-hy3-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        selectedModel === 'agnes-2.5-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Cpu size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(() => {
-                          const effort = getSmartSelectEffort('tencent-hy3-free', smartSelectLevel);
+                          const effort = getSmartSelectEffort('agnes-2.5-flash', smartSelectLevel);
                           return (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                               effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
@@ -3952,33 +3953,33 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         )}
                       </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox standard</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by tencent-hy3-free</span>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Bluefox Standard</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by agnes-2.5-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Model pengolah teks & pemrograman cepat dan tangguh. Smart Select bawaan Medium dan dapat diatur fleksibel hingga High.
+                      Model standar yang stabil dan serbaguna yang seimbang untuk tugas sehari-hari.
                     </p>
                   </button>
 
-                  {/* bluefox Dilo (laguna-s-2.1) Choice */}
+                  {/* Bluefox Dilo (deepseek-v4.1-flash-free) Choice */}
                   <button 
-                    onClick={() => handleSelectModel('laguna-s-2.1')}
+                    onClick={() => handleSelectModel('deepseek-v4.1-flash-free')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
                         ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'laguna-s-2.1'
+                        : selectedModel === 'deepseek-v4.1-flash-free'
                           ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
                           : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'laguna-s-2.1' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        selectedModel === 'deepseek-v4.1-flash-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Layers size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(() => {
-                          const effort = getSmartSelectEffort('laguna-s-2.1', smartSelectLevel);
+                          const effort = getSmartSelectEffort('deepseek-v4.1-flash-free', smartSelectLevel);
                           return (
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
                               effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
@@ -3997,10 +3998,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         )}
                       </div>
                     </div>
-                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">bluefox Dilo</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by laguna-s-2.1</span>
+                    <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Bluefox Dilo</h4>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by deepseek-v4.1-flash-free</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Teman ngobrol ramah dan santai dengan Smart Select hemat (Low). Dapat ditarik fleksibel dari None hingga High.
+                      Cepat dan efisien untuk interaksi harian, reasoning & percakapan umum yang ramah dan hemat kuota.
                     </p>
                   </button>
                 </div>
@@ -4069,7 +4070,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                               </span>
                             )}
                           </h4>
-                          <span className="text-[10px] text-cyan-600 font-mono font-medium">model: agnes-2.5-flash (tanpa fallback)</span>
+                          <span className="text-[10px] text-cyan-600 font-mono font-medium">model: agnes-3.0-flash (tanpa fallback)</span>
                         </div>
                       </div>
                       {isVisionActive && (
@@ -4079,7 +4080,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       )}
                     </div>
                     <p className="text-xs text-slate-600 leading-relaxed pl-12">
-                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-700">Bluefox Pro (agnes-2.5-flash)</strong> tanpa fallback karena pemrosesan gambar & visual didukung oleh model Agnes 2.5 Flash.
+                      Mengaktifkan kemampuan analisis visual. Sistem akan otomatis memanggil dan mengunci model ke <strong className="text-cyan-700">Bluefox Pro (agnes-3.0-flash)</strong> tanpa fallback karena pemrosesan gambar & visual didukung oleh model Agnes 3.0 Flash.
                     </p>
                   </button>
 
@@ -4283,7 +4284,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       {/* Current Status Banner */}
                       <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 flex-wrap gap-2">
                         <div className="flex items-center gap-1.5">
-                          <span>Target model aktif ({selectedModel === 'agnes-2.5-flash' ? 'bluefox pro' : selectedModel === 'tencent-hy3-free' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
+                          <span>Target model aktif ({selectedModel === 'agnes-3.0-flash' ? 'bluefox pro' : selectedModel === 'agnes-2.5-flash' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
                           <strong className="text-purple-700 dark:text-purple-300 uppercase font-bold">
                             Smart Select: {currentEffort}
                           </strong>
