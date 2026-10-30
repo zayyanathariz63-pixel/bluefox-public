@@ -383,6 +383,34 @@ export const MOTION_PRESETS: MotionPreset[] = [
   }
 ];
 
+export interface MotionModelItem {
+  id: string;
+  name: string;
+}
+
+export const MOTION_MODELS: MotionModelItem[] = [
+  { id: 'agnes-2.5-flash', name: 'agnes 2.5' },
+  { id: 'agnes-3.0-flash', name: 'agnes 3.0' },
+  { id: 'deepseek-v4.1-flash-free', name: 'deepseek v4.1' },
+  { id: 'longcat-2.0', name: 'longcat 2.0' },
+  { id: 'laguna-s-2.1', name: 'laguna s 2.1' },
+  { id: 'laguna-xs-2.1', name: 'laguna xs 2.1' },
+  { id: 'mimo-v2.6-flash-free', name: 'mimo v2.6' },
+  { id: 'glm-4.7-flash', name: 'glm 4.7' },
+  { id: 'glm-5.3-flash-free', name: 'glm 5.3' },
+];
+
+export function formatMotionModelName(id: string): string {
+  const match = MOTION_MODELS.find(m => m.id === id);
+  if (match) return match.name;
+  return id
+    .replace(/-free/gi, '')
+    .replace(/-flash/gi, '')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * URL Supabase Edge Function khusus untuk Bluefox Motion
  */
@@ -392,19 +420,21 @@ export const MOTION_EDGE_FUNCTION_URL = 'https://jjlanjshpyklqayjzxyy.supabase.c
  * Memanggil Edge Function khusus 'motion-generator' via supabase.functions.invoke
  * Sesuai panduan resmi pemanggilan frontend:
  * 1. Simpan pesan user terlebih dahulu ke tabel message_bluefox
- * 2. Panggil supabase.functions.invoke('motion-generator', { body: { message_id, prompt } })
+ * 2. Panggil supabase.functions.invoke('motion-generator', { body: { message_id, prompt, system_prompt, model } })
  */
 export async function invokeMotionGenerator(payload: any, signal?: AbortSignal) {
   const promptText = payload.prompt || payload.userText || payload.text || '';
   const messageId = payload.message_id || payload.messageId;
+  const selectedModel = payload.model || payload.selected_model || payload.model_id || 'agnes-3.0-flash';
+  const systemInstruction = payload.system_prompt || payload.system_instruction || BLUEFOX_MOTION_SYSTEM_PROMPT;
 
   const invokeBody = {
     message_id: messageId,
     prompt: promptText,
+    system_prompt: systemInstruction,
+    model: selectedModel,
     user_message: promptText,
     session_id: payload.session_id || payload.sessionId,
-    system_instruction: BLUEFOX_MOTION_SYSTEM_PROMPT,
-    system_prompt: BLUEFOX_MOTION_SYSTEM_PROMPT,
     mode: 'motion',
     is_motion: true,
     ...payload,
@@ -413,13 +443,20 @@ export async function invokeMotionGenerator(payload: any, signal?: AbortSignal) 
   console.log('[MOTION EDGE FUNCTION INVOKE]', {
     function: 'motion-generator',
     message_id: messageId,
+    model: selectedModel,
     promptSample: promptText.slice(0, 100)
   });
 
   // 1. Pemanggilan resmi via supabase.functions.invoke('motion-generator')
   try {
     const { data, error } = await supabase.functions.invoke('motion-generator', {
-      body: invokeBody
+      body: {
+        message_id: messageId,
+        prompt: promptText,
+        system_prompt: systemInstruction,
+        model: selectedModel,
+        ...invokeBody
+      }
     });
 
     if (error) {

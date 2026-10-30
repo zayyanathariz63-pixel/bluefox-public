@@ -271,6 +271,13 @@ export default function App() {
   const [isMotionManualModalOpen, setIsMotionManualModalOpen] = useState(false);
   const [isMotionLoading, setIsMotionLoading] = useState<boolean>(false);
   const [isMotionFinalizing, setIsMotionFinalizing] = useState<boolean>(false);
+  const [selectedMotionModel, setSelectedMotionModel] = useState<string>(() => {
+    try {
+      return localStorage.getItem('tmpa_motion_model') || 'agnes-3.0-flash';
+    } catch {
+      return 'agnes-3.0-flash';
+    }
+  });
   const motionFinalizeResolverRef = useRef<(() => void) | null>(null);
 
 
@@ -1696,7 +1703,8 @@ export default function App() {
     text: string, 
     overrideMessages?: Message[], 
     imageUrl?: string | null, 
-    media?: MediaAttachment | MediaAttachment[]
+    media?: MediaAttachment | MediaAttachment[],
+    motionModelOverride?: string
   ) => {
     isUserStoppedRef.current = false;
     const userText = text.trim();
@@ -2430,6 +2438,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       let motionMessageId: string | undefined = undefined;
 
       if (isMotionTriggered) {
+        const chosenMotionModel = motionModelOverride || selectedMotionModel || 'agnes-3.0-flash';
+
         // 1. Simpan pesan user terlebih dahulu ke tabel message_bluefox
         try {
           const { data: insertedMsg, error: insertError } = await supabase
@@ -2437,6 +2447,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             .insert({
               session_id: effectiveConvId,
               user_message: userText,
+              model: chosenMotionModel,
               ai_response: 'Memulai proses...'
             })
             .select()
@@ -2444,7 +2455,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
           if (!insertError && insertedMsg) {
             motionMessageId = insertedMsg.id;
-            console.log('[message_bluefox] Pesan @motion berhasil disimpan, ID:', insertedMsg.id);
+            console.log('[message_bluefox] Pesan @motion berhasil disimpan, ID:', insertedMsg.id, 'Model:', chosenMotionModel);
           } else if (insertError) {
             console.warn('[message_bluefox] Info simpan pesan awal @motion:', insertError.message);
           }
@@ -2458,6 +2469,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             ...chatPayload,
             message_id: motionMessageId,
             prompt: userText,
+            system_prompt: activeSystemPrompt,
+            model: chosenMotionModel,
             session_id: effectiveConvId
           }, abortControllerRef.current?.signal);
         } catch (motionErr: any) {
@@ -2465,7 +2478,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             throw new DOMException('Request aborted', 'AbortError');
           }
           console.warn("⚠️ Direct motion-generator error, fallback to bluefox-processor:", motionErr?.message);
-          motionEdgeData = await invokeBluefoxProcessor(chatPayload, abortControllerRef.current?.signal);
+          motionEdgeData = await invokeBluefoxProcessor({
+            ...chatPayload,
+            model: chosenMotionModel
+          }, abortControllerRef.current?.signal);
         }
 
         // KETIKA WEBSITE MENDAPATKAN RESPON AI DARI @MOTION:
@@ -3451,7 +3467,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               </div>
             )}
             <ChatInput 
-              onSend={(text, media) => handleSendMessage(text, undefined, undefined, media)} 
+              onSend={(text, media, motionModel) => handleSendMessage(text, undefined, undefined, media, motionModel)} 
               onSubmitManualMotion={handleManualMotionSubmit}
               isLoading={isLoading} 
               onStop={stopGeneration} 
@@ -3465,6 +3481,13 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               onOpenMotionManual={() => setIsMotionManualModalOpen(true)}
               onOpenMotionPanel={() => setIsMotionPanelOpen(true)}
               appStyle={appStyle}
+              selectedMotionModel={selectedMotionModel}
+              onSelectMotionModel={(m) => {
+                setSelectedMotionModel(m);
+                try {
+                  localStorage.setItem('tmpa_motion_model', m);
+                } catch {}
+              }}
             />
           </>
         )}
