@@ -108,6 +108,9 @@ export function ChatInput({
   const [isMotionModelOpen, setIsMotionModelOpen] = useState(false);
   const motionModelDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Tombol pilihan model HANYA muncul ketika user ketik @motion atau mode @motion aktif
+  const showMotionModelPicker = isMotionActive || input.toLowerCase().includes('@motion');
+
   useEffect(() => {
     if (propSelectedMotionModel) {
       setSelectedMotionModel(propSelectedMotionModel);
@@ -1416,7 +1419,7 @@ export function ChatInput({
         <form 
           onSubmit={handleSubmit}
           className={cn(
-            "relative z-10 flex flex-col overflow-hidden rounded-2xl transition-all shadow-sm",
+            "relative z-10 flex flex-col rounded-2xl transition-all shadow-sm",
             isBlueRilis 
               ? "backdrop-blur-xl bg-slate-900/65 border border-blue-400/35 text-white shadow-[0_8px_32px_rgba(30,58,138,0.3)] focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-500/30" 
               : "bg-white border border-slate-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100"
@@ -1425,7 +1428,7 @@ export function ChatInput({
           {/* TULISAN @MOTION DI KIRI ATAS INPUT PROMPT DENGAN TANDA SILANG (X) */}
           {isMotionActive && (
             <div className={cn(
-              "px-3 pt-2 pb-1.5 flex items-center justify-between border-b select-none",
+              "px-3 pt-2 pb-1.5 flex items-center justify-between border-b select-none rounded-t-2xl",
               isBlueRilis ? "border-blue-500/20 bg-blue-950/40" : "border-blue-100/70 bg-blue-50/50"
             )}>
               <div className="flex items-center gap-2">
@@ -1534,7 +1537,8 @@ export function ChatInput({
                             : t.inputPlaceholder
                     }
                     className={cn(
-                      "w-full max-h-[150px] sm:max-h-[200px] bg-transparent resize-none px-2 py-3.5 sm:py-4 pr-44 sm:pr-56 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto",
+                      "w-full max-h-[150px] sm:max-h-[200px] bg-transparent resize-none px-2 py-3.5 sm:py-4 focus:outline-none focus:ring-0 border-none m-0 text-[15px] sm:text-base leading-relaxed overflow-y-auto",
+                      showMotionModelPicker ? "pr-44 sm:pr-56" : "pr-20 sm:pr-24",
                       isBlueRilis ? "text-white placeholder:text-slate-400/80" : "text-slate-800 placeholder:text-slate-400"
                     )}
                     rows={1}
@@ -1571,81 +1575,79 @@ export function ChatInput({
                </button>
             )}
 
-            {/* Tombol Pilihan Model AI Motion (Terpisah di sebelah kiri Send) */}
-            <div className="relative" ref={motionModelDropdownRef}>
-              <button
-                type="button"
-                onClick={() => setIsMotionModelOpen(prev => !prev)}
-                className={cn(
-                  "h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl flex items-center gap-1 sm:gap-1.5 text-xs font-semibold transition-all cursor-pointer border shadow-2xs active:scale-95 shrink-0 select-none",
-                  isMotionActive
-                    ? (isBlueRilis 
-                        ? "bg-blue-600/30 hover:bg-blue-600/40 border-blue-400/50 text-blue-200 shadow-[0_0_12px_rgba(59,130,246,0.3)]" 
-                        : "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700 shadow-xs")
-                    : (isBlueRilis 
-                        ? "bg-slate-800/80 hover:bg-slate-750 text-slate-300 hover:text-white border-blue-500/25" 
-                        : "bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border-slate-200")
-                )}
-                title={lang === 'id' ? "Pilihan Model AI Motion (9 Model)" : "Select Motion AI Model (9 Models)"}
-              >
-                <Cpu size={13} className={isMotionActive ? "text-blue-400 shrink-0" : "text-blue-500 shrink-0"} />
-                <span className="truncate max-w-[65px] sm:max-w-[100px] font-medium text-[11px] sm:text-xs">
-                  {formatMotionModelName(selectedMotionModel)}
-                </span>
-                <ChevronDown size={12} className={cn("text-slate-400 shrink-0 transition-transform duration-200", isMotionModelOpen && "rotate-180 text-blue-500")} />
-              </button>
+            {/* Tombol Pilihan Model AI Motion: HANYA MUNCUL KETIKA USER KETIK @motion ATAU MODE @motion AKTIF */}
+            {showMotionModelPicker && (
+              <div className="relative" ref={motionModelDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsMotionModelOpen(prev => !prev)}
+                  className={cn(
+                    "h-8 sm:h-9 px-2 sm:px-2.5 rounded-xl flex items-center gap-1 sm:gap-1.5 text-xs font-semibold transition-all cursor-pointer border shadow-2xs active:scale-95 shrink-0 select-none",
+                    isBlueRilis 
+                      ? "bg-blue-600/30 hover:bg-blue-600/40 border-blue-400/50 text-blue-200 shadow-[0_0_12px_rgba(59,130,246,0.3)]" 
+                      : "bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700 shadow-xs"
+                  )}
+                  title={lang === 'id' ? "Pilihan Model AI Motion (9 Model)" : "Select Motion AI Model (9 Models)"}
+                >
+                  <Cpu size={13} className="text-blue-500 shrink-0" />
+                  <span className="truncate max-w-[65px] sm:max-w-[100px] font-medium text-[11px] sm:text-xs">
+                    {formatMotionModelName(selectedMotionModel)}
+                  </span>
+                  <ChevronDown size={12} className={cn("text-slate-400 shrink-0 transition-transform duration-200", isMotionModelOpen && "rotate-180 text-blue-500")} />
+                </button>
 
-              {/* Popover Dropdown 9 Model AI */}
-              <AnimatePresence>
-                {isMotionModelOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className={cn(
-                      "absolute right-0 bottom-full mb-2 w-56 sm:w-64 p-1.5 rounded-2xl shadow-2xl border z-50 overflow-hidden",
-                      isBlueRilis
-                        ? "bg-[#090f1d]/95 backdrop-blur-xl border-blue-500/35 text-slate-200 shadow-[0_0_30px_rgba(15,23,42,0.9)]"
-                        : "bg-white border-slate-200 text-slate-900"
-                    )}
-                  >
-                    <div className="px-2.5 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200/60 dark:border-slate-800/60 mb-1 flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Sparkles size={11} className="text-blue-500" />
-                        Model AI Motion
-                      </span>
-                      <span className="text-[10px] text-blue-500 font-mono font-bold bg-blue-50 dark:bg-blue-950/60 px-1.5 py-0.5 rounded-md">9 Model</span>
-                    </div>
-                    <div className="max-h-60 overflow-y-auto space-y-0.5 pr-0.5">
-                      {MOTION_MODELS.map((item, idx) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleSelectMotionModel(item.id)}
-                          className={cn(
-                            "w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer",
-                            selectedMotionModel === item.id
-                              ? "bg-blue-600 text-white shadow-2xs"
-                              : isBlueRilis
-                              ? "hover:bg-slate-800/70 text-slate-300"
-                              : "hover:bg-slate-100 text-slate-700"
-                          )}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] opacity-60 font-mono w-4">{idx + 1}.</span>
-                            <span className="truncate">{item.name}</span>
-                          </div>
-                          {selectedMotionModel === item.id && (
-                            <Check size={14} className="stroke-[2.5] text-white shrink-0 ml-1" />
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                {/* Popover Dropdown 9 Model AI: Mengambang di atas input prompt tanpa terpotong */}
+                <AnimatePresence>
+                  {isMotionModelOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ duration: 0.15 }}
+                      className={cn(
+                        "absolute right-0 bottom-full mb-3 w-60 sm:w-68 p-2 rounded-2xl shadow-2xl border z-50 overflow-hidden",
+                        isBlueRilis
+                          ? "bg-[#090f1d] border-blue-500/40 text-slate-100 shadow-[0_12px_40px_rgba(15,23,42,0.95)] ring-1 ring-blue-500/30"
+                          : "bg-white border-slate-200 text-slate-900 shadow-[0_12px_40px_rgba(0,0,0,0.18)] ring-1 ring-slate-900/5"
+                      )}
+                    >
+                      <div className="px-2 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-200/60 dark:border-slate-800/60 mb-1.5 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                          <Sparkles size={12} className="text-blue-500" />
+                          Model AI Motion
+                        </span>
+                        <span className="text-[10px] text-blue-600 dark:text-blue-400 font-mono font-bold bg-blue-50 dark:bg-blue-950/70 px-1.5 py-0.5 rounded-md border border-blue-200/50 dark:border-blue-800/50">9 Model</span>
+                      </div>
+                      <div className="max-h-60 overflow-y-auto space-y-1 pr-0.5 scrollbar-thin">
+                        {MOTION_MODELS.map((item, idx) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectMotionModel(item.id)}
+                            className={cn(
+                              "w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors cursor-pointer",
+                              selectedMotionModel === item.id
+                                ? "bg-blue-600 text-white shadow-2xs"
+                                : isBlueRilis
+                                ? "hover:bg-slate-800/80 text-slate-200"
+                                : "hover:bg-slate-100 text-slate-700"
+                            )}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[10px] opacity-60 font-mono w-4">{idx + 1}.</span>
+                              <span className="truncate">{item.name}</span>
+                            </div>
+                            {selectedMotionModel === item.id && (
+                              <Check size={14} className="stroke-[2.5] text-white shrink-0 ml-1" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
 
             {isLoading ? (
               <button
