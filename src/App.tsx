@@ -577,7 +577,9 @@ export default function App() {
       const currentPath = window.location.pathname;
       if (currentPath.startsWith('/verify')) return 'verify';
       if (currentPath.startsWith('/settings/integrations') || currentPath.startsWith('/integrations')) return 'integrations';
-      const isShareRoute = currentPath.startsWith('/share-') || 
+      const isShareRoute = currentPath === '/share' || 
+        currentPath.startsWith('/share') ||
+        currentPath.startsWith('/share-') || 
         window.location.hash.includes('share-') ||
         window.location.search.includes('share=');
       if (isShareRoute) return 'chat';
@@ -629,6 +631,21 @@ export default function App() {
       robotsMeta.content = 'noindex, nofollow';
     } else {
       robotsMeta.content = 'index, follow';
+    }
+
+    // Dynamic Canonical URL & OG:URL based on actual pathname
+    let canonicalLink = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (!canonicalLink) {
+      canonicalLink = document.createElement('link');
+      canonicalLink.rel = 'canonical';
+      document.head.appendChild(canonicalLink);
+    }
+    const cleanOrigin = window.location.origin || 'https://bluefox.tmpa.my.id';
+    canonicalLink.href = `${cleanOrigin}${window.location.pathname}`;
+
+    let ogUrlMeta = document.querySelector('meta[property="og:url"]') as HTMLMetaElement | null;
+    if (ogUrlMeta) {
+      ogUrlMeta.content = `${cleanOrigin}${window.location.pathname}`;
     }
   }, [appState]);
 

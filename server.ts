@@ -566,6 +566,24 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
     }
   });
 
+  // Explicit Sitemap & SEO routes to guarantee correct Content-Type for crawlers & GSC
+  app.get(['/sitemap.xml', '/sitemap', '/sitemap_index.xml'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('X-Robots-Tag', 'all');
+    res.sendFile(path.join(process.cwd(), 'public', 'sitemap.xml'));
+  });
+
+  app.get('/robots.txt', (_req, res) => {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('X-Robots-Tag', 'all');
+    res.sendFile(path.join(process.cwd(), 'public', 'robots.txt'));
+  });
+
+  app.get('/llms.txt', (_req, res) => {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.sendFile(path.join(process.cwd(), 'public', 'llms.txt'));
+  });
+
   // Serve static files from public directory (manifest, icons, service worker, robots, sitemap)
   const publicPath = path.join(process.cwd(), 'public');
   app.use(express.static(publicPath, {
@@ -575,6 +593,8 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
       } else if (filePath.endsWith('sw.js')) {
         res.setHeader('Service-Worker-Allowed', '/');
         res.setHeader('Content-Type', 'application/javascript');
+      } else if (filePath.endsWith('sitemap.xml')) {
+        res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       }
     }
   }));

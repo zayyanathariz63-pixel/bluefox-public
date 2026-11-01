@@ -9,6 +9,9 @@ User-agent: *
 # Rute Publik yang Diizinkan
 Allow: /$
 Allow: /share
+Allow: /sitemap.xml
+Allow: /robots.txt
+Allow: /llms.txt
 
 # Rute Terlarang untuk Bot
 Disallow: /ticket
