@@ -22,6 +22,11 @@ import { MotionManualModal } from './components/MotionManualModal';
 import { MotionLoadingProgress } from './components/MotionLoadingProgress';
 import { ChooseAccountModal } from './components/ChooseAccountModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { HalloweenIntroModal } from './components/HalloweenIntroModal';
+import { HalloweenEventModal } from './components/HalloweenEventModal';
+import { HalloweenMonsterSpawner } from './components/HalloweenMonsterSpawner';
+import { HalloweenEasterEgg, EasterEggType } from './components/HalloweenEasterEgg';
+import { isHalloweenEventActive, getHalloweenLimitBonusMultiplier } from './lib/halloweenManager';
 import { 
   SavedAccount, 
   recordCurrentSession, 
@@ -601,6 +606,9 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMenuLoadMoreOpen, setIsMenuLoadMoreOpen] = useState(false);
   const [isChooseAccountOpen, setIsChooseAccountOpen] = useState(false);
+  const [isHalloweenIntroOpen, setIsHalloweenIntroOpen] = useState(false);
+  const [isHalloweenEventHubOpen, setIsHalloweenEventHubOpen] = useState(false);
+  const [activeHalloweenEasterEgg, setActiveHalloweenEasterEgg] = useState<EasterEggType>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isUserStoppedRef = useRef(false);
@@ -1754,8 +1762,27 @@ export default function App() {
     // 0. CEK INTERCEPT SYSTEM CONTROLLER (@image, @video, @bluefox, @theme, @memory standalone)
     // =========================================================================
     const lowerText = userText.toLowerCase();
+    const lowerClean = lowerText.replace(/\s+/g, ' ').trim();
 
+    // 0.0. CEK TRIGGER EVENT HALLOWEEN 2026
+    // User ketik 'Halloween 2026' atau 'hollow blue' lalu kirim -> Buka layar penuh Halloween
+    if (lowerClean === 'halloween 2026' || lowerClean === 'hollow blue') {
+      setIsHalloweenIntroOpen(true);
+      return;
+    }
 
+    // 0.0.1. CEK KEYWORD EASTER EGGS HALLOWEEN
+    if (lowerClean.includes('headless horse man') || lowerClean.includes('headless horseman') || lowerClean.includes('kuda setengah manusia')) {
+      setActiveHalloweenEasterEgg('headless');
+    } else if (lowerClean.includes('halloween')) {
+      setActiveHalloweenEasterEgg('all');
+    } else if (lowerClean.includes('pumkin') || lowerClean.includes('pumpkin')) {
+      setActiveHalloweenEasterEgg('pumpkin');
+    } else if (lowerClean.includes('skeleton')) {
+      setActiveHalloweenEasterEgg('skeleton');
+    } else if (lowerClean.includes('ghost') || lowerClean.includes('hantu')) {
+      setActiveHalloweenEasterEgg('ghost');
+    }
 
     const isBluefoxCmd = lowerText.startsWith('@bluefox');
     const isThemeCmd = lowerText.startsWith('@theme');
@@ -3259,7 +3286,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           </div>
 
           <div className="relative shrink-0 flex items-center gap-1.5">
-            <PWAInstallButton variant="badge" />
             {/* Fitur Bagikan ketika AI menjawab sesi chat untuk pertama kali di sebelah tombol download */}
             {messages.some(m => m.role === 'model' && m.text.trim().length > 0) && (
               <button
@@ -3607,9 +3633,6 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     <Settings size={18} className="text-purple-600" />
                     <span>{t.settings}</span>
                   </button>
-
-                  {/* 3.5. Download App / PWA Install */}
-                  <PWAInstallButton variant="menu-item" onInstalled={() => setIsSidebarOpen(false)} />
 
                   {/* 4. Load more (di bawah setting) */}
                   <button 
@@ -4780,6 +4803,39 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         onClose={() => setIsMotionManualModalOpen(false)}
         onSubmitManualCode={handleManualMotionSubmit}
       />
+
+      {/* Halloween 2026 Intro Screen Modal (Triggered by 'Halloween 2026' or 'hollow blue') */}
+      <HalloweenIntroModal
+        isOpen={isHalloweenIntroOpen}
+        onClose={() => setIsHalloweenIntroOpen(false)}
+        onSelectPrompt={(prompt) => {
+          setIsHalloweenIntroOpen(false);
+          handleSendMessage(prompt);
+        }}
+        onOpenEventHub={() => {
+          setIsHalloweenIntroOpen(false);
+          setIsHalloweenEventHubOpen(true);
+        }}
+      />
+
+      {/* Halloween 2026 Event Hub Modal */}
+      <HalloweenEventModal
+        isOpen={isHalloweenEventHubOpen}
+        onClose={() => setIsHalloweenEventHubOpen(false)}
+        onNavigateToStyle={() => {
+          setIsHalloweenEventHubOpen(false);
+          setIsSettingsOpen(true);
+        }}
+      />
+
+      {/* Halloween Easter Egg Screen Animations (Pumpkin, Skeleton, Ghost, Headless, All) */}
+      <HalloweenEasterEgg
+        type={activeHalloweenEasterEgg}
+        onComplete={() => setActiveHalloweenEasterEgg(null)}
+      />
+
+      {/* Halloween Monster Spawner (Kelelawar 5m, Pumpkin 10m/5s, Skeleton 20m/5s) */}
+      <HalloweenMonsterSpawner />
     </div>
       )}
     </>
