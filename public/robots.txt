@@ -1,0 +1,20 @@
+# Izinkan Bot AI Utama dan Mesin Pencari
+User-agent: Google-Extended
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: PerplexityBot
+User-agent: Googlebot
+User-agent: *
+
+# Rute Publik yang Diizinkan
+Allow: /$
+Allow: /share
+
+# Rute Terlarang untuk Bot
+Disallow: /ticket
+Disallow: /verify
+Disallow: /media-viewer
+Disallow: /api/
+
+# Lokasi Sitemap
+Sitemap: https://bluefox.tmpa.my.id/sitemap.xml

@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { ArrowRight, Shield, Zap, Sparkles, Search } from 'lucide-react';
 import { useLanguage } from '../lib/i18n';
+import { PWAInstallButton } from './PWAInstallButton';
 
 const LOGO_URL = 'https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/Video%20atau%20asset/T_20260809_163901_0000.png';
 
@@ -24,12 +25,15 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
           </div>
         </div>
         
-        <button 
-          onClick={onStart}
-          className="text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
-        >
-          {isId ? 'Mulai Chat' : 'Start Chat'}
-        </button>
+        <div className="flex items-center gap-2">
+          <PWAInstallButton variant="badge" />
+          <button 
+            onClick={onStart}
+            className="btn-start-chat text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl transition-all shadow-xs active:scale-95 cursor-pointer"
+          >
+            {isId ? 'Mulai Chat' : 'Start Chat'}
+          </button>
+        </div>
       </header>
 
       {/* Hero Section */}
@@ -73,14 +77,15 @@ export function LandingPage({ onStart }: { onStart: () => void }) {
               : 'Smart AI assistant for brainstorming, coding, accurate real-time web search, and daily task automation.'}
           </p>
 
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full sm:w-auto">
             <button
               onClick={onStart}
-              className="group w-full sm:w-auto flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-7 py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
+              className="btn-start-chat group w-full sm:w-auto flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white px-7 py-3.5 rounded-xl font-bold text-sm sm:text-base transition-all shadow-md hover:shadow-lg active:scale-95 cursor-pointer"
             >
               <span>{isId ? 'Mulai Percakapan Sekarang' : 'Start Conversation Now'}</span>
               <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
+            <PWAInstallButton variant="button" />
           </div>
         </motion.div>
 

@@ -21,6 +21,7 @@ import { MotionPanel } from './components/MotionPanel';
 import { MotionManualModal } from './components/MotionManualModal';
 import { MotionLoadingProgress } from './components/MotionLoadingProgress';
 import { ChooseAccountModal } from './components/ChooseAccountModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
 import { 
   SavedAccount, 
   recordCurrentSession, 
@@ -610,6 +611,26 @@ export default function App() {
       recordCurrentSession(user, userTier);
     }
   }, [user, userTier]);
+
+  // Dynamic Crawler Indexing & Robots Directive enforcement (PRD 2.0)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentPath = window.location.pathname.toLowerCase();
+    const isDisallowedRoute = /^\/(ticket|verify|media-viewer|api)(\/|$)/.test(currentPath);
+
+    let robotsMeta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (!robotsMeta) {
+      robotsMeta = document.createElement('meta');
+      robotsMeta.name = 'robots';
+      document.head.appendChild(robotsMeta);
+    }
+
+    if (isDisallowedRoute) {
+      robotsMeta.content = 'noindex, nofollow';
+    } else {
+      robotsMeta.content = 'index, follow';
+    }
+  }, [appState]);
 
   const handleLandingStart = async () => {
     if (user) {
@@ -3220,7 +3241,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             )}
           </div>
 
-          <div className="relative shrink-0 flex items-center gap-1">
+          <div className="relative shrink-0 flex items-center gap-1.5">
+            <PWAInstallButton variant="badge" />
             {/* Fitur Bagikan ketika AI menjawab sesi chat untuk pertama kali di sebelah tombol download */}
             {messages.some(m => m.role === 'model' && m.text.trim().length > 0) && (
               <button
@@ -3568,6 +3590,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     <Settings size={18} className="text-purple-600" />
                     <span>{t.settings}</span>
                   </button>
+
+                  {/* 3.5. Download App / PWA Install */}
+                  <PWAInstallButton variant="menu-item" onInstalled={() => setIsSidebarOpen(false)} />
 
                   {/* 4. Load more (di bawah setting) */}
                   <button 

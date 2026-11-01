@@ -1,0 +1,12 @@
+# Bluefox AI
+
+> Bluefox AI adalah platform asisten multi-model interaktif yang dikembangkan oleh The Multi Platform AI (TMPA). Platform ini menyediakan akses ke berbagai model AI unggulan melalui Neosantara Router.
+
+## Fitur Utama
+- Bluefox Chat: Mendukung model seperti Agnes 3.0, Agnes 2.5, dan DeepSeek V4 Flash Free.
+- Bluefox Motion: Pemrosesan video dan rendering berbasis kode.
+- Integrasi API kustom dan alat berbasis Model Context Protocol (MCP).
+
+## Akses & Tautan
+- Website Resmi: https://bluefox.tmpa.my.id
+- Fitur Share Publik: https://bluefox.tmpa.my.id/share

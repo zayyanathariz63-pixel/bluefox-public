@@ -5,8 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>bluefox</title>
     <meta name="description" content="A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://bluefox.tmpa.my.id/" />
     <meta property="og:title" content="bluefox" />
     <meta property="og:description" content="A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration." />
+    <meta property="og:url" content="https://bluefox.tmpa.my.id/" />
+    <meta property="og:site_name" content="Bluefox AI" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="bluefox" />
+    <meta name="twitter:description" content="A sleek, professional AI chat platform featuring trigger commands (@), theme customization, real-time dual-engine web search with sources bottom sheet, multi-model support, and SSO integration." />
+
+    <!-- PWA Web App Manifest & Android / iOS mobile capabilities -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Bluefox" />
+    <link rel="icon" type="image/webp" href="/favicon.webp" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Bluefox AI",
+      "operatingSystem": "All",
+      "applicationCategory": "DeveloperApplication",
+      "url": "https://bluefox.tmpa.my.id",
+      "description": "Platform asisten AI multi-model interaktif berbasis web dengan dukungan Neosantara Router.",
+      "creator": {
+        "@type": "Organization",
+        "name": "The Multi Platform AI (TMPA)"
+      }
+    }
+    </script>
     <style>
       /* Precise styling identical to LandingPage.tsx for crawlers and destroy.spritefusion.com */
       * {
@@ -276,7 +310,11 @@
               <span class="brand-tag">Chat & Intelligence</span>
             </div>
           </div>
-          <a href="#chat" class="btn-header">
+          <a 
+            href="https://account.tmpa.my.id/login" 
+            rel="nofollow"
+            class="btn-header btn-start-chat"
+          >
             Mulai Chat
           </a>
         </header>
@@ -322,7 +360,11 @@
 
             <!-- CTA Button -->
             <div>
-              <a href="#chat" class="btn-cta">
+              <a 
+                href="https://account.tmpa.my.id/login" 
+                rel="nofollow"
+                class="btn-cta btn-start-chat"
+              >
                 <span>Mulai Percakapan Sekarang</span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M5 12h14"/>

@@ -1,0 +1,65 @@
+{
+  "id": "/",
+  "name": "Bluefox AI",
+  "short_name": "Bluefox",
+  "description": "Platform asisten AI multi-model interaktif berbasis web dengan dukungan Neosantara Router.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#090f1d",
+  "theme_color": "#2563eb",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icon-192.webp",
+      "sizes": "192x192",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Chat Baru",
+      "short_name": "Chat",
+      "description": "Mulai percakapan AI baru di Bluefox",
+      "url": "/#chat",
+      "icons": [
+        {
+          "src": "/icon-192.webp",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
