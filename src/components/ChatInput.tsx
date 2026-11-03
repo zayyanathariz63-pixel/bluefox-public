@@ -10,6 +10,7 @@ import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompres
 import { extractTextFromPdf } from '../lib/pdfReader';
 import { MOTION_PRESETS, MOTION_MODELS, formatMotionModelName } from '../lib/motion';
 import { getAppStyle, AppStyle } from '../lib/styleManager';
+import { startRecording, stopAndSendRecording, cancelRecording } from '../lib/voiceRecorder';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[], motionModel?: string) => void;
@@ -87,6 +88,8 @@ export function ChatInput({
   const [input, setInput] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingText, setRecordingText] = useState('');
   const [attachedMediaList, setAttachedMediaList] = useState<MediaAttachment[]>([]);
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
@@ -205,121 +208,84 @@ export function ChatInput({
     return list.slice(0, 3); // Max 3 domains
   }, [input]);
 
+  // Timer durasi perekaman suara
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = true;
-        recognitionRef.current.lang = 'id-ID';
-
-        recognitionRef.current.onresult = (event: any) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-
-          if (finalTranscript) {
-             sessionFinalsRef.current += (sessionFinalsRef.current ? ' ' : '') + finalTranscript.trim();
-          }
-          sessionInterimsRef.current = interimTranscript;
-          
-          setRecordingText(
-            (sessionFinalsRef.current + (sessionInterimsRef.current ? ' ' + sessionInterimsRef.current : '')).trim()
-          );
-        };
-
-        recognitionRef.current.onerror = (event: any) => {
-          console.error("Speech recognition error", event.error);
-          if (event.error === 'not-allowed') {
-            setErrorModal({
-              isOpen: true,
-              title: "Akses Mikrofon Ditolak",
-              message: "Mohon izinkan akses mikrofon di pengaturan browser Anda untuk menggunakan fitur input suara."
-            });
-            isManuallyStoppedRef.current = true;
-            setIsRecording(false);
-          }
-        };
-
-        recognitionRef.current.onend = () => {
-          if (!isManuallyStoppedRef.current) {
-            try {
-              recognitionRef.current.start();
-            } catch (e) {
-              setIsRecording(false);
-            }
-          } else {
-            setIsRecording(false);
-          }
-        };
-      }
-    }
-  }, []);
-
-  const handleStartRecording = async () => {
-    if (isRecording) return;
-    setRecordingText('');
-    sessionFinalsRef.current = '';
-    sessionInterimsRef.current = '';
-    isManuallyStoppedRef.current = false;
-
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
-      } catch (err) {
-        console.error("Microphone access denied:", err);
-        setErrorModal({
-          isOpen: true,
-          title: "Izin Mikrofon Diperlukan",
-          message: "Akses mikrofon tidak diizinkan atau tidak tersedia di browser Anda."
-        });
-        return;
-      }
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-        setIsRecording(true);
-      } catch (e) {
-        console.error(e);
-      }
+    let interval: any = null;
+    if (isRecording) {
+      setRecordingDuration(0);
+      interval = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
     } else {
+      setRecordingDuration(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isRecording]);
+
+  const formatRecordingTime = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  // 1. Memulai Perekaman Suara (Audio Waveform Aktif)
+  const handleStartVoice = async () => {
+    if (isRecording || isTranscribing || isLoading || disabled) return;
+    try {
+      await startRecording();
+      setIsRecording(true);
+      setIsTranscribing(false);
+    } catch (err: any) {
+      console.error("Microphone access error:", err);
       setErrorModal({
         isOpen: true,
-        title: "Perangkat Tidak Mendukung",
-        message: "Browser yang Anda gunakan saat ini tidak mendukung fitur Speech Recognition."
+        title: lang === 'id' ? "Izin Mikrofon Diperlukan" : "Microphone Access Required",
+        message: lang === 'id'
+          ? "Tidak dapat mengakses mikrofon. Pastikan Anda telah memberikan izin mikrofon di pengaturan browser Anda."
+          : "Cannot access microphone. Please ensure microphone permissions are granted in your browser settings."
       });
+      setIsRecording(false);
+      setIsTranscribing(false);
     }
   };
 
-  const handleStopRecording = () => {
-    isManuallyStoppedRef.current = true;
+  // 2. Berhenti & Mengirim Audio ke Supabase Edge Function bluefox-stt-transcribe
+  const handleSendVoice = async () => {
+    if (!isRecording) return;
     setIsRecording(false);
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-    }
-    const fullText = (sessionFinalsRef.current + (sessionInterimsRef.current ? ' ' + sessionInterimsRef.current : '')).trim();
-    if (fullText) {
-      setInput((prev) => prev + (prev ? ' ' : '') + fullText);
-    }
-    setRecordingText('');
-    sessionFinalsRef.current = '';
-    sessionInterimsRef.current = '';
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
+    setIsTranscribing(true);
+
+    try {
+      const transcribedText = await stopAndSendRecording();
+      if (transcribedText) {
+        setInput((prev) => (prev ? `${prev} ${transcribedText}` : transcribedText));
       }
-    }, 100);
+    } catch (err: any) {
+      console.error("Gagal mentranskripsi audio via Supabase:", err);
+      setErrorModal({
+        isOpen: true,
+        title: lang === 'id' ? "Gagal Mentranskripsi Suara" : "Transcription Failed",
+        message: err?.message || (lang === 'id'
+          ? "Terjadi kendala saat memproses audio di Supabase Edge Function."
+          : "An error occurred while transcribing audio via Supabase Edge Function.")
+      });
+    } finally {
+      setIsTranscribing(false);
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 120);
+    }
+  };
+
+  // 3. Batalkan Rekaman Tanpa Mengirim
+  const handleCancelVoice = () => {
+    cancelRecording();
+    setIsRecording(false);
+    setIsTranscribing(false);
   };
 
   // Trigger File Picker
@@ -1492,32 +1458,89 @@ export function ChatInput({
 
             <div className="flex-1 relative min-h-[52px] sm:min-h-[56px] flex items-center">
               <AnimatePresence mode="popLayout">
-                {isRecording ? (
+                {isTranscribing ? (
+                  /* 1. STATE LOADING MENUNGGU JAWABAN DARI SUPABASE */
+                  <motion.div
+                    key="transcribing"
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -5 }}
+                    className="w-full flex items-center gap-3 px-3 py-3 pr-20 select-none"
+                  >
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500 shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span className={cn(
+                        "text-xs sm:text-sm font-semibold truncate animate-pulse",
+                        isBlueRilis ? "text-blue-300" : "text-blue-600"
+                      )}>
+                        {lang === 'id' ? 'Mengubah suara menjadi teks...' : 'Transcribing voice to text...'}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono truncate">
+                        {lang === 'id' ? 'Menunggu jawaban dari Supabase STT...' : 'Waiting for Supabase response...'}
+                      </span>
+                    </div>
+                  </motion.div>
+                ) : isRecording ? (
+                  /* 2. STATE WAVE MUSIC VISUALIZER KETIKA MEREKAM SUARA */
                   <motion.div
                     key="recording"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 10 }}
-                    className="w-full flex items-center justify-between px-2 pr-28"
+                    initial={{ opacity: 0, scale: 0.98 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    className="w-full flex items-center justify-between px-3 py-2 pr-20 sm:pr-24 select-none"
                   >
-                    <div className={cn(
-                      "text-sm font-medium truncate flex-1 pl-1",
-                      isBlueRilis ? "text-slate-200" : "text-slate-800"
-                    )}>
-                      {recordingText || "Mendengarkan..."}
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        type="button"
+                        onClick={handleCancelVoice}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                        title={lang === 'id' ? "Batalkan rekaman" : "Cancel recording"}
+                      >
+                        <X size={16} />
+                      </button>
+
+                      <div className="flex items-center gap-1.5 shrink-0 px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-500 font-mono text-xs font-bold">
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+                        <span>{formatRecordingTime(recordingDuration)}</span>
+                      </div>
+
+                      <span className={cn(
+                        "text-xs font-medium truncate hidden md:inline",
+                        isBlueRilis ? "text-slate-300" : "text-slate-600"
+                      )}>
+                        {lang === 'id' ? 'Merekam... Klik tombol Kirim' : 'Listening... Click Send'}
+                      </span>
                     </div>
-                    <div className="flex items-center justify-center gap-1 h-6 mx-2 shrink-0">
-                      {[1, 2, 3, 4, 5].map((i) => (
+
+                    {/* Animated Music Waveform Equalizer */}
+                    <div className="flex items-center gap-1 sm:gap-1.5 h-8 shrink-0 px-1 sm:px-2">
+                      {[
+                        { delay: 0.0, heights: ['30%', '90%', '20%', '85%', '30%'], duration: 0.55 },
+                        { delay: 0.1, heights: ['20%', '100%', '40%', '95%', '20%'], duration: 0.48 },
+                        { delay: 0.18, heights: ['45%', '70%', '100%', '35%', '45%'], duration: 0.52 },
+                        { delay: 0.25, heights: ['60%', '95%', '25%', '80%', '60%'], duration: 0.62 },
+                        { delay: 0.08, heights: ['25%', '85%', '50%', '100%', '25%'], duration: 0.46 },
+                        { delay: 0.22, heights: ['40%', '100%', '30%', '90%', '40%'], duration: 0.58 },
+                        { delay: 0.15, heights: ['35%', '75%', '95%', '45%', '35%'], duration: 0.5 },
+                        { delay: 0.28, heights: ['20%', '90%', '35%', '70%', '20%'], duration: 0.54 }
+                      ].map((bar, i) => (
                         <motion.div
                           key={i}
-                          className="w-1 bg-blue-500 rounded-full"
-                          animate={{ height: ['40%', '100%', '40%'] }}
-                          transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                          className="w-1 sm:w-1.5 rounded-full bg-gradient-to-t from-blue-600 via-sky-400 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"
+                          animate={{ height: bar.heights }}
+                          transition={{
+                            duration: bar.duration,
+                            repeat: Infinity,
+                            repeatType: 'reverse',
+                            delay: bar.delay,
+                            ease: 'easeInOut'
+                          }}
                         />
                       ))}
                     </div>
                   </motion.div>
                 ) : (
+                  /* 3. STATE NORMAL: TEXTAREA INPUT PROMPT */
                   <motion.textarea
                     key="textarea"
                     initial={{ opacity: 0, y: -10 }}
@@ -1549,30 +1572,50 @@ export function ChatInput({
             </div>
 
           <div className="absolute right-2 bottom-2 sm:right-3 sm:bottom-3 flex items-center justify-center gap-1.5 z-20">
-            {isRecording ? (
+            {isTranscribing ? (
+              /* SAAT TRANSCRIBING: INDIKATOR LOADING */
               <button
                 type="button"
-                onClick={handleStopRecording}
-                className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors bg-rose-50 text-rose-600 hover:bg-rose-100 cursor-pointer border border-rose-200"
-                title="Hentikan rekaman"
+                disabled
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors cursor-not-allowed",
+                  isBlueRilis ? "bg-blue-600/30 text-blue-300 border border-blue-500/40" : "bg-blue-50 text-blue-600 border border-blue-200"
+                )}
+                title={lang === 'id' ? "Sedang mentranskripsi suara..." : "Transcribing voice..."}
               >
-                <StopCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px] fill-current" />
+                <Loader2 className="w-4 h-4 sm:w-[18px] sm:h-[18px] animate-spin text-blue-500" />
+              </button>
+            ) : isRecording ? (
+              /* SAAT MEREKAM: TOMBOL VOICE BERUBAH MENJADI TOMBOL SEND */
+              <button
+                type="button"
+                onClick={handleSendVoice}
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-all cursor-pointer shadow-md active:scale-95",
+                  isBlueRilis
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-600/40 border border-blue-400/40"
+                    : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white shadow-blue-600/30"
+                )}
+                title={lang === 'id' ? "Kirim suara untuk ditranskripsi ke teks" : "Send voice to transcribe into text"}
+              >
+                <Send className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
               </button>
             ) : (
-               <button
-                 type="button"
-                 onClick={handleStartRecording}
-                 disabled={isLoading || disabled}
-                 className={cn(
-                   "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
-                   (isLoading || disabled) 
-                     ? (isBlueRilis ? "bg-slate-800/40 text-slate-600 cursor-not-allowed" : "bg-slate-100 text-slate-400 cursor-not-allowed") 
-                     : (isBlueRilis ? "bg-slate-800/60 backdrop-blur-md border border-blue-400/20 text-slate-300 hover:text-white hover:bg-slate-700/60 cursor-pointer" : "bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer hover:bg-slate-200")
-                 )}
-                 title="Bicara"
-               >
-                 <Mic className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
-               </button>
+              /* SAAT NORMAL: TOMBOL MIKROFON */
+              <button
+                type="button"
+                onClick={handleStartVoice}
+                disabled={isLoading || disabled}
+                className={cn(
+                  "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-colors",
+                  (isLoading || disabled) 
+                    ? (isBlueRilis ? "bg-slate-800/40 text-slate-600 cursor-not-allowed" : "bg-slate-100 text-slate-400 cursor-not-allowed") 
+                    : (isBlueRilis ? "bg-slate-800/60 backdrop-blur-md border border-blue-400/20 text-slate-300 hover:text-white hover:bg-slate-700/60 cursor-pointer" : "bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer hover:bg-slate-200")
+                )}
+                title={lang === 'id' ? "Bicara (Input Suara)" : "Voice input"}
+              >
+                <Mic className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
+              </button>
             )}
 
             {/* Tombol Pilihan Model AI Motion: HANYA MUNCUL KETIKA USER KETIK @motion ATAU MODE @motion AKTIF */}
@@ -1663,13 +1706,13 @@ export function ChatInput({
               >
                 <Square className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
               </button>
-            ) : (
+            ) : !isRecording && !isTranscribing ? (
               <button
                 type="submit"
-                disabled={(!input.trim() && attachedMediaList.length === 0) || disabled || isRecording}
+                disabled={(!input.trim() && attachedMediaList.length === 0) || disabled}
                 className={cn(
                   "flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-xl outline-none transition-all",
-                  (input.trim() || attachedMediaList.length > 0) && !disabled && !isRecording
+                  (input.trim() || attachedMediaList.length > 0) && !disabled
                     ? (isBlueRilis 
                         ? "backdrop-blur-md bg-blue-600/70 hover:bg-blue-500/80 text-white border border-blue-400/40 shadow-[0_0_15px_rgba(59,130,246,0.45)] cursor-pointer" 
                         : "bg-blue-600 text-white hover:bg-blue-700 cursor-pointer shadow-sm shadow-blue-600/20")
@@ -1680,7 +1723,7 @@ export function ChatInput({
               >
                 <Send className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
               </button>
-            )}
+            ) : null}
           </div>
         </div>
 

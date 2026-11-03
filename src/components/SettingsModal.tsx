@@ -41,9 +41,6 @@ import {
   StorageUsageStats 
 } from '../lib/storageManager';
 import { UserGradientAvatar } from './UserGradientAvatar';
-import { HalloweenEventModal } from './HalloweenEventModal';
-import { isHalloweenEventActive, isHalloweenItemRedeemed } from '../lib/halloweenManager';
-import { PumpkinSvg, HalloweenCandySvg } from './HalloweenSvgAssets';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface SettingsModalProps {
@@ -92,7 +89,6 @@ export function SettingsModal({
   const [profilePic, setProfilePic] = useState('https://jjlanjshpyklqayjzxyy.supabase.co/storage/v1/object/public/TMPA%20storege/Desain%20tanpa%20judul_20260520_150307_0000.png');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isHalloweenEventOpen, setIsHalloweenEventOpen] = useState(false);
 
   // Redeem & Development Mode (No Limit) states
   const [isDevMode, setIsDevMode] = useState<boolean>(() => isLocalDevMode());
@@ -499,39 +495,7 @@ export function SettingsModal({
                   </div>
                 </button>
 
-                {/* 3.5. Event Halloween 2026 (Spooky Interactive) */}
-                {isHalloweenEventActive() && (
-                  <button
-                    onClick={() => setIsHalloweenEventOpen(true)}
-                    className={cn(
-                      "w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border transition-all group cursor-pointer shadow-sm relative overflow-hidden",
-                      isBlueRilis
-                        ? "bg-gradient-to-r from-orange-950/40 via-purple-950/30 to-[#07050b] border-orange-500/30 hover:border-orange-400/60 text-slate-100"
-                        : "bg-gradient-to-r from-orange-50/80 via-purple-50/40 to-white border-orange-200/80 hover:border-orange-400 hover:shadow-orange-500/10"
-                    )}
-                  >
-                    <div className="mt-1 flex-shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-all p-2 rounded-xl bg-orange-500/20 border border-orange-500/30 shadow-xs">
-                      <PumpkinSvg size={24} glow={true} />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-[17px] font-bold text-orange-500 dark:text-orange-400 group-hover:text-orange-400 transition-colors flex items-center gap-1.5">
-                          <span>Halloween Event 2026</span>
-                          <HalloweenCandySvg size={16} />
-                        </h3>
-                        <span className="text-[10px] font-extrabold uppercase bg-orange-500/20 text-orange-400 border border-orange-500/40 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-                          2 - 20 Nov
-                        </span>
-                      </div>
-                      <p className={cn("text-sm mt-0.5", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
-                        {lang === 'id' 
-                          ? 'Kumpulkan Candy dari monster di layar setiap 5-20 menit, tukar limit bonus +20% / +30% & tema eksklusif!' 
-                          : 'Collect Candies from screen monsters every 5-20 mins, redeem bonus limits & exclusive theme!'}
-                      </p>
-                    </div>
-                  </button>
-                )}
+
 
                 {/* 3.6. Style App (Stley App) (Interactive) */}
                 <button
@@ -2302,79 +2266,6 @@ export function SettingsModal({
                           </div>
                         )}
                       </div>
-
-                      {/* 3. HALLOWEEN 2026 STYLE (EVENT EKSKLUSIF) */}
-                      <div className={cn(
-                        "p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4",
-                        isHalloweenItemRedeemed('style_halloween')
-                          ? "border-orange-500/50 bg-orange-950/20 shadow-md shadow-orange-950/20"
-                          : (isBlueRilis ? "bg-white/[0.04] backdrop-blur-md border-orange-500/20" : "bg-white border-orange-200/80")
-                      )}>
-                        <div className="space-y-3">
-                          {/* Mini Preview Box (Halloween 2026 Style with Jack-o'-Lantern glow) */}
-                          <div className="h-28 rounded-xl bg-[#09050d] border border-orange-500/40 p-3 flex flex-col justify-between overflow-hidden relative shadow-[0_0_20px_rgba(249,115,22,0.25)]">
-                            <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-orange-500/15 via-purple-900/10 to-transparent pointer-events-none" />
-                            <div className="flex items-center justify-between relative z-1">
-                              <div className="h-2.5 w-16 bg-orange-400/40 rounded-full" />
-                              <span className="text-base animate-bounce">🎃</span>
-                            </div>
-                            <div className="space-y-1.5 relative z-1">
-                              <div className="h-2 w-3/4 bg-orange-200/20 rounded-full" />
-                              <div className="h-2 w-1/2 bg-purple-200/20 rounded-full" />
-                            </div>
-                            <div className="h-6 w-full bg-white/[0.08] backdrop-blur-md border border-orange-400/30 rounded-lg flex items-center px-2 justify-between relative">
-                              <div className="h-1.5 w-20 bg-orange-200/30 rounded-full" />
-                              <span className="text-xs">🍬</span>
-                            </div>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className={cn("font-bold text-base", isBlueRilis ? "text-white" : "text-slate-900")}>
-                                3. Halloween 2026 Style
-                              </h4>
-                              <span className="text-[10px] font-bold uppercase bg-orange-500/20 text-orange-400 border border-orange-400/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
-                                <span>🎃</span>
-                                Event 2026
-                              </span>
-                            </div>
-                            <p className={cn("text-xs mt-1.5 leading-relaxed", isBlueRilis ? "text-slate-300" : "text-slate-600")}>
-                              {lang === 'id'
-                                ? 'Nuansa malam Halloween pekat, berpendar labu oranye menyala, bayangan ungu mistis, dan hiasan khusus festival.'
-                                : 'Atmospheric Halloween night theme with glowing carved jack-o\'-lanterns, mystic purple shadows, and festival ornaments.'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {isHalloweenItemRedeemed('style_halloween') ? (
-                          <div className="p-3.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-300 text-xs flex flex-col gap-1.5">
-                            <div className="flex items-center gap-1.5 font-bold text-orange-200">
-                              <Check size={15} className="text-orange-400" />
-                              <span>Pre-Order Terdaftar!</span>
-                            </div>
-                            <span className="text-[11px] text-slate-300 leading-relaxed">
-                              Anda telah menukarkan Style App Halloween pada Event Halloween 2026. Style ini akan otomatis aktif begitu versi tema resmi dirilis.
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between text-[11px] text-orange-500 bg-orange-500/10 border border-orange-500/20 px-3 py-1.5 rounded-xl">
-                              <span className="flex items-center gap-1.5 font-medium">
-                                <Lock size={12} />
-                                {lang === 'id' ? 'Tersedia di Toko Event' : 'Available in Event Shop'}
-                              </span>
-                              <span className="font-mono text-[10px] font-bold">120 Candy 🍬</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setIsHalloweenEventOpen(true)}
-                              className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm active:scale-98"
-                            >
-                              <span>🎃 Buka Event Halloween & Tukar</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
                 )}
@@ -2575,16 +2466,6 @@ export function SettingsModal({
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Full Screen Halloween Event 2026 Hub Modal */}
-          <HalloweenEventModal
-            isOpen={isHalloweenEventOpen}
-            onClose={() => setIsHalloweenEventOpen(false)}
-            onNavigateToStyle={() => {
-              setIsHalloweenEventOpen(false);
-              setCurrentView('style_app');
-            }}
-          />
         </motion.div>
       )}
     </AnimatePresence>

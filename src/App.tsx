@@ -22,11 +22,7 @@ import { MotionManualModal } from './components/MotionManualModal';
 import { MotionLoadingProgress } from './components/MotionLoadingProgress';
 import { ChooseAccountModal } from './components/ChooseAccountModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
-import { HalloweenIntroModal } from './components/HalloweenIntroModal';
-import { HalloweenEventModal } from './components/HalloweenEventModal';
-import { HalloweenMonsterSpawner } from './components/HalloweenMonsterSpawner';
 import { HalloweenEasterEgg, EasterEggType } from './components/HalloweenEasterEgg';
-import { isHalloweenEventActive, getHalloweenLimitBonusMultiplier } from './lib/halloweenManager';
 import { 
   SavedAccount, 
   recordCurrentSession, 
@@ -606,8 +602,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMenuLoadMoreOpen, setIsMenuLoadMoreOpen] = useState(false);
   const [isChooseAccountOpen, setIsChooseAccountOpen] = useState(false);
-  const [isHalloweenIntroOpen, setIsHalloweenIntroOpen] = useState(false);
-  const [isHalloweenEventHubOpen, setIsHalloweenEventHubOpen] = useState(false);
   const [activeHalloweenEasterEgg, setActiveHalloweenEasterEgg] = useState<EasterEggType>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -1764,14 +1758,7 @@ export default function App() {
     const lowerText = userText.toLowerCase();
     const lowerClean = lowerText.replace(/\s+/g, ' ').trim();
 
-    // 0.0. CEK TRIGGER EVENT HALLOWEEN 2026
-    // User ketik 'Halloween 2026' atau 'hollow blue' lalu kirim -> Buka layar penuh Halloween
-    if (lowerClean === 'halloween 2026' || lowerClean === 'hollow blue') {
-      setIsHalloweenIntroOpen(true);
-      return;
-    }
-
-    // 0.0.1. CEK KEYWORD EASTER EGGS HALLOWEEN
+    // 0.0. CEK KEYWORD EASTER EGGS (PUMPKIN, SKELETON, GHOST, HEADLESS, HALLOWEEN)
     if (lowerClean.includes('headless horse man') || lowerClean.includes('headless horseman') || lowerClean.includes('kuda setengah manusia')) {
       setActiveHalloweenEasterEgg('headless');
     } else if (lowerClean.includes('halloween')) {
@@ -4804,38 +4791,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         onSubmitManualCode={handleManualMotionSubmit}
       />
 
-      {/* Halloween 2026 Intro Screen Modal (Triggered by 'Halloween 2026' or 'hollow blue') */}
-      <HalloweenIntroModal
-        isOpen={isHalloweenIntroOpen}
-        onClose={() => setIsHalloweenIntroOpen(false)}
-        onSelectPrompt={(prompt) => {
-          setIsHalloweenIntroOpen(false);
-          handleSendMessage(prompt);
-        }}
-        onOpenEventHub={() => {
-          setIsHalloweenIntroOpen(false);
-          setIsHalloweenEventHubOpen(true);
-        }}
-      />
-
-      {/* Halloween 2026 Event Hub Modal */}
-      <HalloweenEventModal
-        isOpen={isHalloweenEventHubOpen}
-        onClose={() => setIsHalloweenEventHubOpen(false)}
-        onNavigateToStyle={() => {
-          setIsHalloweenEventHubOpen(false);
-          setIsSettingsOpen(true);
-        }}
-      />
-
       {/* Halloween Easter Egg Screen Animations (Pumpkin, Skeleton, Ghost, Headless, All) */}
       <HalloweenEasterEgg
         type={activeHalloweenEasterEgg}
         onComplete={() => setActiveHalloweenEasterEgg(null)}
       />
-
-      {/* Halloween Monster Spawner (Kelelawar 5m, Pumpkin 10m/5s, Skeleton 20m/5s) */}
-      <HalloweenMonsterSpawner />
     </div>
       )}
     </>

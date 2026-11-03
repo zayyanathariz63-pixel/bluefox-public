@@ -1,6 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_CONFIG } from './env';
-import { getHalloweenLimitBonusMultiplier } from './halloweenManager';
 
 export const supabaseUrl: string = SUPABASE_CONFIG.url;
 export const supabaseKey: string = SUPABASE_CONFIG.anonKey;
@@ -882,8 +881,7 @@ export async function getUserLimits(userId: string) {
       supabase.from('user_limits').update(updatePayload).eq('user_id', userId).then(() => {}, () => {});
     }
 
-    const bonusMultiplier = getHalloweenLimitBonusMultiplier();
-    const maxCapacity = 100 * bonusMultiplier;
+    const maxCapacity = 100;
 
     return {
       used_5h: used5h,
@@ -893,7 +891,6 @@ export async function getUserLimits(userId: string) {
       is_dev_mode: Boolean(data.is_dev_mode),
       reset_5h_at: data.reset_5h_at,
       reset_weekly_at: data.reset_weekly_at,
-      bonus_multiplier: bonusMultiplier,
     };
   } catch (err) {
     console.warn("getUserLimits catch:", err);
