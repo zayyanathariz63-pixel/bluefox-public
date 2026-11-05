@@ -95,6 +95,7 @@ export function ChatInput({
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
   const [errorModal, setErrorModal] = useState<CustomErrorModal | null>(null);
   const [domainConfirmTarget, setDomainConfirmTarget] = useState<DetectedDomain | null>(null);
+  const [actionToast, setActionToast] = useState<string | null>(null);
 
   // Trigger Command (@) state
   const [isCommandModalOpen, setIsCommandModalOpen] = useState(false);
@@ -451,7 +452,98 @@ export function ChatInput({
             continue;
           }
         }
-        // 2. Pemrosesan File Kode & Teks (TXT, MD, JSON, YML, YAML, dan semua kode pemrograman)
+        // 2. Pemrosesan File TXT & MD: Dikonversi langsung ke teks di input prompt (TANPA VISION)
+        const isTxtOrMd = lowerName.endsWith('.txt') || lowerName.endsWith('.md') || lowerName.endsWith('.markdown');
+        // 3. Pemrosesan File JSON, YML, & YAML: Dikonversi ke format khusus blok kode di input prompt (TANPA VISION)
+        const isJsonOrYaml = lowerName.endsWith('.json') || lowerName.endsWith('.yml') || lowerName.endsWith('.yaml');
+
+        if (isTxtOrMd || isJsonOrYaml) {
+          try {
+            let textContent = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsText(file);
+            });
+
+            if (!textContent || textContent.trim().length === 0) {
+              setErrorModal({
+                isOpen: true,
+                title: "Berkas Kosong",
+                message: `Berkas "${file.name}" tidak memiliki isi teks untuk dibaca (0 karakter).`,
+                fileName: file.name
+              });
+              continue;
+            }
+
+            if (textContent.length > 50000) {
+              setErrorModal({
+                isOpen: true,
+                title: "Isi File Terlalu Panjang (Maks. 50.000 Karakter)",
+                message: `File "${file.name}" memiliki ${textContent.length.toLocaleString()} karakter (melebihi batas 50.000 karakter).`,
+                fileName: file.name,
+                maxLimitInfo: `Total karakter: ${textContent.length.toLocaleString()} • Batas: 50.000 karakter`
+              });
+              continue;
+            }
+
+            if (isTxtOrMd) {
+              // TXT dan MD: Dikonversi langsung ke teks di input prompt (tanpa vision)
+              const cleanText = textContent.trim();
+              setInput(prev => {
+                if (!prev || !prev.trim()) {
+                  return cleanText;
+                }
+                return `${prev}\n\n${cleanText}`;
+              });
+              setActionToast(`Teks dari "${file.name}" dimasukkan ke input prompt (tanpa Vision).`);
+              setTimeout(() => setActionToast(null), 3500);
+            } else {
+              // JSON, YML, YAML: Diubah ke format khusus ke input prompt
+              let formatted = textContent.trim();
+              let langTag = 'yaml';
+              if (lowerName.endsWith('.json')) {
+                langTag = 'json';
+                try {
+                  const parsed = JSON.parse(formatted);
+                  formatted = JSON.stringify(parsed, null, 2);
+                } catch {}
+              }
+
+              const specialBlock = `\`\`\`${langTag}:${file.name}\n${formatted}\n\`\`\``;
+              setInput(prev => {
+                if (!prev || !prev.trim()) {
+                  return specialBlock;
+                }
+                return `${prev}\n\n${specialBlock}`;
+              });
+              setActionToast(`File "${file.name}" diubah ke format khusus ${langTag.toUpperCase()} di input prompt.`);
+              setTimeout(() => setActionToast(null), 3500);
+            }
+
+            if (textareaRef.current) {
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+                  textareaRef.current.focus();
+                }
+              }, 50);
+            }
+
+            // Tidak masuk ke newAttachments dan tidak mengaktifkan Vision
+            continue;
+          } catch (err: any) {
+            setErrorModal({
+              isOpen: true,
+              title: "Gagal Membaca Berkas",
+              message: `Gagal membaca isi berkas "${file.name}".`,
+              fileName: file.name
+            });
+            continue;
+          }
+        }
+        // 4. Pemrosesan File Kode Program Lainnya (.js, .py, .java, .sql, dll)
         else if (isCodeOrText) {
           try {
             let textContent = '';
@@ -487,21 +579,28 @@ export function ChatInput({
               continue;
             }
 
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
+            // Masukkan kode program langsung ke prompt sebagai blok kode
+            const ext = lowerName.split('.').pop() || '';
+            const codeBlock = `\`\`\`${ext}:${file.name}\n${textContent.trim()}\n\`\`\``;
+            setInput(prev => {
+              if (!prev || !prev.trim()) {
+                return codeBlock;
+              }
+              return `${prev}\n\n${codeBlock}`;
             });
+            setActionToast(`Kode dari "${file.name}" disisipkan ke input prompt.`);
+            setTimeout(() => setActionToast(null), 3500);
 
-            newAttachments.push({
-              id: fileId,
-              url: dataUrl,
-              type: 'document',
-              name: file.name,
-              size: file.size,
-              textContent: textContent,
-            });
+            if (textareaRef.current) {
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.style.height = 'auto';
+                  textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+                  textareaRef.current.focus();
+                }
+              }, 50);
+            }
+            continue;
           } catch (err: any) {
             setErrorModal({
               isOpen: true,
@@ -1426,6 +1525,30 @@ export function ChatInput({
               </span>
             </div>
           )}
+
+          {/* Toast Notifikasi Konversi File Teks & Format Khusus */}
+          <AnimatePresence>
+            {actionToast && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="mb-2 mx-2 px-3.5 py-2 rounded-xl bg-blue-50/90 dark:bg-blue-950/70 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-medium flex items-center justify-between gap-2 shadow-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Sparkles size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span className="truncate">{actionToast}</span>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setActionToast(null)} 
+                  className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-200 p-0.5 rounded cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="relative flex items-end w-full">
             {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) */}

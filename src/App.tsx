@@ -82,6 +82,7 @@ import {
 } from './lib/reasoning';
 import { safeSaveSessionsToLocal, autoPurgeMediaIfStorageFull } from './lib/storageManager';
 import { ShareMode, parseSharedDataFromUrl, getSharedChatsRegistry } from './lib/shareChat';
+import { censorSessionMessages } from './lib/sensitiveDataMasker';
 import { getAppStyle, AppStyle } from './lib/styleManager';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
@@ -1633,36 +1634,41 @@ export default function App() {
       let sessionTitle = 'Obrolan Dibagikan';
       let sessionModel: SupportedModel = selectedModel;
 
+      const registry = getSharedChatsRegistry();
+      const recorded = registry[sessionId] || Object.values(registry).find(r => r.id === sessionId || r.sessionId === sessionId);
+
       if (snapshotData && Array.isArray(snapshotData.messages) && snapshotData.messages.length > 0) {
         loadedMessages = snapshotData.messages;
         if (snapshotData.title) sessionTitle = snapshotData.title;
         if (snapshotData.model) sessionModel = snapshotData.model;
+      } else if (recorded && recorded.messagesSnapshot && recorded.messagesSnapshot.length > 0) {
+        loadedMessages = recorded.messagesSnapshot;
+        sessionTitle = recorded.title;
       } else {
-        const registry = getSharedChatsRegistry();
-        const recorded = registry[sessionId] || Object.values(registry).find(r => r.id === sessionId || r.sessionId === sessionId);
-        if (recorded && recorded.messagesSnapshot && recorded.messagesSnapshot.length > 0) {
-          loadedMessages = recorded.messagesSnapshot;
-          sessionTitle = recorded.title;
+        const localMatch = chatSessions.find(s => s.id === sessionId || (recorded && s.id === recorded.sessionId));
+        if (localMatch && localMatch.messages && localMatch.messages.length > 0) {
+          loadedMessages = localMatch.messages;
+          sessionTitle = localMatch.title;
         } else {
-          const localMatch = chatSessions.find(s => s.id === sessionId || (recorded && s.id === recorded.sessionId));
-          if (localMatch && localMatch.messages && localMatch.messages.length > 0) {
-            loadedMessages = localMatch.messages;
-            sessionTitle = localMatch.title;
-          } else {
-            try {
-              const res = await openChatRoom(sessionId);
-              if (res && Array.isArray(res) && res.length > 0) {
-                loadedMessages = res.map((m: any) => ({
-                  id: m.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-                  role: (m.sender === 'user' || m.role === 'user') ? 'user' : 'model',
-                  text: m.content || m.message || m.text || '',
-                }));
-              }
-            } catch (err) {
-              console.warn('Gagal memuat pesan share dari Supabase:', err);
+          try {
+            const res = await openChatRoom(sessionId);
+            if (res && Array.isArray(res) && res.length > 0) {
+              loadedMessages = res.map((m: any) => ({
+                id: m.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                role: (m.sender === 'user' || m.role === 'user') ? 'user' : 'model',
+                text: m.content || m.message || m.text || '',
+              }));
             }
+          } catch (err) {
+            console.warn('Gagal memuat pesan share dari Supabase:', err);
           }
         }
+      }
+
+      // Pastikan sensor data sensitif jika opsi sensor aktif
+      const shouldCensor = Boolean(snapshotData?.censorSensitive || recorded?.censorSensitive);
+      if (shouldCensor && loadedMessages.length > 0) {
+        loadedMessages = censorSessionMessages(loadedMessages);
       }
 
       if (loadedMessages.length > 0) {

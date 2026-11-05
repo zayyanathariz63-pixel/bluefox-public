@@ -10,6 +10,7 @@ export interface SharedChatRecord {
   model: string;
   url: string;
   messagesSnapshot?: any[];
+  censorSensitive?: boolean;
 }
 
 const STORAGE_KEY = 'tmpa_shared_chats_registry';

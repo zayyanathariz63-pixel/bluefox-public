@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Share2, Copy, Check, ExternalLink, HelpCircle, MessageSquare, Bot, User } from 'lucide-react';
+import { X, Share2, Copy, Check, ExternalLink, HelpCircle, MessageSquare, Bot, User, ShieldAlert } from 'lucide-react';
 import { 
   ShareMode, 
   buildShareUrl, 
@@ -10,6 +10,7 @@ import {
   generateShareSessionId,
   isValidShareSessionId
 } from '../lib/shareChat';
+import { censorSessionMessages } from '../lib/sensitiveDataMasker';
 import { ChatSession } from '../types';
 
 interface ShareChatModalProps {
@@ -29,6 +30,7 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
   const defaultMode = getDefaultShareMode();
   
   const [selectedMode, setSelectedMode] = useState<ShareMode>(defaultMode);
+  const [censorSensitive, setCensorSensitive] = useState<boolean>(true);
   const [shareId, setShareId] = useState<string>('');
   const [generatedUrl, setGeneratedUrl] = useState<string>('');
   const [isCopied, setIsCopied] = useState<boolean>(false);
@@ -45,6 +47,9 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
       if (existing) {
         setShareId(existing.id);
         setSelectedMode(existing.mode);
+        if (typeof existing.censorSensitive === 'boolean') {
+          setCensorSensitive(existing.censorSensitive);
+        }
         setGeneratedUrl(existing.url);
         setIsApplied(true);
       } else {
@@ -52,6 +57,7 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
         const newRandomId = generateShareSessionId(24);
         setShareId(newRandomId);
         setSelectedMode(defaultMode);
+        setCensorSensitive(true);
         setGeneratedUrl('');
         setIsApplied(false);
       }
@@ -64,6 +70,12 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
   const currentShareId = shareId || session.id;
 
   const handleApply = () => {
+    // Jika centang sensor aktif: sensor data rahasia pada JSON/YAML dan kredensial
+    // Jika tidak dicentang: tidak disensor (no sensor / data apa adanya)
+    const messagesToShare = censorSensitive 
+      ? censorSessionMessages(session.messages)
+      : session.messages;
+
     // Siapkan snapshot data untuk portability
     const snapshotPayload = {
       id: currentShareId,
@@ -71,8 +83,9 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
       title: session.title,
       model: session.model,
       mode: selectedMode,
+      censorSensitive,
       createdAt: Date.now(),
-      messages: session.messages,
+      messages: messagesToShare,
     };
 
     const fullUrl = buildShareUrl(currentShareId, selectedMode, snapshotPayload);
@@ -87,7 +100,8 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
       updatedAt: Date.now(),
       model: session.model,
       url: fullUrl,
-      messagesSnapshot: session.messages,
+      messagesSnapshot: messagesToShare,
+      censorSensitive,
     });
 
     setGeneratedUrl(fullUrl);
@@ -326,6 +340,45 @@ export const ShareChatModal: React.FC<ShareChatModalProps> = ({
                     {selectedMode === 'edit' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Tombol Centang Sensor Data Sensitif (JSON, YAML & Kredensial) */}
+            <div 
+              onClick={() => { setCensorSensitive(!censorSensitive); setIsApplied(false); }}
+              className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-start gap-3 select-none ${
+                censorSensitive 
+                  ? 'bg-amber-50/70 dark:bg-amber-950/25 border-amber-300 dark:border-amber-800/80 shadow-2xs' 
+                  : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:border-slate-300'
+              }`}
+            >
+              <div className="pt-0.5">
+                <input
+                  type="checkbox"
+                  checked={censorSensitive}
+                  onChange={(e) => { setCensorSensitive(e.target.checked); setIsApplied(false); }}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <ShieldAlert size={14} className={censorSensitive ? "text-amber-600 dark:text-amber-400" : "text-slate-400"} />
+                    {isId ? 'Sensor Data Sensitif (JSON, YAML & Kredensial)' : 'Mask Sensitive Data (JSON, YAML & Secrets)'}
+                  </span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    censorSensitive 
+                      ? 'bg-amber-200/80 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200' 
+                      : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                  }`}>
+                    {censorSensitive ? (isId ? 'Disensor' : 'Censored') : (isId ? 'No Sensor' : 'No Sensor')}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 leading-relaxed">
+                  {isId 
+                    ? 'Otomatis menyamarkan API key, token, sandi, dan data sensitif pada format JSON & YAML demi keamanan publik. Hapus centang jika ingin membagikan data apa adanya.' 
+                    : 'Automatically masks API keys, passwords, and sensitive fields in JSON & YAML blocks for public safety. Uncheck if you want to share data as-is without redaction.'}
+                </p>
               </div>
             </div>
 
