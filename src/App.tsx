@@ -184,7 +184,7 @@ function parseBluefoxMessages(rows: any[]): Message[] {
 }
 
 export { BLUEFOX_MODELS } from './lib/supabase';
-export type SupportedModel = 'agnes-3.0-flash' | 'agnes-2.5-flash' | 'deepseek-v4.1-flash-free';
+export type SupportedModel = 'agnes-3.0-flash' | 'agnes-2.5-flash' | 'glm-4.7-flash';
 
 export default function App() {
   const { lang, changeLanguage, t } = useLanguage();
@@ -235,7 +235,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<SupportedModel>(() => {
     try {
       const saved = localStorage.getItem('tmpa_selected_model');
-      if (saved === 'agnes-3.0-flash' || saved === 'agnes-2.5-flash' || saved === 'deepseek-v4.1-flash-free') {
+      if (saved === 'agnes-3.0-flash' || saved === 'agnes-2.5-flash' || saved === 'glm-4.7-flash') {
         return saved as SupportedModel;
       }
       // Migrasi model lama ke lineup baru:
@@ -245,8 +245,8 @@ export default function App() {
       if (saved === 'tencent-hy3-free' || saved === 'bluefox_standard' || saved === 'bluefox-standard' || saved === 'tmpa_v1' || saved === 'jev' || saved === 'standard') {
         return 'agnes-2.5-flash';
       }
-      if (saved === 'laguna-s-2.1' || saved === 'bluefox_dilo' || saved === 'bluefox-dilo' || saved === 'dilo' || saved === 'longcat-2.0-free') {
-        return 'deepseek-v4.1-flash-free';
+      if (saved === 'deepseek-v4.1-flash-free' || saved === 'laguna-s-2.1' || saved === 'bluefox_dilo' || saved === 'bluefox-dilo' || saved === 'dilo' || saved === 'longcat-2.0-free' || saved === 'glm-4.7-flash') {
+        return 'glm-4.7-flash';
       }
     } catch {}
     return 'agnes-3.0-flash';
@@ -374,6 +374,19 @@ export default function App() {
       return;
     }
     setSelectedModel(modelId);
+    
+    // Sesuaikan effort sesuai aturan router baru:
+    // - GLM: Terkunci ke 'auto'
+    // - Agnes 2.5: Low, Medium, High (clamp max -> high)
+    // - Agnes 3.0: Low, Medium, High, Max
+    if (modelId === 'glm-4.7-flash') {
+      setSmartSelectLevel('auto');
+    } else if (modelId === 'agnes-2.5-flash') {
+      if (smartSelectLevel === 'max') {
+        setSmartSelectLevel('high');
+      }
+    }
+
     try {
       localStorage.setItem('tmpa_selected_model', modelId);
       localStorage.setItem('tmpa_model_mode', 'bluefox');
@@ -459,8 +472,8 @@ export default function App() {
 
     let h = 0, w = 0;
     const m = (model || '').toLowerCase();
-    if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna') || m.includes('longcat')) {
-      // Bluefox Dilo (deepseek-v4.1-flash-free): 5 jam: 2%, seminggu: 2%
+    if (m.includes('glm') || m.includes('dilo') || m.includes('deepseek') || m.includes('laguna') || m.includes('longcat')) {
+      // Bluefox Dilo (glm-4.7-flash): 5 jam: 2%, seminggu: 2%
       h = 2;
       w = 2;
     } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
@@ -2128,7 +2141,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // 3 model bawaan Bluefox (Bluefox Pro, Bluefox Standard, Bluefox Dilo)
-      const currentModelName = (selectedModel || 'agnes-2.5-flash').trim();
+      const currentModelName = (selectedModel || 'agnes-3.0-flash').trim();
       const isBluefoxNative = true;
 
       // Filter HANYA gambar nyata (WebP, PNG, GIF, JPG/JPEG) untuk pemrosesan vision
@@ -2142,9 +2155,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // Vision mode HANYA aktif jika dinyalakan manual ATAU ada lampiran gambar nyata
       // Dokumen, berkas teks (TXT/MD), PDF, JSON, YAML, kode program BUKAN vision
       const isVisionNow = Boolean(isVisionActive || hasRealImage);
-      // Vision terkunci ke Bluefox Pro (agnes-2.5-flash) tanpa fallback
+      // Vision terkunci ke Bluefox Pro (agnes-3.0-flash) tanpa fallback
       const currentEffectiveModel = isVisionNow 
-        ? 'agnes-2.5-flash' 
+        ? 'agnes-3.0-flash' 
         : selectedModel;
 
       // =========================================================================
@@ -2390,7 +2403,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // 1. Identifikasi apakah nama model yang dipilih cocok dengan 3 model bawaan Bluefox:
       //    - agnes-3.0-flash (Bluefox Pro)
       //    - agnes-2.5-flash (Bluefox Standard)
-      //    - deepseek-v4.1-flash-free (Bluefox Dilo)
+      //    - glm-4.7-flash (Bluefox Dilo)
       // =========================================================================
       // Ambil nama model yang dipilih user
       const rawChosenName = (currentEffectiveModel || selectedModel || 'agnes-3.0-flash').trim();
@@ -2412,13 +2425,15 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         (selectedModel as string) === 'agnes-2.5-flash';
 
       const isDiloMatch = 
+        rawChosenName === 'glm-4.7-flash' || 
         rawChosenName === 'deepseek-v4.1-flash-free' || 
         rawChosenName === 'bluefox_dilo' || 
         rawChosenName === 'bluefox-dilo' || 
         rawChosenName === 'dilo' || 
+        rawChosenName === 'glm' ||
         rawChosenName === 'laguna-s-2.1' || 
         rawChosenName === 'longcat-2.0-free' ||
-        (selectedModel as string) === 'deepseek-v4.1-flash-free';
+        (selectedModel as string) === 'glm-4.7-flash';
 
       const isMotionTriggered = lowerText.includes('@motion');
       const activeSystemPrompt = isMotionTriggered
@@ -2430,12 +2445,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       let internalModelId = 'agnes-3.0-flash';
       if (isDiloMatch) {
-        internalModelId = 'deepseek-v4.1-flash-free';
+        internalModelId = 'glm-4.7-flash';
       } else if (isStandardMatch) {
         internalModelId = 'agnes-2.5-flash';
       } else {
         internalModelId = 'agnes-3.0-flash';
       }
+
+      const effectiveEffort = getSmartSelectEffort(internalModelId, smartSelectLevel);
 
       const chatPayload: any = {
         message: promptToSend,
@@ -2461,8 +2478,11 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         model_name: getModelDisplayName(selectedModel),
         is_vision: isVisionNow,
         isVision: isVisionNow,
-        reasoning_mode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
-        reasoningMode: smartSelectLevel === 'high' ? 'penalaran' : 'standar',
+        reasoning_mode: smartSelectLevel === 'high' || smartSelectLevel === 'max' ? 'penalaran' : 'standar',
+        reasoningMode: smartSelectLevel === 'high' || smartSelectLevel === 'max' ? 'penalaran' : 'standar',
+        reasoning_effort: effectiveEffort,
+        reasoningEffort: effectiveEffort,
+        effort: effectiveEffort,
         smart_select_level: smartSelectLevel,
         smartSelectLevel: smartSelectLevel,
         customInstruction: effectiveCustomInstruction,
@@ -4035,37 +4055,27 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     </p>
                   </button>
 
-                  {/* Bluefox Dilo (deepseek-v4.1-flash-free) Choice */}
+                  {/* Bluefox Dilo (glm-4.7-flash) Choice */}
                   <button 
-                    onClick={() => handleSelectModel('deepseek-v4.1-flash-free')}
+                    onClick={() => handleSelectModel('glm-4.7-flash')}
                     className={`flex flex-col text-left p-4 md:p-5 rounded-2xl border transition-all relative ${
                       isVisionActive 
                         ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed' 
-                        : selectedModel === 'deepseek-v4.1-flash-free'
+                        : selectedModel === 'glm-4.7-flash'
                           ? 'bg-blue-50/70 border-2 border-blue-600 shadow-sm cursor-pointer' 
                           : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 cursor-pointer'
                     }`}
                   >
                     <div className="flex items-center justify-between mb-3.5 md:mb-4">
                       <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center ${
-                        selectedModel === 'deepseek-v4.1-flash-free' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
+                        selectedModel === 'glm-4.7-flash' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                       }`}>
                         <Layers size={18} />
                       </div>
                       <div className="flex items-center gap-1.5">
-                        {(() => {
-                          const effort = getSmartSelectEffort('deepseek-v4.1-flash-free', smartSelectLevel);
-                          return (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border ${
-                              effort === 'high' ? 'bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800' :
-                              effort === 'medium' ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' :
-                              effort === 'low' ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' :
-                              'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
-                            }`}>
-                              <Sliders size={10} /> Smart Select: {effort.toUpperCase()}
-                            </span>
-                          );
-                        })()}
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800">
+                          <Sliders size={10} /> Smart Select: AUTO
+                        </span>
                         {isVisionActive && (
                           <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                             <Lock size={11} /> Terkunci
@@ -4074,9 +4084,9 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       </div>
                     </div>
                     <h4 className="font-bold text-slate-900 text-sm md:text-base leading-snug">Bluefox Dilo</h4>
-                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by deepseek-v4.1-flash-free</span>
+                    <span className="text-[10px] text-blue-600 font-bold tracking-wider uppercase mt-1">power by glm-4.7-flash</span>
                     <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                      Cepat dan efisien untuk interaksi harian, reasoning & percakapan umum yang ramah dan hemat kuota.
+                      Layanan cepat untuk reasoning & percakapan umum yang ramah dan hemat kuota. Effort dikelola secara otomatis.
                     </p>
                   </button>
                 </div>
@@ -4231,10 +4241,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                       <div className="flex items-center gap-2">
                         <h3 className="text-base md:text-lg font-bold text-slate-900 dark:text-slate-100 tracking-tight">Smart Select</h3>
                         <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                          {smartSelectLevel === 'auto' ? 'Mode Auto' : `Level ${smartSelectLevel.toUpperCase()}`}
+                          {selectedModel === 'glm-4.7-flash' 
+                            ? 'Auto (Terkunci)' 
+                            : smartSelectLevel === 'auto' 
+                            ? 'Mode Auto' 
+                            : `Level ${smartSelectLevel.toUpperCase()}`}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Tarik slider dari None hingga High untuk mengatur kedalaman proses berpikir AI</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        {selectedModel === 'glm-4.7-flash'
+                          ? 'Model Bluefox Dilo (GLM 4.7) menggunakan effort Auto secara mandiri'
+                          : selectedModel === 'agnes-2.5-flash'
+                          ? 'Pilihan effort untuk Bluefox Standard (Agnes 2.5): Low, Medium, High'
+                          : 'Pilihan effort untuk Bluefox Pro (Agnes 3.0): Low, Medium, High, Max'}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -4256,293 +4276,345 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   </div>
                 </div>
 
-                {/* Interactive Drag/Pull Range Slider (None -> Low -> Medium -> High) */}
-                {(() => {
-                  const STEPS: Array<'none' | 'low' | 'medium' | 'high'> = ['none', 'low', 'medium', 'high'];
-                  const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
-                  const activeStepIndex = smartSelectLevel === 'auto' 
-                    ? (currentEffort === 'none' ? 0 : currentEffort === 'low' ? 1 : currentEffort === 'medium' ? 2 : 3)
-                    : (smartSelectLevel === 'none' ? 0 : smartSelectLevel === 'low' ? 1 : smartSelectLevel === 'medium' ? 2 : 3);
-
-                  const progressPercentage = (activeStepIndex / 3) * 100;
-                  const activeColorClass = activeStepIndex === 3 
-                    ? 'from-blue-600 via-indigo-600 to-purple-600' 
-                    : activeStepIndex === 2 
-                    ? 'from-blue-500 to-indigo-600' 
-                    : activeStepIndex === 1 
-                    ? 'from-sky-400 to-blue-500' 
-                    : 'from-slate-400 to-slate-500';
-
-                  return (
-                    <div className="mb-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                          <Sliders size={13} className="text-purple-600 dark:text-purple-400" />
-                          Tarik Kontrol Smart Select:
-                        </span>
-                        <div className="flex items-center gap-2">
+                {/* 1. JIKA MODEL GLM 4.7 FLASH: Effort TERKUNCI di AUTO (tidak dapat dipilih) */}
+                {selectedModel === 'glm-4.7-flash' ? (
+                  <div className="mb-6 p-6 rounded-2xl bg-sky-50/70 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-slate-800 dark:text-slate-200">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                        <Lock size={20} />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-sm md:text-base text-sky-950 dark:text-sky-200">
+                            Effort Berpikir: Auto (Terkunci)
+                          </h4>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-200 dark:bg-sky-900 text-sky-800 dark:text-sky-200">
+                            GLM 4.7 Flash
+                          </span>
+                        </div>
+                        <p className="text-xs text-sky-800/80 dark:text-sky-300/80 mt-1.5 leading-relaxed">
+                          Pada router terbaru untuk model <strong>Bluefox Dilo (glm-4.7-flash)</strong>, tingkat penalaran (thinking effort) dikelola secara <strong>Auto</strong> langsung oleh model dan <strong>tidak dapat dipilih/diubah manual</strong>.
+                        </p>
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mt-2">
+                          Ingin mengatur level penalaran (Low, Medium, High, Max)? Beralih ke salah satu model berikut:
+                        </p>
+                        <div className="flex items-center gap-2.5 mt-3 flex-wrap">
                           <button
                             type="button"
-                            onClick={() => setSmartSelectLevel('auto')}
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition-all cursor-pointer border ${
-                              smartSelectLevel === 'auto'
-                                ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
-                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-100'
-                            }`}
-                            title="Kembali ke setelan otomatis bawaan tiap model"
+                            onClick={() => handleSelectModel('agnes-2.5-flash')}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all cursor-pointer shadow-2xs"
                           >
-                            Auto Mode {smartSelectLevel === 'auto' ? '(Aktif)' : ''}
+                            Beralih ke Bluefox Standard (Agnes 2.5: Low, Medium, High)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectModel('agnes-3.0-flash')}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all cursor-pointer shadow-xs"
+                          >
+                            Beralih ke Bluefox Pro (Agnes 3.0: Low, Medium, High, Max)
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* 2. JIKA MODEL AGNES 2.5 ATAU AGNES 3.0: Slider & Pilihan Kartu Dinamis */
+                  (() => {
+                    const isAgnes25 = selectedModel === 'agnes-2.5-flash';
+                    // Agnes 2.5: Low, Medium, High
+                    // Agnes 3.0: Low, Medium, High, Max
+                    const allowedSteps: Array<'low' | 'medium' | 'high' | 'max'> = isAgnes25
+                      ? ['low', 'medium', 'high']
+                      : ['low', 'medium', 'high', 'max'];
 
-                      {/* Slider Track with Custom Progress Bar */}
-                      <div className="relative pt-6 pb-2 px-1">
-                        {/* Background Track */}
-                        <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative">
-                          <div 
-                            className={`h-full bg-gradient-to-r ${activeColorClass} transition-all duration-300 rounded-full`}
-                            style={{ width: `${progressPercentage}%` }}
-                          />
-                        </div>
+                    const currentEffort = getSmartSelectEffort(selectedModel, smartSelectLevel);
+                    let activeStepIndex = allowedSteps.indexOf(currentEffort as any);
+                    if (activeStepIndex === -1) {
+                      activeStepIndex = isAgnes25 ? 1 : 2; // Default: Medium for 2.5, High for 3.0
+                    }
 
-                        {/* Native Range Input overlay for dragging */}
-                        <input
-                          type="range"
-                          min="0"
-                          max="3"
-                          step="1"
-                          value={activeStepIndex}
-                          onChange={(e) => {
-                            const newIdx = parseInt(e.target.value, 10);
-                            const nextLevel = STEPS[newIdx] || 'medium';
-                            setSmartSelectLevel(nextLevel);
-                          }}
-                          className="absolute top-5 left-0 w-full h-5 opacity-0 cursor-pointer z-20"
-                          aria-label="Tarik tingkat Smart Select"
-                        />
+                    const progressPercentage = (activeStepIndex / (allowedSteps.length - 1)) * 100;
+                    const activeColorClass = activeStepIndex === allowedSteps.length - 1
+                      ? 'from-blue-600 via-indigo-600 to-purple-600'
+                      : activeStepIndex >= 1
+                      ? 'from-sky-400 to-blue-600'
+                      : 'from-sky-300 to-sky-500';
 
-                        {/* Step Markers & Clickable Stops */}
-                        <div className="relative flex justify-between mt-3 text-xs">
-                          {STEPS.map((stepKey, idx) => {
-                            const isCurrent = activeStepIndex === idx;
-                            const isPassed = activeStepIndex >= idx;
-                            return (
+                    return (
+                      <>
+                        <div className="mb-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <Sliders size={13} className="text-purple-600 dark:text-purple-400" />
+                              Tarik Kontrol Smart Select ({isAgnes25 ? 'Agnes 2.5' : 'Agnes 3.0'}):
+                            </span>
+                            <div className="flex items-center gap-2">
                               <button
-                                key={stepKey}
                                 type="button"
-                                onClick={() => setSmartSelectLevel(stepKey)}
-                                className={`flex flex-col items-center group cursor-pointer transition-all ${
-                                  isCurrent ? 'scale-105 font-bold' : 'opacity-70 hover:opacity-100'
+                                onClick={() => setSmartSelectLevel('auto')}
+                                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full transition-all cursor-pointer border ${
+                                  smartSelectLevel === 'auto'
+                                    ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600 hover:bg-slate-100'
                                 }`}
+                                title="Kembali ke setelan otomatis bawaan model"
                               >
-                                <span className={`w-3.5 h-3.5 rounded-full mb-1 border-2 transition-all flex items-center justify-center ${
-                                  isCurrent 
-                                    ? 'bg-purple-600 border-white ring-2 ring-purple-400 scale-125' 
-                                    : isPassed 
-                                    ? 'bg-blue-600 border-white' 
-                                    : 'bg-slate-300 dark:bg-slate-600 border-white dark:border-slate-800'
-                                }`} />
-                                <span className={`text-[11px] uppercase font-bold ${
-                                  isCurrent 
-                                    ? 'text-purple-700 dark:text-purple-300' 
-                                    : 'text-slate-600 dark:text-slate-400'
-                                }`}>
-                                  {stepKey}
-                                </span>
+                                Auto Mode {smartSelectLevel === 'auto' ? '(Aktif)' : ''}
                               </button>
-                            );
-                          })}
-                        </div>
-                      </div>
+                            </div>
+                          </div>
 
-                      {/* Current Status Banner */}
-                      <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 flex-wrap gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <span>Target model aktif ({selectedModel === 'agnes-3.0-flash' ? 'bluefox pro' : selectedModel === 'agnes-2.5-flash' ? 'bluefox standard' : 'bluefox Dilo'}):</span>
-                          <strong className="text-purple-700 dark:text-purple-300 uppercase font-bold">
-                            Smart Select: {currentEffort}
-                          </strong>
-                        </div>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Geser pin atau klik salah satu kartu di bawah
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
+                          {/* Slider Track with Custom Progress Bar */}
+                          <div className="relative pt-6 pb-2 px-1">
+                            {/* Background Track */}
+                            <div className="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative">
+                              <div 
+                                className={`h-full bg-gradient-to-r ${activeColorClass} transition-all duration-300 rounded-full`}
+                                style={{ width: `${progressPercentage}%` }}
+                              />
+                            </div>
 
-                {/* 4 Cards: None -> Low -> Medium -> High */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                  {/* Step 1: None */}
-                  <button 
-                    type="button"
-                    onClick={() => setSmartSelectLevel('none')}
-                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                      smartSelectLevel === 'none' 
-                        ? 'bg-slate-100/90 dark:bg-slate-800 border-2 border-slate-600 dark:border-slate-400 shadow-sm' 
-                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'none' ? 'bg-slate-700 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                          <Zap size={18} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">None</h4>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                              0% Thinking
+                            {/* Native Range Input overlay for dragging */}
+                            <input
+                              type="range"
+                              min="0"
+                              max={allowedSteps.length - 1}
+                              step="1"
+                              value={activeStepIndex}
+                              onChange={(e) => {
+                                const newIdx = parseInt(e.target.value, 10);
+                                const nextLevel = allowedSteps[newIdx] || (isAgnes25 ? 'medium' : 'high');
+                                setSmartSelectLevel(nextLevel);
+                              }}
+                              className="absolute top-5 left-0 w-full h-5 opacity-0 cursor-pointer z-20"
+                              aria-label="Tarik tingkat Smart Select"
+                            />
+
+                            {/* Step Markers & Clickable Stops */}
+                            <div className="relative flex justify-between mt-3 text-xs">
+                              {allowedSteps.map((stepKey, idx) => {
+                                const isCurrent = activeStepIndex === idx;
+                                const isPassed = activeStepIndex >= idx;
+                                return (
+                                  <button
+                                    key={stepKey}
+                                    type="button"
+                                    onClick={() => setSmartSelectLevel(stepKey)}
+                                    className={`flex flex-col items-center group cursor-pointer transition-all ${
+                                      isCurrent ? 'scale-105 font-bold' : 'opacity-70 hover:opacity-100'
+                                    }`}
+                                  >
+                                    <span className={`w-3.5 h-3.5 rounded-full mb-1 border-2 transition-all flex items-center justify-center ${
+                                      isCurrent 
+                                        ? 'bg-purple-600 border-white ring-2 ring-purple-400 scale-125' 
+                                        : isPassed 
+                                        ? 'bg-blue-600 border-white' 
+                                        : 'bg-slate-300 dark:bg-slate-600 border-white dark:border-slate-800'
+                                    }`} />
+                                    <span className={`text-[11px] uppercase font-bold ${
+                                      isCurrent 
+                                        ? 'text-purple-700 dark:text-purple-300' 
+                                        : 'text-slate-600 dark:text-slate-400'
+                                    }`}>
+                                      {stepKey}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Current Status Banner */}
+                          <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs text-slate-600 dark:text-slate-300 flex-wrap gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span>Model aktif ({isAgnes25 ? 'Bluefox Standard' : 'Bluefox Pro'}):</span>
+                              <strong className="text-purple-700 dark:text-purple-300 uppercase font-bold">
+                                Effort: {currentEffort}
+                              </strong>
+                            </div>
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                              Geser pin atau klik kartu di bawah
                             </span>
                           </div>
-                          <span className="text-[11px] text-slate-500 dark:text-slate-400">Tanpa penalaran / respon instan</span>
                         </div>
-                      </div>
-                      {smartSelectLevel === 'none' && (
-                        <div className="w-5 h-5 rounded-full bg-slate-700 text-white flex items-center justify-center">
-                          <Check size={12} className="stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
-                      AI langsung menjawab teks seketika tanpa meluangkan waktu penalaran latar belakang. Paling cepat untuk pertanyaan singkat dan to-the-point.
-                    </p>
-                  </button>
 
-                  {/* Step 2: Low */}
-                  <button 
-                    type="button"
-                    onClick={() => setSmartSelectLevel('low')}
-                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                      smartSelectLevel === 'low' 
-                        ? 'bg-sky-50/90 dark:bg-sky-950/60 border-2 border-sky-600 shadow-sm' 
-                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'low' ? 'bg-sky-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                          <Sparkles size={18} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Low</h4>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300">
-                              33% Thinking
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-sky-600 dark:text-sky-400 font-medium">Penalaran ringan & hemat</span>
-                        </div>
-                      </div>
-                      {smartSelectLevel === 'low' && (
-                        <div className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center">
-                          <Check size={12} className="stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
-                      Proses berpikir singkat untuk menyelaraskan konteks percakapan. Tingkat bawaan default untuk model <strong>bluefox Dilo</strong>.
-                    </p>
-                  </button>
+                        {/* Kartu Pilihan Effort Dinamis Sesuai Model */}
+                        <div className={`grid grid-cols-1 ${isAgnes25 ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-3 md:gap-4`}>
+                          {/* Low */}
+                          <button 
+                            type="button"
+                            onClick={() => setSmartSelectLevel('low')}
+                            className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                              smartSelectLevel === 'low' 
+                                ? 'bg-sky-50/90 dark:bg-sky-950/60 border-2 border-sky-600 shadow-sm' 
+                                : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'low' ? 'bg-sky-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                  <Sparkles size={18} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Low</h4>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-sky-100 dark:bg-sky-900/60 text-sky-700 dark:text-sky-300">
+                                      Ringan
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-sky-600 dark:text-sky-400 font-medium">Penalaran cepat & hemat</span>
+                                </div>
+                              </div>
+                              {smartSelectLevel === 'low' && (
+                                <div className="w-5 h-5 rounded-full bg-sky-600 text-white flex items-center justify-center">
+                                  <Check size={12} className="stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                              Proses berpikir singkat untuk menyelaraskan konteks percakapan secara efisien.
+                            </p>
+                          </button>
 
-                  {/* Step 3: Medium */}
-                  <button 
-                    type="button"
-                    onClick={() => setSmartSelectLevel('medium')}
-                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                      smartSelectLevel === 'medium' 
-                        ? 'bg-blue-50/90 dark:bg-blue-950/60 border-2 border-blue-600 shadow-sm' 
-                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'medium' ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                          <Cpu size={18} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Medium</h4>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                              66% Thinking
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Penalaran seimbang & terstruktur</span>
-                        </div>
-                      </div>
-                      {smartSelectLevel === 'medium' && (
-                        <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center">
-                          <Check size={12} className="stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
-                      Analisis logika dan pemecahan langkah berimbang. Sangat cocok untuk diskusi mendalam, penulisan, dan riset umum. Bawaan <strong>bluefox standard</strong>.
-                    </p>
-                  </button>
+                          {/* Medium */}
+                          <button 
+                            type="button"
+                            onClick={() => setSmartSelectLevel('medium')}
+                            className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                              smartSelectLevel === 'medium' || (smartSelectLevel === 'auto' && isAgnes25)
+                                ? 'bg-blue-50/90 dark:bg-blue-950/60 border-2 border-blue-600 shadow-sm' 
+                                : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${(smartSelectLevel === 'medium' || (smartSelectLevel === 'auto' && isAgnes25)) ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                  <Cpu size={18} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Medium</h4>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                                      Seimbang
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">Penalaran terstruktur</span>
+                                </div>
+                              </div>
+                              {(smartSelectLevel === 'medium' || (smartSelectLevel === 'auto' && isAgnes25)) && (
+                                <div className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                                  <Check size={12} className="stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                              Analisis logika berimbang. Bawaan default optimal untuk model <strong>Bluefox Standard (Agnes 2.5)</strong>.
+                            </p>
+                          </button>
 
-                  {/* Step 4: High */}
-                  <button 
-                    type="button"
-                    onClick={() => setSmartSelectLevel('high')}
-                    className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
-                      smartSelectLevel === 'high' 
-                        ? 'bg-purple-50/90 dark:bg-purple-950/60 border-2 border-purple-600 shadow-sm' 
-                        : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'high' ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
-                          <Brain size={18} />
+                          {/* High */}
+                          <button 
+                            type="button"
+                            onClick={() => setSmartSelectLevel('high')}
+                            className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                              smartSelectLevel === 'high' || (smartSelectLevel === 'auto' && !isAgnes25)
+                                ? 'bg-purple-50/90 dark:bg-purple-950/60 border-2 border-purple-600 shadow-sm' 
+                                : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${(smartSelectLevel === 'high' || (smartSelectLevel === 'auto' && !isAgnes25)) ? 'bg-purple-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                  <Brain size={18} />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">High</h4>
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 animate-pulse">
+                                      Tinggi
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold">Daya pemikiran tinggi</span>
+                                </div>
+                              </div>
+                              {(smartSelectLevel === 'high' || (smartSelectLevel === 'auto' && !isAgnes25)) && (
+                                <div className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center">
+                                  <Check size={12} className="stroke-[3]" />
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                              Daya pikir mendalam untuk coding rumit, penalaran bertingkat, dan visual. Bawaan <strong>Bluefox Pro</strong>.
+                            </p>
+                          </button>
+
+                          {/* Max (Khusus Agnes 3.0 Pro) */}
+                          {!isAgnes25 && (
+                            <button 
+                              type="button"
+                              onClick={() => setSmartSelectLevel('max')}
+                              className={`flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer ${
+                                smartSelectLevel === 'max' 
+                                  ? 'bg-fuchsia-50/90 dark:bg-fuchsia-950/60 border-2 border-fuchsia-600 shadow-sm' 
+                                  : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${smartSelectLevel === 'max' ? 'bg-fuchsia-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                    <Zap size={18} />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">Max</h4>
+                                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-fuchsia-100 dark:bg-fuchsia-900/60 text-fuchsia-700 dark:text-fuchsia-300 animate-pulse">
+                                        Maksimal (Puncak)
+                                      </span>
+                                    </div>
+                                    <span className="text-[11px] text-fuchsia-600 dark:text-fuchsia-400 font-semibold">Eksplorasi pemikiran terdalam</span>
+                                  </div>
+                                </div>
+                                {smartSelectLevel === 'max' && (
+                                  <div className="w-5 h-5 rounded-full bg-fuchsia-600 text-white flex items-center justify-center">
+                                    <Check size={12} className="stroke-[3]" />
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
+                                Tingkat penalaran paling intensif untuk pembuktian matematika kompleks, arsitektur enterprise, dan riset kritis.
+                              </p>
+                            </button>
+                          )}
                         </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm md:text-base">High</h4>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 animate-pulse">
-                              100% Paling Tinggi
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-purple-600 dark:text-purple-400 font-semibold">Daya pemikiran tertinggi</span>
-                        </div>
-                      </div>
-                      {smartSelectLevel === 'high' && (
-                        <div className="w-5 h-5 rounded-full bg-purple-600 text-white flex items-center justify-center">
-                          <Check size={12} className="stroke-[3]" />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pl-12">
-                      Daya pikir paling mendalam dan menyeluruh untuk coding rumit, matematika, logika ilmiah, serta visual kompleks. Bawaan <strong>bluefox pro</strong>.
-                    </p>
-                  </button>
-                </div>
+                      </>
+                    );
+                  })()
+                )}
 
                 {/* Auto Mode Breakdown Explainer */}
                 <div className="mt-5 p-4 rounded-xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700/60">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Ringkasan Level Berpikir per Model:
+                      Spesifikasi Effort Tiap Model (Router Baru):
                     </span>
-                    {smartSelectLevel !== 'auto' && (
+                    {smartSelectLevel !== 'auto' && selectedModel !== 'glm-4.7-flash' && (
                       <span className="text-[10px] text-purple-600 dark:text-purple-400 font-medium">
-                        *Ditentukan manual ({smartSelectLevel.toUpperCase()})
+                        *Level manual: {smartSelectLevel.toUpperCase()}
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-purple-600 animate-pulse" />
-                      Bluefox Pro: <strong>{getSmartSelectEffort('agnes-2.5-flash', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Pro (Agnes 3.0): <strong>LOW, MEDIUM, HIGH, MAX</strong>
                     </span>
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-                      Bluefox Standard: <strong>{getSmartSelectEffort('tencent-hy3-free', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Standard (Agnes 2.5): <strong>LOW, MEDIUM, HIGH</strong>
                     </span>
                     <span className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-sky-600 animate-pulse" />
-                      Bluefox Dilo: <strong>{getSmartSelectEffort('laguna-s-2.1', smartSelectLevel).toUpperCase()}</strong>
+                      Bluefox Dilo (GLM 4.7): <strong>AUTO (Terkunci)</strong>
                     </span>
                   </div>
                 </div>

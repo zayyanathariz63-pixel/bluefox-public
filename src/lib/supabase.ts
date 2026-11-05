@@ -66,20 +66,20 @@ export const BLUEFOX_MODELS = [
   {
     id: "bluefox-dilo",
     name: "Bluefox Dilo",
-    upstreamModel: "deepseek-v4.1-flash-free",
-    description: "Cepat dan efisien untuk interaksi harian"
+    upstreamModel: "glm-4.7-flash",
+    description: "Layanan cepat untuk reasoning & percakapan umum"
   },
   {
     id: "bluefox-standard",
     name: "Bluefox Standard",
     upstreamModel: "agnes-2.5-flash",
-    description: "Model standar yang stabil dan serbaguna"
+    description: "Model standar yang seimbang untuk tugas sehari-hari"
   },
   {
     id: "bluefox-pro",
     name: "Bluefox Pro",
     upstreamModel: "agnes-3.0-flash",
-    description: "Model flagship dengan kemampuan vision dan pemrosesan tinggi"
+    description: "Model tingkat lanjut untuk tugas kompleks & vision"
   }
 ];
 
@@ -87,10 +87,10 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   const edgeFunctionUrl = 'https://jjlanjshpyklqayjzxyy.supabase.co/functions/v1/bluefox-processor-';
   const anonKey = supabaseKey || (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY || 'sb_publishable_zXY2aPqOnPt7j1QKdoZFxQ_x6rOon0U';
 
-  // Pastikan ID model selalu terisi sesuai spesifikasi Edge Function:
+  // Pastikan ID model selalu terisi sesuai spesifikasi Edge Function / Router:
   // 1. Bluefox Pro --> agnes-3.0-flash
   // 2. Bluefox Standard --> agnes-2.5-flash
-  // 3. Bluefox Dilo --> deepseek-v4.1-flash-free
+  // 3. Bluefox Dilo --> glm-4.7-flash
   const safePayload: any = { ...(payload || {}) };
 
   // Deteksi apakah request ini untuk 3 model bawaan Bluefox
@@ -99,18 +99,21 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
     safePayload.isBluefoxNative === true ||
     safePayload.model === 'agnes-3.0-flash' || 
     safePayload.model === 'agnes-2.5-flash' || 
+    safePayload.model === 'glm-4.7-flash' || 
     safePayload.model === 'deepseek-v4.1-flash-free' || 
     safePayload.model === 'jev' || 
     safePayload.model === 'laguna-s-2.1' ||
     safePayload.model === 'tencent-hy3-free' ||
     safePayload.model_id === 'agnes-3.0-flash' || 
     safePayload.model_id === 'agnes-2.5-flash' || 
+    safePayload.model_id === 'glm-4.7-flash' || 
     safePayload.model_id === 'deepseek-v4.1-flash-free' || 
     safePayload.model_id === 'jev' || 
     safePayload.model_id === 'laguna-s-2.1' ||
     safePayload.model_id === 'tencent-hy3-free' ||
     safePayload.selected_model === 'agnes-3.0-flash' ||
     safePayload.selected_model === 'agnes-2.5-flash' ||
+    safePayload.selected_model === 'glm-4.7-flash' ||
     safePayload.selected_model === 'deepseek-v4.1-flash-free' ||
     safePayload.selected_model === 'tencent-hy3-free' ||
     safePayload.selected_model === 'laguna-s-2.1';
@@ -130,8 +133,8 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   // Normalisasi ID model resmi
   let normalized = 'agnes-3.0-flash';
   const m = (safePayload.model_id || safePayload.model || safePayload.selected_model || '').toLowerCase();
-  if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
-    normalized = 'deepseek-v4.1-flash-free';
+  if (m.includes('glm') || m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
+    normalized = 'glm-4.7-flash';
   } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev')) {
     normalized = 'agnes-2.5-flash';
   } else {
@@ -961,7 +964,8 @@ export const DEFAULT_MODELS: Record<string, string> = {
   // Lineup Model Aktif
   "agnes-3.0-flash": "agnes-3.0-flash",
   "agnes-2.5-flash": "agnes-2.5-flash",
-  "deepseek-v4.1-flash-free": "deepseek-v4.1-flash-free",
+  "glm-4.7-flash": "glm-4.7-flash",
+  "deepseek-v4.1-flash-free": "glm-4.7-flash",
 
   // Nama Display & Aliases
   "bluefox-pro": "agnes-3.0-flash",
@@ -973,10 +977,11 @@ export const DEFAULT_MODELS: Record<string, string> = {
   "standard": "agnes-2.5-flash",
   "jev": "agnes-2.5-flash",
   "tencent-hy3-free": "agnes-2.5-flash",
-  "bluefox-dilo": "deepseek-v4.1-flash-free",
-  "bluefox_dilo": "deepseek-v4.1-flash-free",
-  "dilo": "deepseek-v4.1-flash-free",
-  "laguna-s-2.1": "deepseek-v4.1-flash-free",
+  "bluefox-dilo": "glm-4.7-flash",
+  "bluefox_dilo": "glm-4.7-flash",
+  "dilo": "glm-4.7-flash",
+  "glm": "glm-4.7-flash",
+  "laguna-s-2.1": "glm-4.7-flash",
 };
 
 /**
@@ -985,7 +990,7 @@ export const DEFAULT_MODELS: Record<string, string> = {
 export function getModelDisplayName(modelId?: string): string {
   if (!modelId) return 'bluefox pro';
   const clean = modelId.toLowerCase();
-  if (clean.includes('dilo') || clean.includes('deepseek') || clean.includes('laguna') || clean.includes('nemotron')) {
+  if (clean.includes('glm') || clean.includes('dilo') || clean.includes('deepseek') || clean.includes('laguna') || clean.includes('nemotron')) {
     return 'bluefox Dilo';
   }
   if (clean.includes('2.5') || clean.includes('standard') || clean.includes('standar') || clean.includes('jev') || clean.includes('tencent')) {
@@ -1183,11 +1188,11 @@ export async function consumeAiLimit(
     let deltaWeekly = 0;
 
     const m = (model || '').toLowerCase();
-    if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
-      delta5h = 2; // Bluefox dilo: 5 jam: 2%, seminggu: 2%
+    if (m.includes('glm') || m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) {
+      delta5h = 2; // Bluefox dilo (glm-4.7-flash): 5 jam: 2%, seminggu: 2%
       deltaWeekly = 2;
     } else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) {
-      delta5h = 2; // Bluefox standard: 5 jam: 2%, seminggu: 3%
+      delta5h = 2; // Bluefox standard (agnes-2.5-flash): 5 jam: 2%, seminggu: 3%
       deltaWeekly = 3;
     } else {
       // Bluefox pro (agnes-3.0-flash / default)
@@ -1245,7 +1250,7 @@ export async function consumeAiLimit(
     // Panggil RPC jika ada untuk sinkronisasi server-side (abaikan error jika RPC tidak ada)
     try {
       let rpcModel: 'v2_vision' | 'v2_non_vision' | 'v1' | 'dilo' = isVision ? 'v2_vision' : 'v2_non_vision';
-      if (m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) rpcModel = 'dilo';
+      if (m.includes('glm') || m.includes('dilo') || m.includes('deepseek') || m.includes('laguna')) rpcModel = 'dilo';
       else if (m.includes('2.5') || m.includes('standard') || m.includes('standar') || m.includes('tencent') || m.includes('jev') || m.includes('v1')) rpcModel = 'v1';
       supabase.rpc('consume_ai_limit', { p_user_id: userUuid, p_model: rpcModel }).then(() => {}, () => {});
     } catch {}

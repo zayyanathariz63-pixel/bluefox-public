@@ -7,7 +7,7 @@ User-agent: Googlebot
 User-agent: *
 
 # Rute Publik yang Diizinkan
-Allow: /$
+Allow: /
 Allow: /share
 Allow: /sitemap.xml
 Allow: /robots.txt

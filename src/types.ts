@@ -26,7 +26,7 @@ export interface Message {
   sources?: SearchSource[];
   thinking?: string;
   isThinking?: boolean;
-  reasoningEffort?: 'none' | 'low' | 'medium' | 'high';
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
   motionCode?: string;
   isManualMotion?: boolean;
 }

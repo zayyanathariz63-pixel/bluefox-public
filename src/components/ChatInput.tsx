@@ -6,8 +6,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLanguage } from '../lib/i18n';
 import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
-import { prepareFilePayload, processAndCompressImage } from '../lib/imageCompressor';
-import { extractTextFromPdf } from '../lib/pdfReader';
+import { prepareFilePayload, processAndCompressImage, processVisionImage } from '../lib/imageCompressor';
+import { extractTextFromPdf, convertPdfToJpgSlides } from '../lib/pdfReader';
 import { MOTION_PRESETS, MOTION_MODELS, formatMotionModelName } from '../lib/motion';
 import { getAppStyle, AppStyle } from '../lib/styleManager';
 import { startRecording, stopAndSendRecording, cancelRecording } from '../lib/voiceRecorder';
@@ -403,51 +403,49 @@ export function ChatInput({
           continue;
         }
 
-        // 1. Pemrosesan PDF (Menggunakan library pdfjs-dist untuk mengekstrak isi teks agar dapat dibaca AI)
+        // 1. Pemrosesan PDF: Otomatis dikonversi per slide menjadi gambar JPG agar ringan dan siap dibaca Vision
         if (isPdf) {
           try {
-            let extracted = { text: '', numPages: 1 };
-            try {
-              extracted = await extractTextFromPdf(file);
-            } catch (pdfErr: any) {
-              console.warn("Gagal mengekstrak teks PDF dengan pdfjs-dist:", pdfErr);
-              extracted = { text: `[Dokumen PDF: ${file.name}]`, numPages: 1 };
-            }
+            const remainingQuota = Math.max(1, 5 - (attachedMediaList.length + newAttachments.length));
+            const slides = await convertPdfToJpgSlides(file, Math.min(5, remainingQuota));
 
-            const { text: pdfText, numPages } = extracted;
-
-            if (pdfText && pdfText.length > 60000) {
-              setErrorModal({
-                isOpen: true,
-                title: "Isi Dokumen PDF Terlalu Panjang",
-                message: `File PDF "${file.name}" (${numPages} halaman) memiliki ${pdfText.length.toLocaleString()} karakter (melebihi batas 60.000 karakter). Harap gunakan dokumen PDF yang lebih ringkas.`,
-                fileName: file.name,
-                maxLimitInfo: `Total karakter: ${pdfText.length.toLocaleString()} • Batas: 60.000 karakter`
+            if (slides.length > 0) {
+              for (const slide of slides) {
+                newAttachments.push({
+                  id: `pdf-slide-${Date.now()}-${slide.pageNumber}-${Math.random().toString(36).substring(2, 7)}`,
+                  url: slide.dataUrl,
+                  type: 'image',
+                  name: slide.name,
+                  size: slide.size,
+                  textContent: slide.text ? `[Isi Slide ${slide.pageNumber}/${slide.totalPages}]: ${slide.text}` : undefined,
+                  pageCount: slide.totalPages,
+                });
+              }
+            } else {
+              // Cadangan jika canvas render kosong
+              const extracted = await extractTextFromPdf(file);
+              const dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
               });
-              continue;
+              newAttachments.push({
+                id: fileId,
+                url: dataUrl,
+                type: 'document',
+                name: file.name,
+                size: file.size,
+                textContent: extracted.text || `[Dokumen PDF: ${file.name}]`,
+                pageCount: extracted.numPages,
+              });
             }
-
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(file);
-            });
-
-            newAttachments.push({
-              id: fileId,
-              url: dataUrl,
-              type: 'document',
-              name: file.name,
-              size: file.size,
-              textContent: pdfText || `[Isi PDF: ${file.name} (${numPages} halaman)]`,
-              pageCount: numPages,
-            });
           } catch (err: any) {
+            console.warn("Gagal konversi slide PDF ke JPG:", err);
             setErrorModal({
               isOpen: true,
               title: "Gagal Membaca File PDF",
-              message: `File PDF "${file.name}" tidak dapat dibaca. Pastikan file valid dan tidak dikunci sandi.`,
+              message: `File PDF "${file.name}" tidak dapat dikonversi menjadi slide JPG. Pastikan file valid dan tidak dikunci sandi.`,
               fileName: file.name
             });
             continue;
@@ -514,18 +512,17 @@ export function ChatInput({
             continue;
           }
         }
-        // 3. Pemrosesan Gambar (WebP, PNG, GIF, JPEG)
+        // 3. Pemrosesan Gambar Vision (PNG otomatis konversi ke JPG, GIF ambil frame 1 ke JPG, WEBP & JPG didukung)
         else if (isImage) {
           try {
-            const dataUrl = await prepareFilePayload(file);
-            if (!dataUrl) continue;
-
+            const processed = await processVisionImage(file);
             newAttachments.push({
               id: fileId,
-              url: dataUrl,
+              url: processed.dataUrl,
               type: 'image',
-              name: file.name,
-              size: file.size,
+              name: processed.name, // Jika PNG otomatis menjadi .jpg
+              size: processed.size,
+              textContent: processed.convertedNote ? `[${processed.convertedNote}]` : undefined,
             });
           } catch (err: any) {
             setErrorModal({
