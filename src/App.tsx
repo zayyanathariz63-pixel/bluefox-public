@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users, ShieldCheck } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
@@ -614,6 +614,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState('Mendeteksi parameter SSO...');
   const [isScrolledUp, setIsScrolledUp] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isHistoryFullScreen, setIsHistoryFullScreen] = useState(false);
   const [isMenuLoadMoreOpen, setIsMenuLoadMoreOpen] = useState(false);
   const [isChooseAccountOpen, setIsChooseAccountOpen] = useState(false);
   const [activeHalloweenEasterEgg, setActiveHalloweenEasterEgg] = useState<EasterEggType>(null);
@@ -1347,8 +1348,24 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const prevIsLoadingRef = useRef(isLoading);
+  const prevMessagesCountRef = useRef(messages.length);
+
   useEffect(() => {
-    scrollToBottom();
+    // 1. Scroll langsung saat user mengirim pesan baru
+    const lastMsg = messages[messages.length - 1];
+    const isNewUserMsg = messages.length > prevMessagesCountRef.current && lastMsg?.role === 'user';
+    
+    // 2. Scroll ke bawah hanya saat AI baru selesai mengetik/menjawab (isLoading berubah dari true ke false)
+    const justFinishedAiResponse = prevIsLoadingRef.current && !isLoading;
+
+    if (isNewUserMsg || justFinishedAiResponse) {
+      scrollToBottom();
+    }
+    // Animasi scroll dihentikan selama AI sedang mengetik (isLoading === true) agar stabil dan tidak melompat
+
+    prevIsLoadingRef.current = isLoading;
+    prevMessagesCountRef.current = messages.length;
   }, [messages, isLoading]);
 
   // Realtime & Load Chat History integration with Supabase (Anti-duplicate logic)
@@ -2158,9 +2175,20 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const onlyImageUrl = imageAttachments.length > 0 ? imageAttachments[0].url : (imageUrl || null);
       const hasRealImage = Boolean(onlyImageUrl);
 
-      // Vision mode HANYA aktif jika dinyalakan manual ATAU ada lampiran gambar nyata
-      // Dokumen, berkas teks (TXT/MD), PDF, JSON, YAML, kode program BUKAN vision
-      const isVisionNow = Boolean(isVisionActive || hasRealImage);
+      // KEBUTUHAN 3: Analisis apa yang dikirim pengguna
+      // Jika prompt berisi format JSON, MD, TXT, YML, YAML atau tidak ada gambar nyata, mode Vision HARUS nonaktif
+      const hasTextOrDataFormats = /```(json|ya?ml|markdown|md|txt|text)[:\s]/i.test(text) ||
+        mediaList.some(m => /\.(json|ya?ml|md|markdown|txt)$/i.test(m.name || ''));
+
+      const isVisionNow = Boolean(hasRealImage && !hasTextOrDataFormats);
+
+      if (hasTextOrDataFormats && isVisionActive) {
+        setIsVisionActive(false);
+        try {
+          localStorage.setItem('tmpa_vision_active', 'false');
+        } catch {}
+      }
+
       // Vision terkunci ke Bluefox Pro (agnes-3.0-flash) tanpa fallback
       const currentEffectiveModel = isVisionNow 
         ? 'agnes-3.0-flash' 
@@ -2441,7 +2469,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         rawChosenName === 'longcat-2.0-free' ||
         (selectedModel as string) === 'glm-4.7-flash';
 
-      const isMotionTriggered = lowerText.includes('@motion');
+      const isMotionTriggered = isUserAdmin(user) && lowerText.includes('@motion');
       const activeSystemPrompt = isMotionTriggered
         ? `${BLUEFOX_SYSTEM_PROMPT}\n\n${BLUEFOX_MOTION_SYSTEM_PROMPT}`
         : BLUEFOX_SYSTEM_PROMPT;
@@ -3277,8 +3305,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     </span>
                   </span>
                   {isVisionActive && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-bold">
-                      <Eye size={10} /> Vision
+                    <span className="p-1 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 shadow-2xs flex items-center justify-center shrink-0" title="Mode Vision Aktif">
+                      <Eye size={12} />
                     </span>
                   )}
                   <ChevronDown size={14} className="text-slate-400 shrink-0" />
@@ -3477,7 +3505,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
             initial={{ opacity: 0, y: 10, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.9 }}
-            className="absolute bottom-[90px] md:bottom-[100px] right-6 z-30"
+            className="absolute bottom-[140px] sm:bottom-[150px] right-5 sm:right-8 z-30"
           >
             <button
               onClick={scrollToBottom}
@@ -3559,6 +3587,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               onOpenMotionManual={() => setIsMotionManualModalOpen(true)}
               onOpenMotionPanel={() => setIsMotionPanelOpen(true)}
               appStyle={appStyle}
+              user={user}
               selectedMotionModel={selectedMotionModel}
               onSelectMotionModel={(m) => {
                 setSelectedMotionModel(m);
@@ -3600,91 +3629,120 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
               className={cn(
-                "fixed top-0 left-0 bottom-0 w-[280px] z-50 flex flex-col shadow-2xl transition-colors",
+                "fixed top-0 left-0 bottom-0 z-50 flex flex-col shadow-2xl transition-all duration-300",
+                isHistoryFullScreen 
+                  ? "w-full max-w-full right-0 inset-0" 
+                  : "w-[280px] sm:w-[320px]",
                 isBlueRilis 
-                  ? "bg-[#090f1d]/90 backdrop-blur-2xl border-r border-blue-500/20 text-slate-100 shadow-[0_0_50px_rgba(15,23,42,0.8)]" 
+                  ? "bg-[#090f1d]/95 backdrop-blur-2xl border-r border-blue-500/20 text-slate-100 shadow-[0_0_50px_rgba(15,23,42,0.8)]" 
                   : "bg-white border-r border-slate-200 text-slate-900"
               )}
             >
               <div className="p-4 pt-6 flex-1 flex flex-col gap-1 overflow-y-auto">
+                {/* Mode Fullscreen Header Info */}
+                {isHistoryFullScreen && (
+                  <div className="flex items-center justify-between pb-3 mb-2 border-b border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                        {lang === 'id' ? 'Riwayat Percakapan (Layar Penuh)' : 'Chat History (Full Screen)'}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                        ({chatSessions.length} {lang === 'id' ? 'obrolan' : 'chats'})
+                      </span>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsHistoryFullScreen(false)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                    >
+                      <Minimize2 size={14} />
+                      <span>{lang === 'id' ? 'Kecilkan' : 'Minimize'}</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* 1. BAGIAN ATAS: Chat Baru & Menu Utama (Store, MCP, Web Utama, Setting) */}
-                <button 
-                  onClick={startNewChat} 
-                  className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors text-sm font-semibold mb-2 shadow-sm cursor-pointer"
-                >
-                  <Sparkles size={18} />
-                  <span>{t.newChat}</span>
-                </button>
+                {!isHistoryFullScreen && (
+                  <>
+                    <button 
+                      onClick={startNewChat} 
+                      className="flex items-center gap-3 px-4 py-3 text-white bg-blue-600 rounded-xl hover:bg-blue-700 active:bg-blue-800 transition-colors text-sm font-semibold mb-2 shadow-sm cursor-pointer"
+                    >
+                      <Sparkles size={18} />
+                      <span>{t.newChat}</span>
+                    </button>
 
-                <div className="space-y-1 mb-3">
-                  {/* 1. Store (di bawah new chat) */}
-                  <button 
-                    onClick={() => {
-                      setShowActionToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...');
-                      setTimeout(() => setShowActionToast(null), 2000);
-                    }}
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Store size={18} className="text-amber-500" />
-                    <span>{t.store}</span>
-                  </button>
-
-                  {/* 2. File history (di bawah store) */}
-                  <button 
-                    onClick={() => { setIsFileHistoryOpen(true); setIsSidebarOpen(false); }} 
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <ImageIcon size={18} className="text-cyan-600" />
-                    <span>{t.fileHistory || (lang === 'id' ? 'File history' : 'File history')}</span>
-                  </button>
-
-                  {/* 3. Setting (di bawah file history) */}
-                  <button 
-                    onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} 
-                    className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <Settings size={18} className="text-purple-600" />
-                    <span>{t.settings}</span>
-                  </button>
-
-                  {/* 4. Load more (di bawah setting) */}
-                  <button 
-                    onClick={() => setIsMenuLoadMoreOpen(prev => !prev)} 
-                    className="w-full flex items-center justify-between px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isMenuLoadMoreOpen ? 'rotate-180 text-blue-600' : ''}`} />
-                      <span>Load more</span>
-                    </div>
-                  </button>
-
-                  {/* Isi Load more: Website utama dan MCP */}
-                  {isMenuLoadMoreOpen && (
-                    <div className="pl-3.5 space-y-1 pt-1 pb-1 border-l-2 border-slate-200 ml-4">
-                      {/* Website utama */}
+                    <div className="space-y-1 mb-3">
+                      {/* 1. Store (di bawah new chat) */}
                       <button 
-                        onClick={() => { window.location.href = "https://tmpa.my.id"; }}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                        onClick={() => {
+                          setShowActionToast(lang === 'id' ? 'Membuka TMPA Store...' : 'Opening TMPA Store...');
+                          setTimeout(() => setShowActionToast(null), 2000);
+                        }}
+                        className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                       >
-                        <Globe size={16} className="text-blue-600" />
-                        <span>{lang === 'id' ? 'Website utama' : 'Main Website'}</span>
+                        <Store size={18} className="text-amber-500" />
+                        <span>{t.store}</span>
                       </button>
 
-                      {/* MCP */}
+                      {/* 2. File history (di bawah store) */}
                       <button 
-                        onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
-                        className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                        onClick={() => { setIsFileHistoryOpen(true); setIsSidebarOpen(false); }} 
+                        className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
                       >
-                        <Layers size={16} className="text-emerald-600" />
-                        <span>MCP</span>
+                        <ImageIcon size={18} className="text-cyan-600" />
+                        <span>{t.fileHistory || (lang === 'id' ? 'File history' : 'File history')}</span>
                       </button>
+
+                      {/* 3. Setting (di bawah file history) */}
+                      <button 
+                        onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} 
+                        className="w-full flex items-center gap-3 px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                      >
+                        <Settings size={18} className="text-purple-600" />
+                        <span>{t.settings}</span>
+                      </button>
+
+                      {/* 4. Load more (di bawah setting) */}
+                      <button 
+                        onClick={() => setIsMenuLoadMoreOpen(prev => !prev)} 
+                        className="w-full flex items-center justify-between px-3.5 py-2.5 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors text-sm font-medium cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <ChevronDown size={18} className={`text-slate-400 transition-transform duration-200 ${isMenuLoadMoreOpen ? 'rotate-180 text-blue-600' : ''}`} />
+                          <span>Load more</span>
+                        </div>
+                      </button>
+
+                      {/* Isi Load more: Website utama dan MCP */}
+                      {isMenuLoadMoreOpen && (
+                        <div className="pl-3.5 space-y-1 pt-1 pb-1 border-l-2 border-slate-200 ml-4">
+                          {/* Website utama */}
+                          <button 
+                            onClick={() => { window.location.href = "https://tmpa.my.id"; }}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                          >
+                            <Globe size={16} className="text-blue-600" />
+                            <span>{lang === 'id' ? 'Website utama' : 'Main Website'}</span>
+                          </button>
+
+                          {/* MCP */}
+                          <button 
+                            onClick={() => { setAppState('integrations'); setIsSidebarOpen(false); }}
+                            className="w-full flex items-center gap-3 px-3 py-2 text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors text-sm font-medium cursor-pointer"
+                          >
+                            <Layers size={16} className="text-emerald-600" />
+                            <span>MCP</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <div className="my-1 border-t border-slate-200" />
+                    <div className="my-1 border-t border-slate-200" />
+                  </>
+                )}
 
-                {/* 2. BAGIAN TENGAH: Riwayat Chat User (Dengan Search, Pin Priority, dan Tahan 1 Detik untuk Pin/Hapus) */}
+                {/* 2. BAGIAN TENGAH: Riwayat Chat User (Dengan Search, Mode Fullscreen, Pin Priority, dan Tahan 1 Detik untuk Pin/Hapus) */}
                 <div className="flex-1 flex flex-col pt-2 min-h-0">
                   <div className="flex items-center justify-between px-3 mb-2">
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
@@ -3695,23 +3753,36 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                     </span>
                   </div>
 
-                  {chatSessions.length > 0 && (
-                    <div className="mb-2.5 px-2">
-                      <div className="relative">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input 
-                          type="text" 
-                          placeholder={t.searchHistory} 
-                          value={searchQuery}
-                          onChange={(e) => setSearchQuery(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
+                  <div className="flex items-center gap-1.5 mb-2.5 px-2">
+                    <div className="relative flex-1">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input 
+                        type="text" 
+                        placeholder={t.searchHistory} 
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500"
+                      />
                     </div>
-                  )}
+                    {/* Tombol Mode Full Screen di samping kanan search */}
+                    <button
+                      type="button"
+                      onClick={() => setIsHistoryFullScreen(prev => !prev)}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors shrink-0 cursor-pointer"
+                      title={isHistoryFullScreen ? (lang === 'id' ? 'Kecilkan riwayat' : 'Exit full screen') : (lang === 'id' ? 'Layar penuh riwayat chat' : 'Full screen chat history')}
+                      aria-label="Mode Layar Penuh Riwayat Chat"
+                    >
+                      {isHistoryFullScreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                    </button>
+                  </div>
 
                   {/* Chat Session List: Sorted so pinned always stays at top */}
-                  <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+                  <div className={cn(
+                    "flex-1 overflow-y-auto pr-1",
+                    isHistoryFullScreen 
+                      ? "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 auto-rows-max p-1" 
+                      : "space-y-1"
+                  )}>
                     {chatSessions.length === 0 ? (
                       <div className="p-4 text-center text-xs text-slate-400">
                         {lang === 'id' ? 'Belum ada riwayat percakapan' : 'No chat history yet'}
@@ -3748,10 +3819,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                                   return;
                                 }
                                 loadSession(session.id);
+                                if (isHistoryFullScreen) {
+                                  setIsSidebarOpen(false);
+                                  setIsHistoryFullScreen(false);
+                                }
                               }}
                               className={`group relative flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl transition-all text-sm font-medium cursor-pointer select-none
-                                ${isActive ? 'bg-blue-50 border border-blue-200 text-blue-700 font-semibold' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-transparent'}
-                                ${isPinned ? 'bg-amber-50/70 border-amber-200 text-amber-900' : ''}`}
+                                ${isActive ? 'bg-blue-50 border border-blue-200 text-blue-700 font-semibold dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300' : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-transparent dark:text-slate-200 dark:hover:bg-slate-800'}
+                                ${isPinned ? 'bg-amber-50/70 border-amber-200 text-amber-900 dark:bg-amber-950/30 dark:border-amber-800 dark:text-amber-300' : ''}`}
                             >
                               <div className="flex items-center gap-2 min-w-0 flex-1">
                                 {isPinned && (
@@ -3931,14 +4006,15 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         setIsModelSelectorOpen(false);
                         setIsVisionSelectorOpen(true);
                       }}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer flex items-center gap-1.5 ${
+                      className={`p-2 rounded-full transition-all cursor-pointer flex items-center justify-center ${
                         isVisionActive 
-                          ? 'text-cyan-700 bg-cyan-50 border border-cyan-300 hover:bg-cyan-100' 
-                          : 'text-slate-700 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+                          ? 'text-cyan-700 bg-cyan-50 border border-cyan-300 hover:bg-cyan-100 shadow-xs' 
+                          : 'text-slate-600 hover:text-slate-900 bg-slate-100 border border-slate-200 hover:bg-slate-200'
                       }`}
+                      title={isVisionActive ? 'Mode Vision (Aktif)' : 'Pengaturan Mode Vision'}
+                      aria-label="Pengaturan Mode Vision"
                     >
-                      {isVisionActive ? <Eye size={14} className="text-cyan-600" /> : <EyeOff size={14} />}
-                      Vision {isVisionActive ? '(Aktif)' : ''}
+                      {isVisionActive ? <Eye size={16} className="text-cyan-600" /> : <EyeOff size={16} />}
                     </button>
                     <button 
                       onClick={() => {

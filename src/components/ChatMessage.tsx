@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { 
   Pencil, Power, Copy, Check, Globe, Zap, Maximize2, 
   Music, FileText, RotateCcw, AlertTriangle, Lightbulb, 
-  HelpCircle, ShieldAlert, Sparkles, Play, Code, ExternalLink, Film, Download 
+  HelpCircle, ShieldAlert, Sparkles, Play, Code, ExternalLink, Film, Download,
+  ChevronLeft, ChevronRight, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { Message, MediaAttachment } from '../types';
 import { cn } from '../lib/utils';
@@ -146,6 +147,30 @@ export function ChatMessage({
   const [showSourcesModal, setShowSourcesModal] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState(false);
 
+  // User message show more state & image carousel state
+  const [isUserExpanded, setIsUserExpanded] = useState(false);
+  const [activeImgIdx, setActiveImgIdx] = useState(0);
+
+  const mediaList = useMemo(() => {
+    if (!message.media) return [];
+    return Array.isArray(message.media) ? message.media : [message.media];
+  }, [message.media]);
+
+  const imageMediaList = useMemo(() => {
+    return mediaList.filter(m => m.type === 'image' || (m.url && m.url.startsWith('data:image/')));
+  }, [mediaList]);
+
+  const nonImageMediaList = useMemo(() => {
+    return mediaList.filter(m => m.type !== 'image' && !(m.url && m.url.startsWith('data:image/')));
+  }, [mediaList]);
+
+  const isLongUserMessage = isUser && (
+    message.text.length > 320 || 
+    message.text.split('\n').length > 7 ||
+    message.text.includes('```') ||
+    message.text.includes('---')
+  );
+
   // Motion states
   const [motionIframeKey, setMotionIframeKey] = useState(1);
   const [showMotionCode, setShowMotionCode] = useState(false);
@@ -231,89 +256,164 @@ export function ChatMessage({
     >
       <div className={cn(
         "flex flex-col relative",
-        // User bubble max-w 75-85% di kanan; AI bubble max-w 85-95% di kiri
-        isUser ? "items-end max-w-[85%] sm:max-w-[75%]" : "items-start max-w-[95%] sm:max-w-[85%]"
+        // User bubble max-w 85% di kanan; AI bubble max-w 95% di kiri
+        isUser ? "items-end max-w-[92%] sm:max-w-[80%]" : "items-start max-w-[95%] sm:max-w-[85%]"
       )}>
         {/* Lampiran Media User jika ada */}
-        {message.media && (
+        {mediaList.length > 0 && (
           <div className={cn(
-            "mb-2.5 flex items-center gap-2 overflow-x-auto py-1 max-w-full flex-nowrap",
-            isUser ? "justify-end" : "justify-start"
+            "mb-2.5 flex flex-col gap-2 max-w-full",
+            isUser ? "items-end" : "items-start"
           )}>
-            {(Array.isArray(message.media) ? message.media : [message.media]).map((item, idx) => {
-              const isImg = item.type === 'image';
-              const isVid = item.type === 'video';
-              const isAud = item.type === 'audio';
-              const isDoc = item.type === 'document' || item.type === 'file';
-
-              return (
+            {/* 1. CAROUSEL UNTUK MULTI-GAMBAR DENGAN TOMBOL NAVIGASI KIRI & KANAN */}
+            {imageMediaList.length > 1 ? (
+              <div className="relative group rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm max-w-[280px] sm:max-w-[340px]">
+                {/* Gambar Utama Carousel */}
                 <div 
-                  key={idx} 
-                  onClick={() => onOpenMediaScreen && onOpenMediaScreen(item)}
-                  className="relative group inline-block max-w-[240px] sm:max-w-[280px] shrink-0 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer"
+                  onClick={() => onOpenMediaScreen && onOpenMediaScreen(imageMediaList[activeImgIdx])}
+                  className="relative overflow-hidden bg-slate-100 dark:bg-slate-800 cursor-pointer flex items-center justify-center min-h-[160px] max-h-56 sm:max-h-64 select-none"
                 >
-                  {isImg && (
-                    <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-800">
-                      <img
-                        src={item.url}
-                        alt={item.name || 'Uploaded file'}
-                        className="max-h-44 sm:max-h-52 w-auto object-contain rounded-t-xl mx-auto group-hover:scale-102 transition-transform duration-200"
-                      />
-                      <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs">
-                        <Maximize2 size={13} />
-                      </div>
-                    </div>
-                  )}
+                  <img
+                    src={imageMediaList[activeImgIdx]?.url}
+                    alt={imageMediaList[activeImgIdx]?.name || `Gambar ${activeImgIdx + 1}`}
+                    className="max-h-56 sm:max-h-64 w-auto object-contain mx-auto transition-transform duration-200 hover:scale-102"
+                  />
 
-                  {isVid && (
-                    <div className="relative bg-black rounded-t-xl overflow-hidden">
-                      <video
-                        src={item.url}
-                        controls
-                        className="max-h-44 sm:max-h-52 w-full rounded-t-xl bg-black"
-                      />
-                    </div>
-                  )}
+                  {/* Tombol Panah Kiri (Gambar Sebelumnya) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImgIdx(prev => (prev > 0 ? prev - 1 : imageMediaList.length - 1));
+                    }}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md z-10 cursor-pointer active:scale-95"
+                    title={isId ? "Gambar Sebelumnya" : "Previous Image"}
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
 
-                  {isAud && (
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
-                        <Music size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name || 'Audio'}</p>
-                        <p className="text-[10px] text-slate-500">{item.duration ? `${Math.round(item.duration)}s` : 'Audio'}</p>
-                      </div>
-                    </div>
-                  )}
+                  {/* Tombol Panah Kanan (Gambar Berikutnya) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveImgIdx(prev => (prev < imageMediaList.length - 1 ? prev + 1 : 0));
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center backdrop-blur-xs transition-all shadow-md z-10 cursor-pointer active:scale-95"
+                    title={isId ? "Gambar Berikutnya" : "Next Image"}
+                  >
+                    <ChevronRight size={18} />
+                  </button>
 
-                  {isDoc && (
-                    <div className="p-3 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2.5">
-                      <div className={cn(
-                        "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                        item.name.toLowerCase().endsWith('.pdf') ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
-                      )}>
-                        <FileText size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name || 'Dokumen'}</p>
-                        <p className="text-[10px] text-slate-500 font-mono">
-                          {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
-                            ? `PDF • ${item.pageCount} Halaman`
-                            : item.textContent 
-                            ? `${item.textContent.length.toLocaleString()} karakter` 
-                            : `${item.size ? (item.size/1024).toFixed(0) + ' KB' : 'Teks'}`}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  {/* Badge Indikator Angka Slide (misal: 1 / 3) */}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/65 text-white text-[11px] font-mono font-medium backdrop-blur-xs z-10 shadow-xs">
+                    {activeImgIdx + 1} / {imageMediaList.length}
+                  </div>
 
-                  <div className="text-[11px] text-slate-500 px-2.5 py-1 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
-                    <span className="truncate max-w-[150px] font-medium">{item.name || 'File'}</span>
+                  {/* Ikon Perbesar */}
+                  <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs z-10">
+                    <Maximize2 size={13} />
                   </div>
                 </div>
-              );
-            })}
+
+                {/* Footer Informasi Nama & Ukuran Gambar */}
+                <div className="text-[11px] text-slate-500 px-3 py-1.5 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{imageMediaList[activeImgIdx]?.name || `Gambar ${activeImgIdx + 1}`}</span>
+                  <span className="shrink-0 text-[10px] font-mono text-slate-400">
+                    {imageMediaList[activeImgIdx]?.size ? (imageMediaList[activeImgIdx].size / 1024).toFixed(0) + ' KB' : ''}
+                  </span>
+                </div>
+              </div>
+            ) : imageMediaList.length === 1 ? (
+              /* Satu Gambar */
+              <div 
+                onClick={() => onOpenMediaScreen && onOpenMediaScreen(imageMediaList[0])}
+                className="relative group inline-block max-w-[240px] sm:max-w-[280px] rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer"
+              >
+                <div className="relative overflow-hidden bg-slate-100 dark:bg-slate-800">
+                  <img
+                    src={imageMediaList[0].url}
+                    alt={imageMediaList[0].name || 'Uploaded file'}
+                    className="max-h-44 sm:max-h-52 w-auto object-contain rounded-t-xl mx-auto group-hover:scale-102 transition-transform duration-200"
+                  />
+                  <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-xs">
+                    <Maximize2 size={13} />
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-500 px-2.5 py-1 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                  <span className="truncate max-w-[150px] font-medium">{imageMediaList[0].name || 'File'}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* 2. LAMPIRAN NON-GAMBAR (DOKUMEN, PDF, AUDIO, VIDEO) */}
+            {nonImageMediaList.length > 0 && (
+              <div className={cn(
+                "flex items-center gap-2 overflow-x-auto py-1 max-w-full flex-wrap",
+                isUser ? "justify-end" : "justify-start"
+              )}>
+                {nonImageMediaList.map((item, idx) => {
+                  const isVid = item.type === 'video';
+                  const isAud = item.type === 'audio';
+                  const isDoc = item.type === 'document' || item.type === 'file';
+
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => onOpenMediaScreen && onOpenMediaScreen(item)}
+                      className="relative group inline-block max-w-[240px] sm:max-w-[280px] shrink-0 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xs hover:shadow-md transition-all cursor-pointer"
+                    >
+                      {isVid && (
+                        <div className="relative bg-black rounded-t-xl overflow-hidden">
+                          <video
+                            src={item.url}
+                            controls
+                            className="max-h-44 sm:max-h-52 w-full rounded-t-xl bg-black"
+                          />
+                        </div>
+                      )}
+
+                      {isAud && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                            <Music size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name || 'Audio'}</p>
+                            <p className="text-[10px] text-slate-500">{item.duration ? `${Math.round(item.duration)}s` : 'Audio'}</p>
+                          </div>
+                        </div>
+                      )}
+
+                      {isDoc && (
+                        <div className="p-3 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-2.5">
+                          <div className={cn(
+                            "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                            item.name.toLowerCase().endsWith('.pdf') ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"
+                          )}>
+                            <FileText size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name || 'Dokumen'}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">
+                              {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
+                                ? `PDF • ${item.pageCount} Halaman`
+                                : item.textContent 
+                                ? `${item.textContent.length.toLocaleString()} karakter` 
+                                : `${item.size ? (item.size/1024).toFixed(0) + ' KB' : 'Teks'}`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-[11px] text-slate-500 px-2.5 py-1 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                        <span className="truncate max-w-[150px] font-medium">{item.name || 'File'}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -321,7 +421,7 @@ export function ChatMessage({
         {/* KEBUTUHAN 5: CHAT BUBBLE USER (Di Kanan, Tanpa 'You' / Logo) */}
         {/* ------------------------------------------------------------- */}
         {isUser ? (
-          <div className="flex flex-col items-end w-full">
+          <div className="flex flex-col items-end w-full min-w-0 max-w-full">
             {isEditing ? (
               <div className="flex flex-col gap-2 w-full min-w-[260px] sm:min-w-[340px]">
                 <textarea
@@ -348,13 +448,48 @@ export function ChatMessage({
               </div>
             ) : (
               <>
-                {/* Bubble Teks User */}
-                <div className="bg-blue-600 text-white rounded-2xl rounded-tr-xs px-4 py-3 shadow-xs text-[15px] leading-relaxed break-words font-normal">
-                  <div className="markdown-body text-white leading-relaxed">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+                {/* Bubble Teks User: Responsif, Anti-geser & Show More pada Teks/Kode Panjang */}
+                <div className="bg-blue-600 text-white rounded-2xl rounded-tr-xs px-4 py-3 shadow-xs text-[15px] leading-relaxed break-words font-normal max-w-full min-w-0 overflow-hidden">
+                  <div className={cn(
+                    "markdown-body text-white leading-relaxed break-words overflow-hidden",
+                    isLongUserMessage && !isUserExpanded && "max-h-48 sm:max-h-64 relative overflow-hidden"
+                  )}>
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm, remarkBreaks]}
+                      components={{
+                        pre: ({ node, ...props }) => (
+                          <pre className="max-w-full overflow-x-auto p-2.5 rounded-xl bg-blue-700/60 border border-blue-400/30 text-xs font-mono my-2 whitespace-pre-wrap break-all sm:break-normal" {...props} />
+                        ),
+                        code: ({ node, inline, className, children, ...props }: any) => {
+                          if (inline) {
+                            return <code className="bg-blue-700/50 px-1 py-0.5 rounded text-[0.9em] font-mono break-all" {...props}>{children}</code>;
+                          }
+                          return <code className={cn("break-all sm:break-normal text-xs font-mono", className)} {...props}>{children}</code>;
+                        }
+                      }}
+                    >
                       {message.text}
                     </ReactMarkdown>
+
+                    {/* Gradient Fade saat collapsed */}
+                    {isLongUserMessage && !isUserExpanded && (
+                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-blue-600 via-blue-600/90 to-transparent pointer-events-none" />
+                    )}
                   </div>
+
+                  {/* Tombol Show More / Show Less */}
+                  {isLongUserMessage && (
+                    <div className="pt-2 flex justify-center border-t border-blue-500/30 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsUserExpanded(prev => !prev)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-all active:scale-95 cursor-pointer shadow-xs"
+                      >
+                        <span>{isUserExpanded ? (isId ? 'Sembunyikan' : 'Show less') : (isId ? 'Lihat selengkapnya' : 'Show more')}</span>
+                        {isUserExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* KEBUTUHAN 6: Tombol Copy Teks di Bawah Bubble Chat User */}

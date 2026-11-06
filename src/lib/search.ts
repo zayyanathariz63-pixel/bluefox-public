@@ -183,47 +183,58 @@ export function detectMapSearch(text: string): boolean {
 }
 
 /**
- * Membersihkan query pencarian dari prefix prompt / command agar hasil search akurat.
+ * Membersihkan dan mengoptimalkan query pencarian dari prefix prompt, kata basa-basi,
+ * dan noise kata agar hasil search Tavily / Google akurat dan relevan.
  */
 export function cleanSearchQuery(rawText: string): string {
   if (!rawText) return '';
-  return rawText
+  let q = rawText
     .replace(/^@(search|web|cari|browse|google|find|internet|online|map|maps)\s*/i, '')
     .replace(/^(search|cari|browse|find):\s*/i, '')
     .replace(/^\/(search|web|cari)\s*/i, '')
-    .replace(/^(tolong\s+)?(cari tahu|carikan|cek|apakah benar|tolong cek|bantu cari|apa saja|apa|tolong carikan|search for|please search|look up)\s+/i, '')
     .trim();
+
+  // Bersihkan kata basa-basi / conversational filler di awal kalimat
+  q = q.replace(/^(halo|hai|hey|hei|bluefox|permisi|bisa tolong|tolong|coba|coba carikan|carikan|cari|cek|apakah benar|tolong cek|bantu cari|apa saja|apa|tolong carikan|search for|please search|look up|kasih tahu|beritahu|jelaskan)\s+/i, '');
+  q = q.replace(/^(informasi|data|berita|kabar|update|fakta|spek|spesifikasi)\s+(tentang|mengenai|soal|terkait)\s+/i, '');
+  q = q.replace(/^(menurutmu|kira-kira|apakah kamu tahu)\s+/i, '');
+
+  // Bersihkan filler di akhir kalimat (misal: "coba cek dong", "dong", "sih", "ya")
+  q = q.replace(/\s+(coba cek dong|cek dong|dong|sih|ya|bro|min|gan|please)$/i, '');
+
+  return q.trim();
 }
 
 /**
- * Menghasilkan 3-5 sub-queries cerdas untuk memperluas cakupan informasi web
+ * Menghasilkan 3-5 sub-queries cerdas untuk memperluas cakupan informasi web di Tavily
  */
 export function generateExpandedQueries(cleanQuery: string, count: number = 3): string[] {
   if (!cleanQuery) return [];
   const queries: string[] = [cleanQuery];
 
   const words = cleanQuery.split(/\s+/).filter(Boolean);
+  const currentYear = new Date().getFullYear();
 
-  // Variasi 2: Fokus data terbaru & akurat
-  if (!cleanQuery.toLowerCase().includes('terbaru') && !cleanQuery.toLowerCase().includes('latest')) {
-    queries.push(`${cleanQuery} terbaru berita fakta`);
+  // Variasi 2: Fokus data terbaru & akurat dengan anchor temporal
+  if (!cleanQuery.toLowerCase().includes('terbaru') && !cleanQuery.toLowerCase().includes('latest') && !cleanQuery.includes(String(currentYear))) {
+    queries.push(`${cleanQuery} terbaru ${currentYear} fakta`);
   } else {
     queries.push(`${cleanQuery} rangkuman informasi resmi`);
   }
 
-  // Variasi 3: Spesifik detail / fakta
+  // Variasi 3: Spesifik detail / fakta data resmi
   if (words.length > 2) {
-    queries.push(`${words.slice(0, 4).join(' ')} update`);
+    queries.push(`${words.slice(0, 4).join(' ')} berita terkini update`);
   } else {
-    queries.push(`${cleanQuery} penjelasan data akurat`);
+    queries.push(`${cleanQuery} fakta data akurat`);
   }
 
   // Variasi 4 & 5 jika count >= 4
   if (count >= 4) {
-    queries.push(`${cleanQuery} review analisis`);
+    queries.push(`${cleanQuery} review spesifikasi resmi`);
   }
   if (count >= 5) {
-    queries.push(`${cleanQuery} sumber terpercaya`);
+    queries.push(`${cleanQuery} sumber terpercaya berita`);
   }
 
   return queries.slice(0, Math.max(3, Math.min(5, count)));

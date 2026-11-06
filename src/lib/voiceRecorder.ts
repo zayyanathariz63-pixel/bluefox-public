@@ -70,10 +70,66 @@ export async function startRecording(): Promise<MediaStream> {
   }
 }
 
+let audioContext: AudioContext | null = null;
+let analyser: AnalyserNode | null = null;
+let animFrameId: number | null = null;
+
+/**
+ * Mendengarkan tingkat volume suara secara real-time dari mikrofon
+ */
+export function attachAudioVolumeListener(stream: MediaStream, onVolume: (vol: number) => void): void {
+  try {
+    stopAudioVolumeListener();
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    audioContext = new AudioCtx();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.3;
+    source.connect(analyser);
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    const checkVolume = () => {
+      if (!analyser) return;
+      analyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length; // 0 - 255
+      // Sensitivitas volume suara: jika rata-rata frekuensi > 10, ada suara manusia
+      const normalized = Math.min(1, Math.max(0, (avg - 8) / 60));
+      onVolume(normalized);
+      animFrameId = requestAnimationFrame(checkVolume);
+    };
+
+    checkVolume();
+  } catch (err) {
+    console.warn('AudioContext volume metering error:', err);
+  }
+}
+
+export function stopAudioVolumeListener(): void {
+  if (animFrameId) {
+    cancelAnimationFrame(animFrameId);
+    animFrameId = null;
+  }
+  if (audioContext) {
+    try {
+      audioContext.close();
+    } catch {}
+    audioContext = null;
+    analyser = null;
+  }
+}
+
 /**
  * 2. Membatalkan Rekaman tanpa Mengirim ke Server
  */
 export function cancelRecording(): void {
+  stopAudioVolumeListener();
   try {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
@@ -165,6 +221,7 @@ export async function stopAndSendRecording(): Promise<string> {
         console.error('Gagal mengirim rekaman audio ke Supabase:', err);
         reject(err);
       } finally {
+        stopAudioVolumeListener();
         // Matikan akses track mikrofon setelah selesai
         if (currentStream) {
           currentStream.getTracks().forEach((track) => track.stop());

@@ -10,7 +10,8 @@ import { prepareFilePayload, processAndCompressImage, processVisionImage } from 
 import { extractTextFromPdf, convertPdfToJpgSlides } from '../lib/pdfReader';
 import { MOTION_PRESETS, MOTION_MODELS, formatMotionModelName } from '../lib/motion';
 import { getAppStyle, AppStyle } from '../lib/styleManager';
-import { startRecording, stopAndSendRecording, cancelRecording } from '../lib/voiceRecorder';
+import { startRecording, stopAndSendRecording, cancelRecording, attachAudioVolumeListener, stopAudioVolumeListener } from '../lib/voiceRecorder';
+import { isUserAdmin } from '../lib/accountManager';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[], motionModel?: string) => void;
@@ -29,6 +30,7 @@ interface ChatInputProps {
   appStyle?: AppStyle;
   selectedMotionModel?: string;
   onSelectMotionModel?: (modelId: string) => void;
+  user?: any;
 }
 
 interface CustomErrorModal {
@@ -60,7 +62,8 @@ export function ChatInput({
   onOpenMotionPanel,
   appStyle: propAppStyle,
   selectedMotionModel: propSelectedMotionModel,
-  onSelectMotionModel
+  onSelectMotionModel,
+  user
 }: ChatInputProps) {
   const { lang, t } = useLanguage();
   const [currentStyle, setCurrentStyle] = useState<AppStyle>(() => propAppStyle || getAppStyle());
@@ -84,11 +87,13 @@ export function ChatInput({
   }, []);
 
   const isBlueRilis = currentStyle === 'blue_rilis';
+  const isMotionAdmin = isUserAdmin(user);
 
   const [input, setInput] = useState('');
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [audioLevel, setAudioLevel] = useState<number>(0);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [recordingText, setRecordingText] = useState('');
   const [attachedMediaList, setAttachedMediaList] = useState<MediaAttachment[]>([]);
@@ -112,8 +117,8 @@ export function ChatInput({
   const [isMotionModelOpen, setIsMotionModelOpen] = useState(false);
   const motionModelDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Tombol pilihan model HANYA muncul ketika user ketik @motion atau mode @motion aktif
-  const showMotionModelPicker = isMotionActive || input.toLowerCase().includes('@motion');
+  // Tombol pilihan model HANYA muncul untuk admin ketika user ketik @motion atau mode @motion aktif
+  const showMotionModelPicker = isMotionAdmin && (isMotionActive || input.toLowerCase().includes('@motion'));
 
   useEffect(() => {
     if (propSelectedMotionModel) {
@@ -231,11 +236,14 @@ export function ChatInput({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // 1. Memulai Perekaman Suara (Audio Waveform Aktif)
+  // 1. Memulai Perekaman Suara (Audio Waveform Aktif dengan Level Volume)
   const handleStartVoice = async () => {
     if (isRecording || isTranscribing || isLoading || disabled) return;
     try {
-      await startRecording();
+      const stream = await startRecording();
+      attachAudioVolumeListener(stream, (vol) => {
+        setAudioLevel(vol);
+      });
       setIsRecording(true);
       setIsTranscribing(false);
     } catch (err: any) {
@@ -247,6 +255,7 @@ export function ChatInput({
           ? "Tidak dapat mengakses mikrofon. Pastikan Anda telah memberikan izin mikrofon di pengaturan browser Anda."
           : "Cannot access microphone. Please ensure microphone permissions are granted in your browser settings."
       });
+      setAudioLevel(0);
       setIsRecording(false);
       setIsTranscribing(false);
     }
@@ -255,6 +264,7 @@ export function ChatInput({
   // 2. Berhenti & Mengirim Audio ke Supabase Edge Function bluefox-stt-transcribe
   const handleSendVoice = async () => {
     if (!isRecording) return;
+    setAudioLevel(0);
     setIsRecording(false);
     setIsTranscribing(true);
 
@@ -273,6 +283,7 @@ export function ChatInput({
           : "An error occurred while transcribing audio via Supabase Edge Function.")
       });
     } finally {
+      setAudioLevel(0);
       setIsTranscribing(false);
       setTimeout(() => {
         if (textareaRef.current) {
@@ -285,6 +296,7 @@ export function ChatInput({
   // 3. Batalkan Rekaman Tanpa Mengirim
   const handleCancelVoice = () => {
     cancelRecording();
+    setAudioLevel(0);
     setIsRecording(false);
     setIsTranscribing(false);
   };
@@ -306,12 +318,13 @@ export function ChatInput({
 
     const fileArray = Array.from(files);
 
-    // 1. Cek Kuota Total Maksimal 5 File
-    if (attachedMediaList.length + fileArray.length > 5) {
+    // 1. Cek Kuota Total Maksimal 10 File
+    const maxFiles = 10;
+    if (attachedMediaList.length + fileArray.length > maxFiles) {
       setErrorModal({
         isOpen: true,
-        title: "Batas Maksimal 5 File Terlampaui",
-        message: "Anda hanya dapat mengunggah maksimal 5 file (gambar, PDF, atau dokumen/kode) secara bersamaan.",
+        title: "Batas Maksimal 10 File Terlampaui",
+        message: "Anda hanya dapat mengunggah maksimal 10 file (gambar, PDF, atau dokumen/kode) secara bersamaan (hingga 20 slide untuk berkas PDF).",
         maxLimitInfo: `Saat ini: ${attachedMediaList.length} terunggah, mencoba menambah: ${fileArray.length} file.`
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -383,7 +396,7 @@ export function ChatInput({
           setErrorModal({
             isOpen: true,
             title: "Format Video/Audio Ditolak",
-            message: `File "${file.name}" tidak diizinkan. Sesuai kebijakan format, file audio (MP3, dll) dan video (MP4, dll) ditolak.\n\nFormat yang diizinkan:\n• Gambar: WebP, PNG, GIF\n• Dokumen & Teks: PDF (ekstraksi teks), TXT, MD\n• Data: JSON, YAML, YML\n• Kode Program: Semua file kode pemrograman`,
+            message: `File "${file.name}" tidak diizinkan. Sesuai kebijakan format, file audio (MP3, dll) dan video (MP4, dll) ditolak.\n\nFormat yang diizinkan:\n• Gambar: WebP, PNG, GIF, JPG\n• Dokumen & Teks: PDF (ekstraksi slide/teks), TXT, MD\n• Data: JSON, YAML, YML\n• Kode Program: Semua file kode pemrograman`,
             fileName: file.name
           });
           continue;
@@ -398,17 +411,17 @@ export function ChatInput({
           setErrorModal({
             isOpen: true,
             title: "Format File Tidak Didukung",
-            message: `File "${file.name}" ditolak. Format yang diizinkan:\n• Gambar: WebP, PNG, GIF\n• Dokumen: PDF (bisa dibaca), TXT, MD\n• Data: JSON, YAML, YML\n• Kode: Semua format file kode program (.js, .ts, .py, .java, .cpp, .html, .css, .sql, dll)\n\nFile lain termasuk video (MP4) dan audio (MP3) ditolak.`,
+            message: `File "${file.name}" ditolak. Format yang diizinkan:\n• Gambar: WebP, PNG, GIF, JPG\n• Dokumen: PDF (hingga 20 slide), TXT, MD\n• Data: JSON, YAML, YML\n• Kode: Semua format file kode program (.js, .ts, .py, .java, .cpp, .html, .css, .sql, dll)\n\nFile lain termasuk video (MP4) dan audio (MP3) ditolak.`,
             fileName: file.name
           });
           continue;
         }
 
-        // 1. Pemrosesan PDF: Otomatis dikonversi per slide menjadi gambar JPG agar ringan dan siap dibaca Vision
+        // 1. Pemrosesan PDF: Otomatis dikonversi per slide menjadi gambar JPG (maksimal 20 slide)
         if (isPdf) {
           try {
-            const remainingQuota = Math.max(1, 5 - (attachedMediaList.length + newAttachments.length));
-            const slides = await convertPdfToJpgSlides(file, Math.min(5, remainingQuota));
+            const remainingQuota = Math.max(1, 20 - (attachedMediaList.length + newAttachments.length));
+            const slides = await convertPdfToJpgSlides(file, Math.min(20, remainingQuota));
 
             if (slides.length > 0) {
               for (const slide of slides) {
@@ -458,6 +471,13 @@ export function ChatInput({
         const isJsonOrYaml = lowerName.endsWith('.json') || lowerName.endsWith('.yml') || lowerName.endsWith('.yaml');
 
         if (isTxtOrMd || isJsonOrYaml) {
+          // Analisis Berkas Teks & Data: Mode Vision WAJIB nonaktif
+          if (onDisableVision) {
+            onDisableVision();
+          }
+          try {
+            localStorage.setItem('tmpa_vision_active', 'false');
+          } catch {}
           try {
             let textContent = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -722,7 +742,7 @@ export function ChatInput({
       }
 
       // 3. Ctrl + C: Buka mode code manual
-      if (e.key.toLowerCase() === 'c') {
+      if (e.key.toLowerCase() === 'c' && isMotionAdmin) {
         const selection = window.getSelection()?.toString();
         // Hanya picu jika TIDAK ADA teks yang diblok/diseleksi (agar clipboard copy normal tetap berjalan lancar)
         if (!selection || selection.trim().length === 0) {
@@ -739,12 +759,18 @@ export function ChatInput({
 
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [isMotionActive, onOpenMotionManual]);
+  }, [isMotionActive, onOpenMotionManual, isMotionAdmin]);
 
   const handleInputChange = (val: string) => {
     // KEBUTUHAN UTAMA: Jika user mengetik @motion
-    // Tulisan @motion pindah ke kiri atas input prompt (isMotionActive = true) dan teks input dibersihkan
     if (val.toLowerCase().includes('@motion')) {
+      if (!isMotionAdmin) {
+        setActionToast(lang === 'id' ? 'Bluefox Motion dinonaktifkan sementara (khusus Administrator).' : 'Bluefox Motion is temporarily disabled (Admin only).');
+        setTimeout(() => setActionToast(null), 3500);
+        const cleaned = val.replace(/@motion\s*/gi, '');
+        setInput(cleaned);
+        return;
+      }
       setIsMotionActive(true);
       setMotionModeType('prompt');
       const cleaned = val.replace(/@motion\s*/gi, '');
@@ -1083,10 +1109,10 @@ export function ChatInput({
                     setIsPopupOpen(false);
                     handleUploadClick();
                   }}
-                  disabled={attachedMediaList.length >= 5 || isProcessingMedia}
+                  disabled={attachedMediaList.length >= 10 || isProcessingMedia}
                   className={cn(
                     "w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
-                    attachedMediaList.length >= 5
+                    attachedMediaList.length >= 10
                       ? (isBlueRilis ? "opacity-50 cursor-not-allowed bg-slate-900/40 border-transparent text-slate-500" : "opacity-50 cursor-not-allowed bg-slate-100 border-transparent text-slate-400")
                       : (isBlueRilis ? "hover:bg-blue-900/40 border-blue-500/30 bg-blue-950/40 text-blue-200" : "hover:bg-blue-50 border-blue-200 bg-blue-50/50")
                   )}
@@ -1106,7 +1132,7 @@ export function ChatInput({
                         "text-[10px] truncate",
                         isBlueRilis ? "text-slate-400" : "text-slate-500"
                       )}>
-                        PDF, WebP, PNG, GIF, TXT, MD, JSON, YAML, Kode
+                        PDF (hingga 20 slide), WebP, PNG, GIF, TXT, MD, JSON, YAML, Kode
                       </div>
                     </div>
                   </div>
@@ -1119,48 +1145,66 @@ export function ChatInput({
                 </button>
 
 
-                {/* Opsi 1.6: Bluefox Motion (Animasi @motion & Kode Manual) */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsPopupOpen(false);
-                    setIsMotionActive(true);
-                    setMotionModeType('prompt');
-                    textareaRef.current?.focus();
-                  }}
-                  className={cn(
-                    "w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
-                    isBlueRilis 
-                      ? "border-blue-500/30 bg-blue-950/40 hover:bg-blue-900/40" 
-                      : "border-blue-200/80 bg-blue-50/50 hover:bg-blue-50"
-                  )}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
-                      <Film size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className={cn(
-                        "text-xs font-semibold transition-colors truncate",
-                        isBlueRilis ? "text-slate-100 group-hover:text-blue-300" : "text-slate-900 group-hover:text-blue-700"
-                      )}>
-                        Bluefox Motion
+                {/* Opsi 1.6: Bluefox Motion (Animasi @motion & Kode Manual) - Khusus Admin */}
+                {isMotionAdmin ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPopupOpen(false);
+                      setIsMotionActive(true);
+                      setMotionModeType('prompt');
+                      textareaRef.current?.focus();
+                    }}
+                    className={cn(
+                      "w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
+                      isBlueRilis 
+                        ? "border-blue-500/30 bg-blue-950/40 hover:bg-blue-900/40" 
+                        : "border-blue-200/80 bg-blue-50/50 hover:bg-blue-50"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white flex items-center justify-center transition-colors shrink-0 shadow-xs">
+                        <Film size={16} />
                       </div>
-                      <div className={cn(
-                        "text-[10px] truncate",
-                        isBlueRilis ? "text-slate-400" : "text-slate-500"
-                      )}>
-                        Animasi @motion & Kode Manual
+                      <div className="min-w-0">
+                        <div className={cn(
+                          "text-xs font-semibold transition-colors truncate",
+                          isBlueRilis ? "text-slate-100 group-hover:text-blue-300" : "text-slate-900 group-hover:text-blue-700"
+                        )}>
+                          Bluefox Motion
+                        </div>
+                        <div className={cn(
+                          "text-[10px] truncate",
+                          isBlueRilis ? "text-slate-400" : "text-slate-500"
+                        )}>
+                          Animasi @motion & Kode Manual
+                        </div>
                       </div>
                     </div>
+                    <span className="text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0 text-blue-700 bg-blue-50 border-blue-200">
+                      Motion
+                    </span>
+                  </button>
+                ) : (
+                  <div className="w-full mt-1.5 flex items-center justify-between p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/40 opacity-60 text-left select-none">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-500 flex items-center justify-center shrink-0">
+                        <Film size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                          Bluefox Motion
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Dijeda Sementara (Khusus Admin)
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0 text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400">
+                      Admin Only
+                    </span>
                   </div>
-                  <span className={cn(
-                    "text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0",
-                    isBlueRilis ? "text-blue-300 bg-blue-950/60 border-blue-500/30" : "text-blue-700 bg-blue-100/70 border-blue-200"
-                  )}>
-                    @motion
-                  </span>
-                </button>
+                )}
               </div>
 
               {/* Opsi 2: Daftar Konektor Aktif */}
@@ -1259,11 +1303,13 @@ export function ChatInput({
               <div className="flex items-center justify-between pb-1.5 px-1 border-b border-slate-100 mb-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-slate-800">
-                    File Terlampir ({attachedMediaList.length}/5)
+                    File Terlampir ({attachedMediaList.length}/10)
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 font-semibold flex items-center gap-1">
-                    <Eye size={10} /> Auto-Vision
-                  </span>
+                  {isVisionActive && (
+                    <span className="p-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center justify-center shadow-2xs" title="Vision Aktif">
+                      <Eye size={12} />
+                    </span>
+                  )}
                 </div>
                 {attachedMediaList.length > 1 && (
                   <button
@@ -1551,30 +1597,32 @@ export function ChatInput({
           </AnimatePresence>
 
           <div className="relative flex items-end w-full">
-            {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) */}
-            <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => setIsPopupOpen(!isPopupOpen)}
-                className={cn(
-                  "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
-                  isBlueRilis
-                    ? (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
-                        ? "text-blue-300 bg-blue-950/80 border border-blue-500/40 shadow-xs"
-                        : "text-slate-400 hover:text-white hover:bg-slate-800/60")
-                    : (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
-                        ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")
-                )}
-                title="Konektor & Upload File"
-              >
-                {isProcessingMedia ? (
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
-                ) : (
-                  <Link2 className="w-5 h-5" />
-                )}
-              </button>
-            </div>
+            {/* SATU TOMBOL NYATU (IKON LINK / CONNECTOR) - HILANG SAAT REKAM SUARA & TRANSCRIBING */}
+            {!isRecording && !isTranscribing && (
+              <div className="pl-2 pb-2 sm:pb-3 shrink-0 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => setIsPopupOpen(!isPopupOpen)}
+                  className={cn(
+                    "p-2 rounded-xl transition-all shrink-0 h-[38px] w-[38px] flex items-center justify-center cursor-pointer",
+                    isBlueRilis
+                      ? (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
+                          ? "text-blue-300 bg-blue-950/80 border border-blue-500/40 shadow-xs"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800/60")
+                      : (isPopupOpen || activeConnectors.length > 0 || attachedMediaList.length > 0
+                          ? "text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 shadow-xs"
+                          : "text-slate-500 hover:text-slate-900 hover:bg-slate-100")
+                  )}
+                  title="Konektor & Upload File"
+                >
+                  {isProcessingMedia ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                  ) : (
+                    <Link2 className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            )}
 
             <div className="flex-1 relative min-h-[52px] sm:min-h-[56px] flex items-center">
               <AnimatePresence mode="popLayout">
@@ -1632,31 +1680,31 @@ export function ChatInput({
                       </span>
                     </div>
 
-                    {/* Animated Music Waveform Equalizer */}
+                    {/* Animated Music Waveform Equalizer - Gerak Hanya Pas Ada Suara, Diam Saat Sunyi */}
                     <div className="flex items-center gap-1 sm:gap-1.5 h-8 shrink-0 px-1 sm:px-2">
-                      {[
-                        { delay: 0.0, heights: ['30%', '90%', '20%', '85%', '30%'], duration: 0.55 },
-                        { delay: 0.1, heights: ['20%', '100%', '40%', '95%', '20%'], duration: 0.48 },
-                        { delay: 0.18, heights: ['45%', '70%', '100%', '35%', '45%'], duration: 0.52 },
-                        { delay: 0.25, heights: ['60%', '95%', '25%', '80%', '60%'], duration: 0.62 },
-                        { delay: 0.08, heights: ['25%', '85%', '50%', '100%', '25%'], duration: 0.46 },
-                        { delay: 0.22, heights: ['40%', '100%', '30%', '90%', '40%'], duration: 0.58 },
-                        { delay: 0.15, heights: ['35%', '75%', '95%', '45%', '35%'], duration: 0.5 },
-                        { delay: 0.28, heights: ['20%', '90%', '35%', '70%', '20%'], duration: 0.54 }
-                      ].map((bar, i) => (
-                        <motion.div
-                          key={i}
-                          className="w-1 sm:w-1.5 rounded-full bg-gradient-to-t from-blue-600 via-sky-400 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]"
-                          animate={{ height: bar.heights }}
-                          transition={{
-                            duration: bar.duration,
-                            repeat: Infinity,
-                            repeatType: 'reverse',
-                            delay: bar.delay,
-                            ease: 'easeInOut'
-                          }}
-                        />
-                      ))}
+                      {[0.5, 0.95, 0.7, 1.0, 0.65, 0.85, 0.6, 0.75].map((multiplier, i) => {
+                        const isSpeaking = audioLevel > 0.04;
+                        const dynamicHeight = isSpeaking
+                          ? `${Math.min(100, Math.max(22, Math.round(audioLevel * 100 * multiplier)))}%`
+                          : '14%';
+
+                        return (
+                          <motion.div
+                            key={i}
+                            className={cn(
+                              "w-1 sm:w-1.5 rounded-full transition-all duration-75",
+                              isSpeaking 
+                                ? "bg-gradient-to-t from-blue-600 via-sky-400 to-indigo-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" 
+                                : "bg-slate-300 dark:bg-slate-700 opacity-60"
+                            )}
+                            animate={{ height: dynamicHeight }}
+                            transition={{
+                              duration: isSpeaking ? 0.08 : 0.25,
+                              ease: 'easeOut'
+                            }}
+                          />
+                        );
+                      })}
                     </div>
                   </motion.div>
                 ) : (
