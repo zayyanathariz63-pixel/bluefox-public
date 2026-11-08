@@ -73,6 +73,7 @@ import {
 import { initTheme, parseThemeCommand } from './lib/theme';
 import { getActiveMemories, saveActiveMemory, clearActiveMemories } from './lib/commands';
 import { executeDualEngineSearch, detectSearchIntent, SearchModeType, BLUEFOX_SYSTEM_PROMPT } from './lib/search';
+import { callFunctionCallingEdge } from './lib/mcpTools';
 import { 
   getReasoningEffort, 
   getSmartSelectEffort, 
@@ -204,18 +205,36 @@ export default function App() {
   });
 
   // Tentukan session id yang aktif seketika
+  // KEBUTUHAN 6: Jika lebih dari 20 menit user tidak buka website, otomatis design chat buka yang baru
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
-      const lastId = localStorage.getItem('tmpa_last_active_session_id');
-      if (lastId) return lastId;
+      try {
+        const lastActiveStr = localStorage.getItem('tmpa_last_active_timestamp');
+        if (lastActiveStr) {
+          const lastActive = parseInt(lastActiveStr, 10);
+          if (Number.isFinite(lastActive) && Date.now() - lastActive > 20 * 60 * 1000) {
+            localStorage.removeItem('tmpa_last_active_session_id');
+            return null;
+          }
+        }
+        const lastId = localStorage.getItem('tmpa_last_active_session_id');
+        if (lastId) return lastId;
+      } catch {}
     }
     return null;
   });
 
-  // Tentukan pesan awal seketika sesuai session yang aktif
+  // Tentukan pesan awal seketika sesuai session yang aktif (reset jika > 20 menit)
   const [messages, setMessages] = useState<Message[]>(() => {
     if (typeof window !== 'undefined') {
       try {
+        const lastActiveStr = localStorage.getItem('tmpa_last_active_timestamp');
+        if (lastActiveStr) {
+          const lastActive = parseInt(lastActiveStr, 10);
+          if (Number.isFinite(lastActive) && Date.now() - lastActive > 20 * 60 * 1000) {
+            return [];
+          }
+        }
         const lastId = localStorage.getItem('tmpa_last_active_session_id');
         if (lastId) {
           const saved = localStorage.getItem('tmpa_chat_sessions');
@@ -630,6 +649,48 @@ export default function App() {
       recordCurrentSession(user, userTier);
     }
   }, [user, userTier]);
+
+  // KEBUTUHAN 6: Pelacak Keaktifan Pengguna & Reset Sesi Obrolan Baru jika > 20 Menit Tidak Dibuka
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const updateLastActive = () => {
+      try {
+        localStorage.setItem('tmpa_last_active_timestamp', Date.now().toString());
+      } catch {}
+    };
+
+    updateLastActive();
+    const interval = setInterval(updateLastActive, 30000); // interval per 30 detik
+
+    const handleVisibilityOrFocus = () => {
+      if (!document.hidden) {
+        try {
+          const lastActiveStr = localStorage.getItem('tmpa_last_active_timestamp');
+          if (lastActiveStr) {
+            const lastActive = parseInt(lastActiveStr, 10);
+            if (Number.isFinite(lastActive) && Date.now() - lastActive > 20 * 60 * 1000) {
+              // Lebih dari 20 menit: Buka sesi chat baru otomatis
+              console.log('[Inactivity Reset]: Lebih dari 20 menit tidak aktif, membuka desain chat baru.');
+              startNewChat();
+            }
+          }
+        } catch {}
+        updateLastActive();
+      }
+    };
+
+    window.addEventListener('beforeunload', updateLastActive);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('beforeunload', updateLastActive);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, []);
 
   // Dynamic Crawler Indexing & Robots Directive enforcement (PRD 2.0)
   useEffect(() => {
@@ -2538,6 +2599,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       }
 
       // Panggil Supabase Edge Function:
+      // Pemicu Edge Function function-calling-bluefox jika prompt berupa slash command (misal /google workspace)
+      if (userText.trim().startsWith('/')) {
+        callFunctionCallingEdge({
+          sessionId: effectiveConvId,
+          userId: activeUserId || 'guest-user',
+          userMessage: userText
+        }).catch(err => {
+          console.warn('[function-calling-bluefox execution ping]:', err);
+        });
+      }
+
       // Khusus untuk @motion memanggil 'motion-generator' (mencegah timeout proses generate animasi yang lama)
       let response: Response;
       let motionEdgeData: any = null;
@@ -3105,6 +3177,16 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       setIsMotionLoading(false);
       setIsMotionFinalizing(false);
       abortControllerRef.current = null;
+
+      // Tandai prompt yang baru dikirim telah berhasil diselesaikan
+      try {
+        const lastSentRaw = localStorage.getItem('tmpa_recent_sent_prompt');
+        if (lastSentRaw) {
+          const lastSent = JSON.parse(lastSentRaw);
+          lastSent.completed = true;
+          localStorage.setItem('tmpa_recent_sent_prompt', JSON.stringify(lastSent));
+        }
+      } catch {}
     }
   };
 
@@ -3588,6 +3670,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               onOpenMotionPanel={() => setIsMotionPanelOpen(true)}
               appStyle={appStyle}
               user={user}
+              sessionId={currentSessionId || undefined}
               selectedMotionModel={selectedMotionModel}
               onSelectMotionModel={(m) => {
                 setSelectedMotionModel(m);
@@ -3620,21 +3703,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
               onClick={() => setIsSidebarOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+              className="fixed inset-0 bg-black/60 z-40"
             />
             <motion.div
               initial={{ x: "-100%" }}
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              transition={{ duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
+              style={{ willChange: "transform" }}
               className={cn(
-                "fixed top-0 left-0 bottom-0 z-50 flex flex-col shadow-2xl transition-all duration-300",
+                "fixed top-0 left-0 bottom-0 z-50 flex flex-col shadow-2xl",
                 isHistoryFullScreen 
                   ? "w-full max-w-full right-0 inset-0" 
                   : "w-[280px] sm:w-[320px]",
                 isBlueRilis 
-                  ? "bg-[#090f1d]/95 backdrop-blur-2xl border-r border-blue-500/20 text-slate-100 shadow-[0_0_50px_rgba(15,23,42,0.8)]" 
+                  ? "bg-[#090f1d] border-r border-blue-500/20 text-slate-100 shadow-[0_0_50px_rgba(15,23,42,0.8)]" 
                   : "bg-white border-r border-slate-200 text-slate-900"
               )}
             >

@@ -470,11 +470,6 @@ export function ChatMessage({
                     >
                       {message.text}
                     </ReactMarkdown>
-
-                    {/* Gradient Fade saat collapsed */}
-                    {isLongUserMessage && !isUserExpanded && (
-                      <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-blue-600 via-blue-600/90 to-transparent pointer-events-none" />
-                    )}
                   </div>
 
                   {/* Tombol Show More / Show Less */}

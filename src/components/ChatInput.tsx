@@ -6,6 +6,8 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLanguage } from '../lib/i18n';
 import { TriggerCommandModal } from './TriggerCommandModal';
 import { filterTriggerCommands, TRIGGER_COMMANDS, TriggerCommand } from '../lib/commands';
+import { McpCommandModal } from './McpCommandModal';
+import { MCP_COMMANDS, McpToolCommand, callFunctionCallingEdge } from '../lib/mcpTools';
 import { prepareFilePayload, processAndCompressImage, processVisionImage } from '../lib/imageCompressor';
 import { extractTextFromPdf, convertPdfToJpgSlides } from '../lib/pdfReader';
 import { MOTION_PRESETS, MOTION_MODELS, formatMotionModelName } from '../lib/motion';
@@ -31,6 +33,7 @@ interface ChatInputProps {
   selectedMotionModel?: string;
   onSelectMotionModel?: (modelId: string) => void;
   user?: any;
+  sessionId?: string;
 }
 
 interface CustomErrorModal {
@@ -63,7 +66,8 @@ export function ChatInput({
   appStyle: propAppStyle,
   selectedMotionModel: propSelectedMotionModel,
   onSelectMotionModel,
-  user
+  user,
+  sessionId
 }: ChatInputProps) {
   const { lang, t } = useLanguage();
   const [currentStyle, setCurrentStyle] = useState<AppStyle>(() => propAppStyle || getAppStyle());
@@ -89,7 +93,33 @@ export function ChatInput({
   const isBlueRilis = currentStyle === 'blue_rilis';
   const isMotionAdmin = isUserAdmin(user);
 
-  const [input, setInput] = useState('');
+  // KEBUTUHAN 4 & 5: Auto-recovery jika refresh cepat setelah send atau draft < 15 menit
+  const [input, setInput] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      // 1. Cek jika user reload terlalu cepat setelah kirim pesan (< 3 menit & respons belum selesai)
+      const lastSentRaw = localStorage.getItem('tmpa_recent_sent_prompt');
+      if (lastSentRaw) {
+        const lastSent = JSON.parse(lastSentRaw);
+        if (lastSent && lastSent.text && (Date.now() - lastSent.timestamp <= 3 * 60 * 1000) && !lastSent.completed) {
+          return lastSent.text;
+        }
+      }
+
+      // 2. Cek draft prompt yang sedang diketik (tersimpan jika tidak lebih dari 15 menit)
+      const draftRaw = localStorage.getItem('tmpa_input_prompt_draft');
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw);
+        if (draft && draft.text && (Date.now() - draft.timestamp <= 15 * 60 * 1000)) {
+          return draft.text;
+        } else {
+          localStorage.removeItem('tmpa_input_prompt_draft');
+        }
+      }
+    } catch {}
+    return '';
+  });
+
   const [isPopupOpen, setIsPopupOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -107,6 +137,13 @@ export function ChatInput({
   const [commandQuery, setCommandQuery] = useState('');
   const [filteredCommands, setFilteredCommands] = useState<TriggerCommand[]>(TRIGGER_COMMANDS);
   const [commandSelectedIndex, setCommandSelectedIndex] = useState(0);
+
+  // Trigger MCP Command (/) state
+  const [isMcpModalOpen, setIsMcpModalOpen] = useState(false);
+  const [mcpQuery, setMcpQuery] = useState('');
+  const [filteredMcpCommands, setFilteredMcpCommands] = useState<McpToolCommand[]>(MCP_COMMANDS);
+  const [mcpSelectedIndex, setMcpSelectedIndex] = useState(0);
+  const [isCallingMcpEdge, setIsCallingMcpEdge] = useState(false);
 
   // Bluefox Motion (@motion) Mode & Model State
   const [isMotionActive, setIsMotionActive] = useState(false);
@@ -656,7 +693,7 @@ export function ChatInput({
       }
 
       if (newAttachments.length > 0) {
-        setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 5));
+        setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 10));
         // Otomatis aktifkan mode Vision jika ada gambar terunggah
         const hasVisionMedia = newAttachments.some(a => a.type === 'image');
         if (hasVisionMedia && onAutoEnableVision) {
@@ -762,6 +799,18 @@ export function ChatInput({
   }, [isMotionActive, onOpenMotionManual, isMotionAdmin]);
 
   const handleInputChange = (val: string) => {
+    // 1. Simpan draft prompt ke localStorage (berlaku hingga 15 menit)
+    try {
+      if (val.trim()) {
+        localStorage.setItem('tmpa_input_prompt_draft', JSON.stringify({
+          text: val,
+          timestamp: Date.now()
+        }));
+      } else {
+        localStorage.removeItem('tmpa_input_prompt_draft');
+      }
+    } catch {}
+
     // KEBUTUHAN UTAMA: Jika user mengetik @motion
     if (val.toLowerCase().includes('@motion')) {
       if (!isMotionAdmin) {
@@ -776,10 +825,55 @@ export function ChatInput({
       const cleaned = val.replace(/@motion\s*/gi, '');
       setInput(cleaned);
       setIsCommandModalOpen(false);
+      setIsMcpModalOpen(false);
       return;
     }
 
     setInput(val);
+
+    // KEBUTUHAN MCP: Jika user tulis / atau /google workspace (HANYA MUNCUL UNTUK PENGGUNA DENGAN BADGE ADMIN)
+    const slashIndex = val.lastIndexOf('/');
+    if (slashIndex !== -1) {
+      if (!isMotionAdmin) {
+        setIsMcpModalOpen(false);
+        if (val.toLowerCase().includes('/google')) {
+          setActionToast(lang === 'id' ? 'Perintah garis miring (Google Workspace) khusus untuk pengguna dengan badge Admin.' : 'Slash commands are reserved for users with Admin badge.');
+          setTimeout(() => setActionToast(null), 3500);
+        }
+      } else {
+        const textAfterSlash = val.slice(slashIndex);
+        if (textAfterSlash.length <= 40) {
+          const queryLower = textAfterSlash.toLowerCase();
+          const matched = MCP_COMMANDS.filter(cmd => 
+            cmd.name.toLowerCase().includes(queryLower) ||
+            cmd.title.toLowerCase().includes(queryLower.replace('/', '')) ||
+            cmd.description.toLowerCase().includes(queryLower.replace('/', ''))
+          );
+
+          setMcpQuery(textAfterSlash);
+          setFilteredMcpCommands(matched.length > 0 ? matched : MCP_COMMANDS);
+          setIsMcpModalOpen(true);
+          setMcpSelectedIndex(0);
+          setIsCommandModalOpen(false);
+
+          // Jika user tulis garis miring (/), panggil Edge Function function-calling-bluefox
+          setIsCallingMcpEdge(true);
+          callFunctionCallingEdge({
+            sessionId: sessionId || (typeof window !== 'undefined' ? localStorage.getItem('tmpa_last_active_session_id') : '') || 'active-session',
+            userId: user?.id || 'guest-user',
+            userMessage: val
+          }).finally(() => {
+            setIsCallingMcpEdge(false);
+          });
+
+          return;
+        }
+      }
+    } else {
+      setIsMcpModalOpen(false);
+    }
+
+    // Trigger Command (@)
     const atIndex = val.lastIndexOf('@');
     if (atIndex !== -1) {
       const textAfterAt = val.slice(atIndex);
@@ -796,6 +890,21 @@ export function ChatInput({
       }
     }
     setIsCommandModalOpen(false);
+  };
+
+  const handleSelectMcpCommand = (cmd: McpToolCommand) => {
+    const slashIndex = input.lastIndexOf('/');
+    let newInput = '';
+    if (slashIndex !== -1) {
+      newInput = input.slice(0, slashIndex) + cmd.name + ' ';
+    } else {
+      newInput = cmd.name + ' ';
+    }
+    setInput(newInput);
+    setIsMcpModalOpen(false);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
   };
 
   const handleSelectCommand = (cmd: TriggerCommand) => {
@@ -838,6 +947,17 @@ export function ChatInput({
     }
 
     if ((textToSend || attachedMediaList.length > 0) && !isLoading) {
+      // KEBUTUHAN 4 & 5: Simpan prompt yang baru dikirim ke local storage dengan completed: false
+      // Jika refresh terjadi terlalu cepat, prompt dapat dipulihkan
+      try {
+        localStorage.setItem('tmpa_recent_sent_prompt', JSON.stringify({
+          text: textToSend,
+          timestamp: Date.now(),
+          completed: false
+        }));
+        localStorage.removeItem('tmpa_input_prompt_draft');
+      } catch {}
+
       onSend(
         textToSend, 
         attachedMediaList.length > 0 ? attachedMediaList : undefined,
@@ -845,6 +965,7 @@ export function ChatInput({
       );
       setInput('');
       setIsCommandModalOpen(false);
+      setIsMcpModalOpen(false);
       setAttachedMediaList([]);
       setIsMotionActive(false);
       setIsMotionModelOpen(false);
@@ -855,6 +976,43 @@ export function ChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Keyboard navigation untuk popup MCP (/)
+    if (isMcpModalOpen && filteredMcpCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMcpSelectedIndex(prev => (prev + 1) % filteredMcpCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMcpSelectedIndex(prev => (prev - 1 + filteredMcpCommands.length) % filteredMcpCommands.length);
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const selectedCmd = filteredMcpCommands[mcpSelectedIndex];
+        if (selectedCmd) {
+          handleSelectMcpCommand(selectedCmd);
+        }
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        const selectedCmd = filteredMcpCommands[mcpSelectedIndex];
+        const parts = input.trim().split(/\s+/);
+        if (selectedCmd && (parts.length <= 2 && input.startsWith('/'))) {
+          e.preventDefault();
+          handleSelectMcpCommand(selectedCmd);
+          return;
+        }
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsMcpModalOpen(false);
+        return;
+      }
+    }
+
+    // Keyboard navigation untuk trigger command (@)
     if (isCommandModalOpen && filteredCommands.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -1072,6 +1230,17 @@ export function ChatInput({
       </AnimatePresence>
 
       <div className="relative" ref={popupRef}>
+        {/* TRIGGER MCP COMMAND (/) FLOATING AUTOCOMPLETE MODAL */}
+        <McpCommandModal
+          isOpen={isMcpModalOpen}
+          commands={filteredMcpCommands}
+          selectedIndex={mcpSelectedIndex}
+          onSelectCommand={handleSelectMcpCommand}
+          onClose={() => setIsMcpModalOpen(false)}
+          query={mcpQuery}
+          isCallingEdge={isCallingMcpEdge}
+        />
+
         {/* TRIGGER COMMAND (@) FLOATING AUTOCOMPLETE MODAL */}
         <TriggerCommandModal
           isOpen={isCommandModalOpen}
