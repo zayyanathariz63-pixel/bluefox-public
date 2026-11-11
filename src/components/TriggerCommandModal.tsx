@@ -18,7 +18,8 @@ import {
   X,
   Image as ImageIcon,
   Video,
-  Film
+  Film,
+  Globe
 } from 'lucide-react';
 import { TriggerCommand } from '../lib/commands';
 import { cn } from '../lib/utils';
@@ -47,7 +48,8 @@ const ICON_MAP: Record<string, any> = {
   Palette,
   Image: ImageIcon,
   Video,
-  Film
+  Film,
+  Globe
 };
 
 export function TriggerCommandModal({
@@ -126,17 +128,22 @@ export function TriggerCommandModal({
             commands.map((cmd, index) => {
               const IconComponent = ICON_MAP[cmd.iconName] || Terminal;
               const isSelected = index === selectedIndex;
+              const isAdminBadge = cmd.badge === 'Admin';
 
-              // Color style depending on category
+              // Color style depending on category or Admin badge
               const categoryBadgeColor = 
-                cmd.category === 'ai'
+                isAdminBadge
+                  ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold'
+                  : cmd.category === 'ai'
                   ? 'bg-purple-50 text-purple-700 border-purple-200'
                   : cmd.category === 'system'
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
               const iconBgColor =
-                cmd.category === 'ai'
+                isAdminBadge
+                  ? 'bg-amber-100 text-amber-700 border-amber-300'
+                  : cmd.category === 'ai'
                   ? 'bg-purple-100 text-purple-700 border-purple-200'
                   : cmd.category === 'system'
                   ? 'bg-blue-100 text-blue-700 border-blue-200'

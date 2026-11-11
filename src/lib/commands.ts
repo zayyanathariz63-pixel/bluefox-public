@@ -15,6 +15,19 @@ export interface TriggerCommand {
 export const TRIGGER_COMMANDS: TriggerCommand[] = [
   // 1. AI & Web Search Module Commands
   {
+    id: 'image-generation',
+    name: '@image',
+    category: 'ai',
+    categoryLabel: 'Image Generator',
+    badge: 'Admin',
+    description: 'Generasi gambar AI berdefinisi tinggi langsung dengan prompt spesifik atau kata yang diperluas.',
+    syntax: '@image [deskripsi visual gambar yang diinginkan]',
+    example: '@image seekor rubah biru bersayap kristal melayang di atas kota cyberpunk malam',
+    iconName: 'Image',
+    hasParameter: true,
+    parameterPlaceholder: 'deskripsi gambar yang ingin dibuat...'
+  },
+  {
     id: 'web-search',
     name: '@search',
     category: 'ai',

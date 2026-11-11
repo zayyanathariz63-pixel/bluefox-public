@@ -29,6 +29,9 @@ export interface Message {
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high' | 'max' | 'auto';
   motionCode?: string;
   isManualMotion?: boolean;
+  isGeneratingImage?: boolean;
+  generatedImagePrompt?: string;
+  generatedImageUrl?: string;
 }
 
 export interface Connector {

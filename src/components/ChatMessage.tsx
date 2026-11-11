@@ -17,6 +17,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { parseThinking } from '../lib/reasoning';
 import { parseAiResponse, sanitizeMotionHtml } from '../lib/motion';
 import { MotionDownloadModal } from './MotionDownloadModal';
+import { ImageGenerationCard } from './ImageGenerationCard';
 
 interface ChatMessageProps {
   message: Message;
@@ -571,8 +572,21 @@ export function ChatMessage({
               </div>
             ) : (
               /* Konten Utama Pesan AI Biasa */
-              (displayContent || content) ? (
+              (displayContent || content || message.isGeneratingImage || message.generatedImageUrl) ? (
                 <div className="w-full text-[15px] text-slate-900 dark:text-slate-100 leading-relaxed font-normal break-words">
+                {/* KEBUTUHAN UTAMA: Kartu Image Generation (Persegi Shifting Gradient Abu-Abu -> Crossfade Gambar) */}
+                {(message.isGeneratingImage || message.generatedImageUrl) && (
+                  <div className="w-full my-2">
+                    <ImageGenerationCard
+                      isGenerating={Boolean(message.isGeneratingImage)}
+                      imageUrl={message.generatedImageUrl}
+                      prompt={message.generatedImagePrompt || message.text}
+                      onOpenMediaScreen={onOpenMediaScreen}
+                    />
+                  </div>
+                )}
+
+                {(displayContent || content) && (
                   <div className="markdown-body">
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm, remarkBreaks]}
@@ -584,6 +598,7 @@ export function ChatMessage({
                       {displayContent || content}
                     </ReactMarkdown>
                   </div>
+                )}
 
                   {/* KEBUTUHAN UTAMA: Kartu Visual Bluefox Motion */}
                   {hasMotion && motionCodeToRender && (

@@ -85,6 +85,14 @@ import { safeSaveSessionsToLocal, autoPurgeMediaIfStorageFull } from './lib/stor
 import { ShareMode, parseSharedDataFromUrl, getSharedChatsRegistry } from './lib/shareChat';
 import { censorSessionMessages } from './lib/sensitiveDataMasker';
 import { getAppStyle, AppStyle } from './lib/styleManager';
+import { 
+  isImageGenerationIntent, 
+  extractImagePrompt, 
+  expandImagePrompt, 
+  checkImageGenQuota, 
+  consumeImageGenQuota, 
+  generateBluefoxImage 
+} from './lib/imageGenerator';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -1866,6 +1874,120 @@ export default function App() {
       setActiveHalloweenEasterEgg('skeleton');
     } else if (lowerClean.includes('ghost') || lowerClean.includes('hantu')) {
       setActiveHalloweenEasterEgg('ghost');
+    }
+
+    // =========================================================================
+    // 0.0.1 CEK INTERCEPT IMAGE GENERATION (@image / buat gambar / perintah spesifik)
+    // =========================================================================
+    if (isImageGenerationIntent(userText)) {
+      const isAdmin = isUserAdmin(user);
+      const quota = checkImageGenQuota(isAdmin);
+
+      if (!quota.allowed) {
+        setShowActionToast(
+          lang === 'id' 
+            ? 'Batas pembuatan gambar gratis Anda (2 kali) telah habis. Pembuatan gambar tidak dapat dilakukan lagi sampai batas waktu direset.'
+            : 'Your free image generation limit (2 times) has been reached. Image generation cannot be performed until the limit is reset.'
+        );
+        setTimeout(() => setShowActionToast(null), 5000);
+        return;
+      }
+
+      // Konsumsi kuota harian (gratis 2 kali, dev mode & admin unlimited)
+      consumeImageGenQuota(isAdmin);
+
+      const rawSubject = extractImagePrompt(userText);
+      const expandedPrompt = expandImagePrompt(rawSubject);
+
+      const baseMessages = overrideMessages ?? messages;
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: 'user',
+        text: userText,
+        media: media,
+      };
+
+      const aiMsgId = (Date.now() + 1).toString();
+      const initialAiMessage: Message = {
+        id: aiMsgId,
+        role: 'model',
+        text: lang === 'id' ? `Sedang membuat gambar: *"${rawSubject}"*...` : `Generating image for: *"${rawSubject}"*...`,
+        isGeneratingImage: true,
+        generatedImagePrompt: expandedPrompt,
+      };
+
+      const messagesWithPlaceholder = [...baseMessages, userMessage, initialAiMessage];
+      setMessages(messagesWithPlaceholder);
+      setIsLoading(true);
+
+      let effectiveConvId = currentSessionId || getValidUUID(null);
+      if (!currentSessionId) {
+        setCurrentSessionId(effectiveConvId);
+      }
+
+      try {
+        const imageResult = await generateBluefoxImage({
+          sessionId: effectiveConvId,
+          userMessage: userText,
+          prompt: expandedPrompt
+        });
+
+        const completedAiMessage: Message = {
+          id: aiMsgId,
+          role: 'model',
+          text: imageResult.imageUrl 
+            ? (lang === 'id' 
+                ? `Berikut adalah visual gambar yang berhasil dibuat:\n> **"${rawSubject}"**\n\n*Prompt diperluas:* ${expandedPrompt}`
+                : `Here is the generated image:\n> **"${rawSubject}"**\n\n*Expanded prompt:* ${expandedPrompt}`)
+            : (lang === 'id' 
+                ? `### Kendala Pembuatan Gambar\n\n${imageResult.error || 'Gagal menghasilkan gambar dari server.'}` 
+                : `### Image Generation Issue\n\n${imageResult.error || 'Failed to generate image from server.'}`),
+          isGeneratingImage: false,
+          generatedImageUrl: imageResult.imageUrl,
+          generatedImagePrompt: expandedPrompt,
+        };
+
+        const finalMessages = [...baseMessages, userMessage, completedAiMessage];
+        setMessages(finalMessages);
+
+        // Simpan sesi ke penyimpanan lokal
+        let currentSessions = [...chatSessions];
+        const sessionIdx = currentSessions.findIndex(s => s.id === effectiveConvId);
+        if (sessionIdx === -1) {
+          const newSession = {
+            id: effectiveConvId,
+            title: rawSubject.length > 30 ? rawSubject.substring(0, 30) + '...' : rawSubject,
+            messages: finalMessages,
+            updatedAt: Date.now(),
+            model: selectedModel
+          };
+          currentSessions = [newSession, ...currentSessions];
+        } else {
+          currentSessions[sessionIdx] = {
+            ...currentSessions[sessionIdx],
+            messages: finalMessages,
+            updatedAt: Date.now()
+          };
+        }
+        saveSessionsToLocal(currentSessions);
+      } catch (err: any) {
+        console.error('Image generation error:', err);
+        const errorAiMessage: Message = {
+          id: aiMsgId,
+          role: 'model',
+          text: lang === 'id' 
+            ? `### Gagal Menghasilkan Gambar\n\nTerjadi kendala saat menghubungi server image generation.`
+            : `### Image Generation Failed\n\nA connection error occurred while generating the image.`,
+          isGeneratingImage: false,
+          generatedImagePrompt: expandedPrompt,
+        };
+        const finalMessages = [...baseMessages, userMessage, errorAiMessage];
+        setMessages(finalMessages);
+      } finally {
+        setIsLoading(false);
+      }
+
+      return;
     }
 
     const isBluefoxCmd = lowerText.startsWith('@bluefox');
