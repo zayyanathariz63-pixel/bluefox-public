@@ -128,12 +128,12 @@ export function TriggerCommandModal({
             commands.map((cmd, index) => {
               const IconComponent = ICON_MAP[cmd.iconName] || Terminal;
               const isSelected = index === selectedIndex;
-              const isAdminBadge = cmd.badge === 'Admin';
+              const isNotAvailableBadge = cmd.badge.toLowerCase().includes('not available') || cmd.badge === 'Admin';
 
-              // Color style depending on category or Admin badge
+              // Color style depending on category or Not Available badge
               const categoryBadgeColor = 
-                isAdminBadge
-                  ? 'bg-amber-100 text-amber-800 border-amber-300 font-bold'
+                isNotAvailableBadge
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
                   : cmd.category === 'ai'
                   ? 'bg-purple-50 text-purple-700 border-purple-200'
                   : cmd.category === 'system'
@@ -141,7 +141,7 @@ export function TriggerCommandModal({
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
               const iconBgColor =
-                isAdminBadge
+                isNotAvailableBadge
                   ? 'bg-amber-100 text-amber-700 border-amber-300'
                   : cmd.category === 'ai'
                   ? 'bg-purple-100 text-purple-700 border-purple-200'
@@ -221,7 +221,7 @@ export function TriggerCommandModal({
             <span><kbd className="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 text-[10px] shadow-xs">Esc</kbd> Tutup</span>
           </div>
           <span className="text-slate-500 font-mono text-[10px] hidden md:inline font-medium">
-            TMPA Command Router
+            Bluefox Command Router
           </span>
         </div>
       </motion.div>

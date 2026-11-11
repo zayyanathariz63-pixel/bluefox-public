@@ -95,7 +95,7 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
             <Bot size={18} className="text-white" />
           </div>
-          <span className="font-semibold text-lg tracking-tight">Tmpa Chat</span>
+          <span className="font-semibold text-lg tracking-tight">Bluefox</span>
         </div>
       </header>
 
@@ -119,8 +119,8 @@ export function LoginPage({ onLoginSuccess, onBack }: LoginPageProps) {
           </div>
           <p className="text-gray-400 text-sm mb-6">
             {isId 
-              ? 'Akses ke Tmpa Chat dibatasi khusus untuk perangkat yang terdaftar di website utama TMPA.'
-              : 'Access to Tmpa Chat is restricted to devices registered on the main TMPA website.'}
+              ? 'Akses ke Bluefox dibatasi khusus untuk perangkat yang terdaftar di website utama TMPA.'
+              : 'Access to Bluefox is restricted to devices registered on the main TMPA website.'}
           </p>
 
           {userIp && (

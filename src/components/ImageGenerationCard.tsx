@@ -54,10 +54,10 @@ export function ImageGenerationCard({
     <div className="w-full max-w-[340px] sm:max-w-[400px] my-2 select-none">
       <div className="relative aspect-square w-full rounded-2xl overflow-hidden border border-slate-300/80 dark:border-slate-700/80 shadow-md group bg-slate-100 dark:bg-slate-900">
         
-        {/* 1. LOADING STATE: PERSEGI GRADIENT ABU-ABU YANG BERGANTI WARNANYA */}
+        {/* 1. LOADING STATE: PERSEGI GRADIENT ABU-ABU YANG BERGANTI WARNANYA SECARA HALUS */}
         {isGenerating && (
-          <div className="absolute inset-0 z-10 flex flex-col justify-between p-5 overflow-hidden">
-            {/* Animasi Gradient Abu-abu yang Berganti Warna Halus */}
+          <div className="absolute inset-0 z-10 overflow-hidden">
+            {/* Animasi Gradient Abu-abu yang Berganti Warna Halus (Light Mode) */}
             <motion.div 
               className="absolute inset-0"
               animate={{
@@ -69,7 +69,7 @@ export function ImageGenerationCard({
                 ]
               }}
               transition={{
-                duration: 6,
+                duration: 4.5,
                 repeat: Infinity,
                 repeatType: 'reverse',
                 ease: 'easeInOut'
@@ -88,56 +88,25 @@ export function ImageGenerationCard({
                 ]
               }}
               transition={{
-                duration: 6,
+                duration: 4.5,
                 repeat: Infinity,
                 repeatType: 'reverse',
                 ease: 'easeInOut'
               }}
             />
 
-            {/* Shimmer Overlay Glass Effect */}
-            <div className="absolute inset-0 bg-white/20 dark:bg-black/25 backdrop-blur-[2px]" />
-
-            {/* Top Bar Loading */}
-            <div className="relative z-10 flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/80 dark:bg-slate-900/80 text-slate-800 dark:text-slate-200 text-xs font-semibold backdrop-blur-md shadow-xs border border-white/40 dark:border-slate-700/50">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
-                <span>Membuat Gambar...</span>
-              </span>
-              <div className="p-1.5 rounded-full bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 backdrop-blur-md shadow-xs border border-white/40 dark:border-slate-700/50">
-                <Sparkles size={14} className="animate-spin text-blue-500" style={{ animationDuration: '3s' }} />
-              </div>
-            </div>
-
-            {/* Center Visual Indicator */}
-            <div className="relative z-10 flex flex-col items-center justify-center text-center px-4 my-auto">
-              <div className="w-14 h-14 rounded-2xl bg-white/60 dark:bg-slate-800/60 backdrop-blur-md border border-white/60 dark:border-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 shadow-sm mb-3">
-                <ImageIcon size={26} className="animate-pulse text-blue-500" />
-              </div>
-              <p className="text-xs font-medium text-slate-700 dark:text-slate-300 line-clamp-3 italic px-2 bg-white/40 dark:bg-black/30 py-1.5 rounded-xl border border-white/30 dark:border-slate-800/50 backdrop-blur-xs">
-                &ldquo;{prompt}&rdquo;
-              </p>
-            </div>
-
-            {/* Bottom Progress Shimmer */}
-            <div className="relative z-10">
-              <div className="w-full h-1.5 rounded-full bg-white/50 dark:bg-slate-800/60 overflow-hidden backdrop-blur-xs">
-                <motion.div 
-                  className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 rounded-full"
-                  animate={{
-                    x: ['-100%', '100%']
-                  }}
-                  transition={{
-                    duration: 1.8,
-                    repeat: Infinity,
-                    ease: 'easeInOut'
-                  }}
-                />
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 text-center mt-2 font-mono">
-                Bluefox Image AI • Definisi Tinggi
-              </p>
-            </div>
+            {/* Subtle Shimmer Wave */}
+            <motion.div 
+              className="absolute inset-0 bg-white/10 dark:bg-white/5 backdrop-blur-[1px]"
+              animate={{
+                opacity: [0.3, 0.7, 0.3]
+              }}
+              transition={{
+                duration: 2.2,
+                repeat: Infinity,
+                ease: 'easeInOut'
+              }}
+            />
           </div>
         )}
 
@@ -153,12 +122,21 @@ export function ImageGenerationCard({
             <motion.img
               src={imageUrl}
               alt={prompt}
+              data-ai-generated="true"
+              data-generator="Bluefox AI"
+              data-prompt={prompt}
               onLoad={() => setIsLoaded(true)}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: isLoaded ? 1 : 0.4, scale: 1 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="w-full h-full object-cover object-center group-hover:scale-103 transition-transform duration-500"
             />
+
+            {/* AI Generated Metadata Badge (Memastikan Gambar Dikenali Sebagai Buatan AI) */}
+            <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur-md text-white text-[10px] font-semibold border border-white/20 shadow-xs z-10 pointer-events-none select-none">
+              <Sparkles size={11} className="text-cyan-400" />
+              <span>AI Generated</span>
+            </div>
 
             {/* Gradient Dark Overlay on Hover for Action Buttons */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-3.5" />

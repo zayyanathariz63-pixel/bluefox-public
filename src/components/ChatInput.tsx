@@ -338,6 +338,14 @@ export function ChatInput({
     setIsTranscribing(false);
   };
 
+  // Deteksi berkas PDF: Khusus dokumen PDF, kapasitas ditingkatkan menjadi hingga 20 gambar/slide
+  const hasPdfAttached = attachedMediaList.some(m => 
+    m.name.toLowerCase().endsWith('.pdf') || 
+    m.id.startsWith('pdf-slide-') || 
+    m.pageCount !== undefined
+  );
+  const currentMaxFiles = hasPdfAttached ? 20 : 10;
+
   // Trigger File Picker
   const handleUploadClick = () => {
     if (fileInputRef.current) {
@@ -355,13 +363,18 @@ export function ChatInput({
 
     const fileArray = Array.from(files);
 
-    // 1. Cek Kuota Total Maksimal 10 File
-    const maxFiles = 10;
-    if (attachedMediaList.length + fileArray.length > maxFiles) {
+    // 1. Cek Kuota File: Khusus PDF diizinkan hingga 20 gambar/slide, file biasa maksimal 10 file
+    const hasPdfInFiles = fileArray.some(f => f.name.toLowerCase().endsWith('.pdf') || f.type === 'application/pdf');
+    const isPdfUpload = hasPdfInFiles || hasPdfAttached;
+    const maxFiles = isPdfUpload ? 20 : 10;
+
+    if (attachedMediaList.length + fileArray.length > maxFiles && !hasPdfInFiles) {
       setErrorModal({
         isOpen: true,
-        title: "Batas Maksimal 10 File Terlampaui",
-        message: "Anda hanya dapat mengunggah maksimal 10 file (gambar, PDF, atau dokumen/kode) secara bersamaan (hingga 20 slide untuk berkas PDF).",
+        title: `Batas Maksimal ${maxFiles} File Terlampaui`,
+        message: isPdfUpload
+          ? "Untuk berkas PDF, Anda dapat mengunggah hingga maksimal 20 gambar slide per sesi."
+          : "Anda hanya dapat mengunggah maksimal 10 file secara bersamaan (atau hingga 20 gambar khusus slide berkas PDF).",
         maxLimitInfo: `Saat ini: ${attachedMediaList.length} terunggah, mencoba menambah: ${fileArray.length} file.`
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -1278,10 +1291,10 @@ export function ChatInput({
                     setIsPopupOpen(false);
                     handleUploadClick();
                   }}
-                  disabled={attachedMediaList.length >= 10 || isProcessingMedia}
+                  disabled={attachedMediaList.length >= currentMaxFiles || isProcessingMedia}
                   className={cn(
                     "w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-left group cursor-pointer",
-                    attachedMediaList.length >= 10
+                    attachedMediaList.length >= currentMaxFiles
                       ? (isBlueRilis ? "opacity-50 cursor-not-allowed bg-slate-900/40 border-transparent text-slate-500" : "opacity-50 cursor-not-allowed bg-slate-100 border-transparent text-slate-400")
                       : (isBlueRilis ? "hover:bg-blue-900/40 border-blue-500/30 bg-blue-950/40 text-blue-200" : "hover:bg-blue-50 border-blue-200 bg-blue-50/50")
                   )}
@@ -1365,12 +1378,12 @@ export function ChatInput({
                           Bluefox Motion
                         </div>
                         <div className="text-[10px] text-slate-400">
-                          Dijeda Sementara (Khusus Admin)
+                          Not available now (Khusus Admin)
                         </div>
                       </div>
                     </div>
                     <span className="text-[10px] font-bold border px-1.5 py-0.5 rounded-full shrink-0 text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400">
-                      Admin Only
+                      Not available now
                     </span>
                   </div>
                 )}
@@ -1472,7 +1485,7 @@ export function ChatInput({
               <div className="flex items-center justify-between pb-1.5 px-1 border-b border-slate-100 mb-1.5">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-slate-800">
-                    File Terlampir ({attachedMediaList.length}/10)
+                    File Terlampir ({attachedMediaList.length}/{currentMaxFiles})
                   </span>
                   {isVisionActive && (
                     <span className="p-1 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 flex items-center justify-center shadow-2xs" title="Vision Aktif">
@@ -2071,7 +2084,7 @@ export function ChatInput({
       </form>
       </div>
       <div className="text-center mt-2 text-xs text-slate-400 font-medium">
-        tmpa chat dapat membuat kesalahan. Pertimbangkan untuk memverifikasi informasi penting.
+        Bluefox dapat membuat kesalahan. Pertimbangkan untuk memverifikasi informasi penting.
       </div>
     </div>
   );

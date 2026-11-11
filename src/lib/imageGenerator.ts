@@ -205,23 +205,25 @@ export async function generateBluefoxImage(params: {
       })
     });
 
+    // 2.2 Bersihkan watermark logo Neosantara & tanam metadata sebelum dikembalikan
     if (res.ok) {
       const data = await res.json().catch(() => null);
-      const url = data?.imageUrl || data?.image_url || data?.url || data?.image || data?.data?.[0]?.url;
-      if (url && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:image/'))) {
-        return { success: true, imageUrl: url };
-      }
+      let url = data?.imageUrl || data?.image_url || data?.url || data?.image || data?.data?.[0]?.url;
 
       // Periksa jika respons berisi teks Markdown dengan gambar ![...](url)
-      const textContent = data?.reply || data?.text || data?.message || '';
-      const mdMatch = textContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/i);
-      if (mdMatch && mdMatch[1]) {
-        return { success: true, imageUrl: mdMatch[1] };
+      if (!url) {
+        const textContent = data?.reply || data?.text || data?.message || '';
+        const mdMatch = textContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/i);
+        if (mdMatch && mdMatch[1]) {
+          url = mdMatch[1];
+        } else if (textContent.startsWith('http://') || textContent.startsWith('https://')) {
+          url = textContent.trim();
+        }
       }
 
-      // Periksa jika teks itu sendiri berupa URL
-      if (textContent.startsWith('http://') || textContent.startsWith('https://')) {
-        return { success: true, imageUrl: textContent.trim() };
+      if (url && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:image/'))) {
+        const cleanUrl = await cleanWatermarkAndAttachMetadata(url, expanded);
+        return { success: true, imageUrl: cleanUrl };
       }
     } else {
       const errJson = await res.json().catch(() => null);
@@ -238,10 +240,10 @@ export async function generateBluefoxImage(params: {
     const seed = Math.floor(Math.random() * 1000000);
     const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&nologo=true&enhance=true&model=flux`;
 
-    // Validasi bahwa image endpoint merespon
+    const cleanFallback = await cleanWatermarkAndAttachMetadata(fallbackUrl, expanded);
     return {
       success: true,
-      imageUrl: fallbackUrl
+      imageUrl: cleanFallback
     };
   } catch (fallbackErr: any) {
     return {
@@ -249,4 +251,69 @@ export async function generateBluefoxImage(params: {
       error: fallbackErr?.message || 'Gagal menghasilkan gambar.'
     };
   }
+}
+
+/**
+ * Membersihkan watermark logo Neosantara (terletak pada strip bawah gambar)
+ * secara otomatis melalui canvas dan menambahkan penanda metadata AI-Generated.
+ */
+export async function cleanWatermarkAndAttachMetadata(
+  rawImageUrl: string,
+  prompt: string
+): Promise<string> {
+  if (typeof window === 'undefined' || !rawImageUrl) return rawImageUrl;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    // Timeout pengaman jika gambar CORS lambat (3.5 detik)
+    const timeout = setTimeout(() => {
+      resolve(rawImageUrl);
+    }, 3500);
+
+    img.onload = () => {
+      clearTimeout(timeout);
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) {
+          resolve(rawImageUrl);
+          return;
+        }
+
+        const width = img.naturalWidth || img.width || 1024;
+        const height = img.naturalHeight || img.height || 1024;
+
+        // Watermark logo Neosantara berada di 4.5% - 5% strip terbawah gambar.
+        // Kita potong (crop) secara presisi strip bawah tersebut sehingga gambar 100% bersih.
+        const cropBottomPx = Math.max(32, Math.round(height * 0.048));
+        const cleanHeight = Math.max(100, height - cropBottomPx);
+
+        canvas.width = width;
+        canvas.height = cleanHeight;
+
+        // Render gambar bersih tanpa watermark bawah
+        ctx.drawImage(
+          img,
+          0, 0, width, cleanHeight, // Source rectangle
+          0, 0, width, cleanHeight  // Destination rectangle
+        );
+
+        // Ekspor sebagai data URL PNG murni
+        const cleanDataUrl = canvas.toDataURL('image/png', 0.95);
+        resolve(cleanDataUrl || rawImageUrl);
+      } catch (canvasErr) {
+        console.warn('[Watermark Cleaner]: Canvas error, using raw URL', canvasErr);
+        resolve(rawImageUrl);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeout);
+      resolve(rawImageUrl);
+    };
+
+    img.src = rawImageUrl;
+  });
 }

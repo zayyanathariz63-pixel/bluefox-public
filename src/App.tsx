@@ -661,6 +661,7 @@ export default function App() {
   // KEBUTUHAN 6: Pelacak Keaktifan Pengguna & Reset Sesi Obrolan Baru jika > 20 Menit Tidak Dibuka
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    document.title = 'Bluefox';
 
     const updateLastActive = () => {
       try {
@@ -1881,6 +1882,18 @@ export default function App() {
     // =========================================================================
     if (isImageGenerationIntent(userText)) {
       const isAdmin = isUserAdmin(user);
+
+      // KEBUTUHAN 5: Fitur Image Generator bertuliskan "Not available now", khusus admin masih bisa
+      if (!isAdmin) {
+        setShowActionToast(
+          lang === 'id' 
+            ? 'Fitur Image Generator saat ini tidak tersedia (Not available now). Fitur ini sedang dibatasi khusus untuk Admin.'
+            : 'Image Generator is currently not available (Not available now). This feature is reserved for Admin.'
+        );
+        setTimeout(() => setShowActionToast(null), 4500);
+        return;
+      }
+
       const quota = checkImageGenQuota(isAdmin);
 
       if (!quota.allowed) {
@@ -2329,6 +2342,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
     // 1. Tampilkan UI loading & bersihkan error state
     const isMotionReq = lowerText.includes('@motion');
+
+    // KEBUTUHAN 5: Bluefox Motion berstatus "Not available now", khusus admin masih bisa
+    if (isMotionReq && !isUserAdmin(user)) {
+      setShowActionToast(
+        lang === 'id' 
+          ? 'Fitur Bluefox Motion saat ini tidak tersedia (Not available now). Fitur ini sedang dibatasi khusus untuk Admin.'
+          : 'Bluefox Motion is currently not available (Not available now). This feature is reserved for Admin.'
+      );
+      setTimeout(() => setShowActionToast(null), 4500);
+      return;
+    }
+
     setIsMotionLoading(isMotionReq);
     setIsMotionFinalizing(false);
     setIsLoading(true);
