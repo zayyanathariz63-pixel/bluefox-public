@@ -24,7 +24,27 @@ const STORAGE_KEY = 'tmpa_saved_accounts';
  * Kriteria: email zayyanathariz63@gmail.com atau zayyanathariz63-pixel
  */
 export function isUserAdmin(emailOrUser?: string | { email?: string; user_metadata?: any; name?: string } | null): boolean {
-  if (!emailOrUser) return false;
+  if (!emailOrUser) {
+    if (typeof window !== 'undefined') {
+      try {
+        const rawProfile = localStorage.getItem('tmpa_user_profile');
+        if (rawProfile) {
+          const profile = JSON.parse(rawProfile);
+          if (profile?.email || profile?.name) {
+            return isUserAdmin(profile);
+          }
+        }
+        const rawSelected = localStorage.getItem('tmpa_selected_account');
+        if (rawSelected) {
+          const sel = JSON.parse(rawSelected);
+          if (sel?.email || sel?.name) {
+            return isUserAdmin(sel);
+          }
+        }
+      } catch {}
+    }
+    return false;
+  }
   let email = '';
   let metaName = '';
   let directName = '';

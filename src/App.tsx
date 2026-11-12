@@ -1878,17 +1878,30 @@ export default function App() {
     }
 
     // =========================================================================
+    // 0.0.0 CEK PERINTAH KHUSUS ADMIN (@motion)
+    // =========================================================================
+    if (lowerText.includes('@motion') && !isUserAdmin(user)) {
+      setShowActionToast(
+        lang === 'id' 
+          ? 'Perintah @motion / Bluefox Motion dinonaktifkan untuk non-admin (khusus Administrator).'
+          : 'Command @motion / Bluefox Motion is disabled for non-admin (Admin only).'
+      );
+      setTimeout(() => setShowActionToast(null), 4500);
+      return;
+    }
+
+    // =========================================================================
     // 0.0.1 CEK INTERCEPT IMAGE GENERATION (@image / buat gambar / perintah spesifik)
     // =========================================================================
-    if (isImageGenerationIntent(userText)) {
+    if (isImageGenerationIntent(userText) || lowerText.includes('@image')) {
       const isAdmin = isUserAdmin(user);
 
-      // KEBUTUHAN 5: Fitur Image Generator bertuliskan "Not available now", khusus admin masih bisa
+      // KEBUTUHAN 1: Non-admin dilarang menggunakan @image
       if (!isAdmin) {
         setShowActionToast(
           lang === 'id' 
-            ? 'Fitur Image Generator saat ini tidak tersedia (Not available now). Fitur ini sedang dibatasi khusus untuk Admin.'
-            : 'Image Generator is currently not available (Not available now). This feature is reserved for Admin.'
+            ? 'Perintah @image / Image Generator dinonaktifkan untuk non-admin (khusus Administrator).'
+            : 'Command @image / Image Generator is disabled for non-admin (Admin only).'
         );
         setTimeout(() => setShowActionToast(null), 4500);
         return;
@@ -1953,10 +1966,11 @@ export default function App() {
                 ? `Berikut adalah visual gambar yang berhasil dibuat:\n> **"${rawSubject}"**\n\n*Prompt diperluas:* ${expandedPrompt}`
                 : `Here is the generated image:\n> **"${rawSubject}"**\n\n*Expanded prompt:* ${expandedPrompt}`)
             : (lang === 'id' 
-                ? `### Kendala Pembuatan Gambar\n\n${imageResult.error || 'Gagal menghasilkan gambar dari server.'}` 
-                : `### Image Generation Issue\n\n${imageResult.error || 'Failed to generate image from server.'}`),
+                ? `### Kendala Pembuatan Gambar\n\n${imageResult.error || 'Server Neosantara tidak mengembalikan visual gambar yang valid.'}` 
+                : `### Image Generation Issue\n\n${imageResult.error || 'Neosantara server did not return valid image data.'}`),
           isGeneratingImage: false,
           generatedImageUrl: imageResult.imageUrl,
+          generatedImageUrls: imageResult.imageUrls,
           generatedImagePrompt: expandedPrompt,
         };
 

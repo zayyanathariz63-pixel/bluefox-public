@@ -29,8 +29,10 @@ interface TriggerCommandModalProps {
   commands: TriggerCommand[];
   selectedIndex: number;
   onSelectCommand: (command: TriggerCommand) => void;
+  onDisabledSelect?: (command: TriggerCommand) => void;
   onClose: () => void;
   query: string;
+  isAdmin?: boolean;
 }
 
 const ICON_MAP: Record<string, any> = {
@@ -57,8 +59,10 @@ export function TriggerCommandModal({
   commands,
   selectedIndex,
   onSelectCommand,
+  onDisabledSelect,
   onClose,
-  query
+  query,
+  isAdmin = false
 }: TriggerCommandModalProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -128,11 +132,19 @@ export function TriggerCommandModal({
             commands.map((cmd, index) => {
               const IconComponent = ICON_MAP[cmd.iconName] || Terminal;
               const isSelected = index === selectedIndex;
+              const isCmdDisabled = !isAdmin && (
+                cmd.name === '@image' || 
+                cmd.name === '@motion' || 
+                cmd.id === 'image-generation' || 
+                cmd.id === 'motion'
+              );
               const isNotAvailableBadge = cmd.badge.toLowerCase().includes('not available') || cmd.badge === 'Admin';
 
-              // Color style depending on category or Not Available badge
+              // Color style depending on disabled status or category
               const categoryBadgeColor = 
-                isNotAvailableBadge
+                isCmdDisabled
+                  ? 'bg-slate-100 text-slate-500 border-slate-300 font-semibold'
+                  : isNotAvailableBadge
                   ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
                   : cmd.category === 'ai'
                   ? 'bg-purple-50 text-purple-700 border-purple-200'
@@ -141,7 +153,9 @@ export function TriggerCommandModal({
                   : 'bg-emerald-50 text-emerald-700 border-emerald-200';
 
               const iconBgColor =
-                isNotAvailableBadge
+                isCmdDisabled
+                  ? 'bg-slate-200 text-slate-400 border-slate-300'
+                  : isNotAvailableBadge
                   ? 'bg-amber-100 text-amber-700 border-amber-300'
                   : cmd.category === 'ai'
                   ? 'bg-purple-100 text-purple-700 border-purple-200'
@@ -149,23 +163,34 @@ export function TriggerCommandModal({
                   ? 'bg-blue-100 text-blue-700 border-blue-200'
                   : 'bg-emerald-100 text-emerald-700 border-emerald-200';
 
+              const handleItemClick = () => {
+                if (isCmdDisabled) {
+                  if (onDisabledSelect) {
+                    onDisabledSelect(cmd);
+                  }
+                  return;
+                }
+                onSelectCommand(cmd);
+              };
+
               return (
                 <div
                   key={cmd.id}
-                  onClick={() => onSelectCommand(cmd)}
-                  onMouseEnter={() => {}}
+                  onClick={handleItemClick}
                   className={cn(
-                    "flex items-start gap-3 p-2.5 rounded-xl cursor-pointer transition-all text-left group select-none",
-                    isSelected 
-                      ? "bg-blue-50/90 border border-blue-300 text-slate-900 shadow-sm" 
-                      : "hover:bg-slate-50 border border-transparent text-slate-700 hover:text-slate-900"
+                    "flex items-start gap-3 p-2.5 rounded-xl transition-all text-left group select-none",
+                    isCmdDisabled 
+                      ? "opacity-40 cursor-not-allowed bg-slate-50/80 border border-slate-200/50 hover:bg-slate-50/80 grayscale-[0.5]"
+                      : isSelected 
+                      ? "bg-blue-50/90 border border-blue-300 text-slate-900 shadow-sm cursor-pointer" 
+                      : "hover:bg-slate-50 border border-transparent text-slate-700 hover:text-slate-900 cursor-pointer"
                   )}
                 >
                   {/* Icon */}
                   <div className={cn(
                     "p-2 rounded-xl border flex-shrink-0 mt-0.5 transition-transform",
                     iconBgColor,
-                    isSelected && "scale-105"
+                    !isCmdDisabled && isSelected && "scale-105"
                   )}>
                     <IconComponent size={16} />
                   </div>
@@ -175,7 +200,7 @@ export function TriggerCommandModal({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={cn(
                         "font-mono font-semibold text-[13px]",
-                        isSelected ? "text-blue-700 font-bold" : "text-slate-900"
+                        isCmdDisabled ? "text-slate-500 line-through decoration-slate-400" : isSelected ? "text-blue-700 font-bold" : "text-slate-900"
                       )}>
                         {cmd.name}
                       </span>
@@ -184,19 +209,19 @@ export function TriggerCommandModal({
                         "text-[10px] px-1.5 py-0.5 rounded-md border font-semibold",
                         categoryBadgeColor
                       )}>
-                        {cmd.badge}
+                        {isCmdDisabled ? 'Disabled (Admin Only)' : cmd.badge}
                       </span>
 
                       <span className="text-[10px] text-slate-500 font-sans ml-auto hidden sm:inline">
-                        {cmd.categoryLabel}
+                        {isCmdDisabled ? 'Dinonaktifkan' : cmd.categoryLabel}
                       </span>
                     </div>
 
                     <p className="text-xs text-slate-500 mt-1 line-clamp-1 leading-relaxed">
-                      {cmd.description}
+                      {isCmdDisabled ? `Perintah ${cmd.name} dinonaktifkan khusus untuk non-admin (hanya dapat diakses akun Administrator).` : cmd.description}
                     </p>
 
-                    {isSelected && (
+                    {isSelected && !isCmdDisabled && (
                       <div className="mt-1.5 pt-1.5 border-t border-blue-200/80 flex items-center justify-between text-[11px] text-slate-600 font-mono">
                         <span className="text-slate-600 truncate">
                           Contoh: <span className="text-blue-700 font-medium">{cmd.example}</span>

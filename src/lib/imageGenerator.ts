@@ -156,20 +156,186 @@ export function consumeImageGenQuota(isAdmin: boolean = false): void {
   } catch {}
 }
 
+export interface BluefoxImageResult {
+  success: boolean;
+  imageUrl?: string;
+  imageUrls?: string[];
+  error?: string;
+}
+
 /**
- * Panggil Supabase Edge Function bluefox-image dengan fallback andal
+ * Ekstraktor universal multi-format data gambar dari Neosantara / Supabase Edge Function:
+ * Mendukung:
+ * - URL langsung (http://, https://)
+ * - Base64 Data URI (data:image/...)
+ * - Raw Base64 string (iVBORw0KGgo..., /9j/..., UklGR..., R0lGOD..., atau base64 payload)
+ * - Array multi-gambar (images: [], data: [], artifacts: [], outputs: [], results: [])
+ * - Teks Markdown dengan sintaks gambar ![alt](url)
+ * - Tag HTML <img>
+ * - Nested objects & stringified JSON
+ */
+export function extractAllImagesFromResponse(data: any): string[] {
+  const results: string[] = [];
+  const visited = new Set<any>();
+
+  function isLikelyBase64Image(str: string): boolean {
+    if (str.length < 50) return false;
+    if (str.startsWith('iVBORw0KGgo') || str.startsWith('/9j/') || str.startsWith('UklGR') || str.startsWith('R0lGOD')) {
+      return true;
+    }
+    if (str.length > 500 && /^[A-Za-z0-9+/=]+$/.test(str.slice(0, 200))) {
+      return true;
+    }
+    return false;
+  }
+
+  function formatRawBase64(raw: string): string {
+    if (raw.startsWith('data:image/')) return raw;
+    if (raw.startsWith('iVBORw0KGgo')) return `data:image/png;base64,${raw}`;
+    if (raw.startsWith('/9j/')) return `data:image/jpeg;base64,${raw}`;
+    if (raw.startsWith('UklGR')) return `data:image/webp;base64,${raw}`;
+    if (raw.startsWith('R0lGOD')) return `data:image/gif;base64,${raw}`;
+    return `data:image/png;base64,${raw}`;
+  }
+
+  function walk(node: any) {
+    if (!node || visited.has(node)) return;
+    if (typeof node === 'object') {
+      visited.add(node);
+    }
+
+    if (typeof node === 'string') {
+      const str = node.trim();
+      if (!str) return;
+
+      // 1. Data URL
+      if (str.startsWith('data:image/')) {
+        results.push(str);
+        return;
+      }
+
+      // 2. Direct HTTP/HTTPS URL
+      if (str.startsWith('http://') || str.startsWith('https://')) {
+        // Tolak domain pollination secara ketat sesuai instruksi pengguna
+        if (!str.includes('pollinations.ai') && !str.includes('pollination.ai')) {
+          results.push(str);
+        }
+        return;
+      }
+
+      // 3. Raw Base64 string
+      if (isLikelyBase64Image(str)) {
+        results.push(formatRawBase64(str));
+        return;
+      }
+
+      // 4. Markdown images ![alt](url)
+      const mdRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+|data:image\/[^\s\)]+)\)/gi;
+      let mdMatch;
+      let foundInText = false;
+      while ((mdMatch = mdRegex.exec(str)) !== null) {
+        if (mdMatch[1]) {
+          foundInText = true;
+          const u = mdMatch[1];
+          if (!u.includes('pollinations.ai') && !u.includes('pollination.ai')) {
+            results.push(u);
+          }
+        }
+      }
+
+      // 5. HTML img tags <img src="..." />
+      const htmlRegex = /<img\s+[^>]*src=["'](https?:\/\/[^"']+|data:image\/[^"']+)["']/gi;
+      let htmlMatch;
+      while ((htmlMatch = htmlRegex.exec(str)) !== null) {
+        if (htmlMatch[1]) {
+          foundInText = true;
+          const u = htmlMatch[1];
+          if (!u.includes('pollinations.ai') && !u.includes('pollination.ai')) {
+            results.push(u);
+          }
+        }
+      }
+
+      // 6. Try parsing stringified JSON jika belum ditemukan gambar di teks
+      if (!foundInText && (str.startsWith('{') || str.startsWith('['))) {
+        try {
+          const parsed = JSON.parse(str);
+          walk(parsed);
+        } catch {}
+      }
+
+      return;
+    }
+
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        walk(item);
+      }
+      return;
+    }
+
+    if (typeof node === 'object') {
+      // Prioritaskan nama properti umum gambar
+      const candidateKeys = [
+        'imageUrl', 'image_url', 'url', 'image', 'src', 
+        'dataUrl', 'data_url', 'base64', 'b64', 'b64_json',
+        'output', 'result', 'link', 'artifact', 'artifacts',
+        'images', 'data', 'outputs', 'results', 'generations',
+        'reply', 'message', 'content', 'text'
+      ];
+
+      for (const k of candidateKeys) {
+        if (node[k] !== undefined) {
+          walk(node[k]);
+        }
+      }
+
+      for (const key of Object.keys(node)) {
+        if (!candidateKeys.includes(key)) {
+          walk(node[key]);
+        }
+      }
+    }
+  }
+
+  walk(data);
+
+  // Dedup tanpa mengubah urutan
+  const uniqueList: string[] = [];
+  const seen = new Set<string>();
+  for (const item of results) {
+    if (item && !seen.has(item)) {
+      seen.add(item);
+      uniqueList.push(item);
+    }
+  }
+
+  return uniqueList;
+}
+
+/**
+ * Panggil Supabase Edge Function bluefox-image dan ekstrak berbagai format data gambar dari Neosantara
  */
 export async function generateBluefoxImage(params: {
   sessionId: string;
   userMessage: string;
   prompt: string;
-}): Promise<{ success: boolean; imageUrl?: string; error?: string }> {
+}): Promise<BluefoxImageResult> {
   const { sessionId, userMessage, prompt } = params;
   const validSessionId = getValidUUID(sessionId);
   const cleanPrompt = extractImagePrompt(prompt || userMessage);
   const expanded = expandImagePrompt(cleanPrompt);
 
-  // 1. Pastikan record sesi ada di session_bluefox jika memungkinkan (menghindari constraint error)
+  // 1. Dapatkan auth token aktif jika tersedia
+  let authToken = supabaseKey;
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.access_token) {
+      authToken = sessionData.session.access_token;
+    }
+  } catch {}
+
+  // 2. Pastikan record sesi ada di session_bluefox (menghindari foreign key constraint error)
   try {
     const { data: existingSession } = await supabase
       .from('session_bluefox')
@@ -179,24 +345,29 @@ export async function generateBluefoxImage(params: {
 
     if (!existingSession) {
       const { data: { user } } = await supabase.auth.getUser();
+      const payload: any = { 
+        id: validSessionId, 
+        title: cleanPrompt.slice(0, 30) || 'Image Generation' 
+      };
       if (user?.id) {
-        await supabase
-          .from('session_bluefox')
-          .insert([{ id: validSessionId, user_id: user.id, title: cleanPrompt.slice(0, 30) }]);
+        payload.user_id = user.id;
       }
+      await supabase
+        .from('session_bluefox')
+        .upsert([payload], { onConflict: 'id' });
     }
   } catch (err) {
     console.warn('[Session Precheck Warn]:', err);
   }
 
-  // 2. Panggil Edge Function bluefox-image
+  // 3. Panggil Edge Function bluefox-image
   try {
     const res = await fetch(BLUEFOX_IMAGE_EDGE_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`
+        'Authorization': `Bearer ${authToken}`
       },
       body: JSON.stringify({
         sessionId: validSessionId,
@@ -205,50 +376,54 @@ export async function generateBluefoxImage(params: {
       })
     });
 
-    // 2.2 Bersihkan watermark logo Neosantara & tanam metadata sebelum dikembalikan
+    const textResponse = await res.text();
+    let data: any = null;
+    try {
+      data = JSON.parse(textResponse);
+    } catch {
+      data = { rawText: textResponse };
+    }
+
     if (res.ok) {
-      const data = await res.json().catch(() => null);
-      let url = data?.imageUrl || data?.image_url || data?.url || data?.image || data?.data?.[0]?.url;
+      // Ekstrak semua data gambar (berbagai format dari Neosantara: URLs, base64, nested arrays, markdown)
+      const extractedImages = extractAllImagesFromResponse(data);
 
-      // Periksa jika respons berisi teks Markdown dengan gambar ![...](url)
-      if (!url) {
-        const textContent = data?.reply || data?.text || data?.message || '';
-        const mdMatch = textContent.match(/!\[.*?\]\((https?:\/\/[^\s)]+)\)/i);
-        if (mdMatch && mdMatch[1]) {
-          url = mdMatch[1];
-        } else if (textContent.startsWith('http://') || textContent.startsWith('https://')) {
-          url = textContent.trim();
-        }
-      }
+      if (extractedImages.length > 0) {
+        // Bersihkan watermark logo Neosantara & tanam metadata
+        const cleanImages = await Promise.all(
+          extractedImages.map(img => cleanWatermarkAndAttachMetadata(img, expanded))
+        );
 
-      if (url && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:image/'))) {
-        const cleanUrl = await cleanWatermarkAndAttachMetadata(url, expanded);
-        return { success: true, imageUrl: cleanUrl };
+        return {
+          success: true,
+          imageUrl: cleanImages[0],
+          imageUrls: cleanImages
+        };
+      } else {
+        // Edge function berhasil dipanggil namun tidak ada data gambar di respons
+        const serverDetail = data?.error || data?.message || data?.detail || '';
+        const detailStr = typeof serverDetail === 'object' ? JSON.stringify(serverDetail) : serverDetail;
+        return {
+          success: false,
+          error: detailStr
+            ? `Server Neosantara mengembalikan pesan: "${detailStr}". Tidak ada visual gambar yang berhasil dihasilkan.`
+            : `Edge function (bluefox-image) tidak mengembalikan data gambar yang valid dari Neosantara. Pastikan layanan gambar Neosantara sedang aktif dan menghasilkan format yang didukung.`
+        };
       }
     } else {
-      const errJson = await res.json().catch(() => null);
-      console.warn('[bluefox-image status warning]:', res.status, errJson);
+      // Respons status bukan 200 (misal: 400, 401, 500)
+      const errorMsg = data?.error || data?.message || data?.details || textResponse || res.statusText;
+      const formattedError = typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg;
+      return {
+        success: false,
+        error: `Gagal memanggil edge function bluefox-image (${res.status} ${res.statusText}): ${formattedError}. Tidak ada gambar yang berhasil dihasilkan.`
+      };
     }
   } catch (edgeErr: any) {
-    console.warn('[bluefox-image network error]:', edgeErr?.message || edgeErr);
-  }
-
-  // 3. Fallback Cerdas: Pollinations high-definition generative endpoint
-  // Menjamin gambar SELALU berhasil muncul dengan estetika tinggi jika edge backend sedang mengalami kendala database/timeout
-  try {
-    const encodedPrompt = encodeURIComponent(expanded);
-    const seed = Math.floor(Math.random() * 1000000);
-    const fallbackUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=1024&height=1024&seed=${seed}&nologo=true&enhance=true&model=flux`;
-
-    const cleanFallback = await cleanWatermarkAndAttachMetadata(fallbackUrl, expanded);
-    return {
-      success: true,
-      imageUrl: cleanFallback
-    };
-  } catch (fallbackErr: any) {
+    console.error('[bluefox-image error]:', edgeErr);
     return {
       success: false,
-      error: fallbackErr?.message || 'Gagal menghasilkan gambar.'
+      error: `Kendala koneksi saat menghubungi edge function bluefox-image: ${edgeErr?.message || 'Gagal terhubung ke server'}.`
     };
   }
 }

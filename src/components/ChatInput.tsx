@@ -831,6 +831,8 @@ export function ChatInput({
         setTimeout(() => setActionToast(null), 3500);
         const cleaned = val.replace(/@motion\s*/gi, '');
         setInput(cleaned);
+        setIsCommandModalOpen(false);
+        setIsMcpModalOpen(false);
         return;
       }
       setIsMotionActive(true);
@@ -839,6 +841,16 @@ export function ChatInput({
       setInput(cleaned);
       setIsCommandModalOpen(false);
       setIsMcpModalOpen(false);
+      return;
+    }
+
+    // KEBUTUHAN UTAMA: Jika user mengetik @image
+    if (val.toLowerCase().includes('@image') && !isMotionAdmin) {
+      setActionToast(lang === 'id' ? 'Perintah @image dinonaktifkan untuk non-admin (khusus Administrator).' : 'The @image command is disabled for non-admin (Admin only).');
+      setTimeout(() => setActionToast(null), 3500);
+      const cleaned = val.replace(/@image\s*/gi, '');
+      setInput(cleaned);
+      setIsCommandModalOpen(false);
       return;
     }
 
@@ -921,6 +933,14 @@ export function ChatInput({
   };
 
   const handleSelectCommand = (cmd: TriggerCommand) => {
+    // Blokir jika non-admin memilih @image atau @motion
+    if (!isMotionAdmin && (cmd.name === '@image' || cmd.name === '@motion' || cmd.id === 'image-generation' || cmd.id === 'motion')) {
+      setActionToast(lang === 'id' ? `Perintah ${cmd.name} dinonaktifkan untuk non-admin (khusus Administrator).` : `Command ${cmd.name} is disabled for non-admin.`);
+      setTimeout(() => setActionToast(null), 3500);
+      setIsCommandModalOpen(false);
+      return;
+    }
+
     if (cmd.name === '@motion') {
       setIsMotionActive(true);
       setMotionModeType('prompt');
@@ -952,6 +972,13 @@ export function ChatInput({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const rawTrimmed = input.trim();
+
+    // Jika non-admin mengetikkan @image atau @motion, tolak pengiriman
+    if (!isMotionAdmin && (rawTrimmed.toLowerCase().includes('@image') || rawTrimmed.toLowerCase().includes('@motion'))) {
+      setActionToast(lang === 'id' ? 'Perintah @image dan @motion dinonaktifkan untuk non-admin (khusus Administrator).' : 'Commands @image and @motion are disabled for non-admin.');
+      setTimeout(() => setActionToast(null), 3500);
+      return;
+    }
 
     // Jika mode @motion sedang aktif, tambahkan @motion agar backend & AI menangkapnya
     let textToSend = rawTrimmed;
@@ -1260,8 +1287,14 @@ export function ChatInput({
           commands={filteredCommands}
           selectedIndex={commandSelectedIndex}
           onSelectCommand={handleSelectCommand}
+          onDisabledSelect={(cmd) => {
+            setActionToast(lang === 'id' ? `Perintah ${cmd.name} dinonaktifkan untuk non-admin (khusus Administrator).` : `Command ${cmd.name} is disabled for non-admin.`);
+            setTimeout(() => setActionToast(null), 3500);
+            setIsCommandModalOpen(false);
+          }}
           onClose={() => setIsCommandModalOpen(false)}
           query={commandQuery}
+          isAdmin={isMotionAdmin}
         />
 
         {/* POPUP GABUNGAN: CONNECT & UPLOAD (SAAT TOMBOL CONNECT DI-KLIK) */}

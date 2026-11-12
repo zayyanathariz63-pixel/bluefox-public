@@ -32,6 +32,7 @@ export interface Message {
   isGeneratingImage?: boolean;
   generatedImagePrompt?: string;
   generatedImageUrl?: string;
+  generatedImageUrls?: string[];
 }
 
 export interface Connector {

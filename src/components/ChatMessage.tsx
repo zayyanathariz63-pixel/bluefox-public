@@ -575,11 +575,12 @@ export function ChatMessage({
               (displayContent || content || message.isGeneratingImage || message.generatedImageUrl) ? (
                 <div className="w-full text-[15px] text-slate-900 dark:text-slate-100 leading-relaxed font-normal break-words">
                 {/* KEBUTUHAN UTAMA: Kartu Image Generation (Persegi Shifting Gradient Abu-Abu -> Crossfade Gambar) */}
-                {(message.isGeneratingImage || message.generatedImageUrl) && (
+                {(message.isGeneratingImage || message.generatedImageUrl || (message.generatedImageUrls && message.generatedImageUrls.length > 0)) && (
                   <div className="w-full my-2">
                     <ImageGenerationCard
                       isGenerating={Boolean(message.isGeneratingImage)}
                       imageUrl={message.generatedImageUrl}
+                      imageUrls={message.generatedImageUrls}
                       prompt={message.generatedImagePrompt || message.text}
                       onOpenMediaScreen={onOpenMediaScreen}
                     />

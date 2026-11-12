@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Maximize2, Download, Copy, Check, Image as ImageIcon } from 'lucide-react';
+import { Sparkles, Maximize2, Download, Copy, Check, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface ImageGenerationCardProps {
   isGenerating?: boolean;
   imageUrl?: string;
+  imageUrls?: string[];
   prompt: string;
   onOpenMediaScreen?: (media: any) => void;
 }
@@ -13,25 +14,43 @@ interface ImageGenerationCardProps {
 export function ImageGenerationCard({
   isGenerating = false,
   imageUrl,
+  imageUrls,
   prompt,
   onOpenMediaScreen
 }: ImageGenerationCardProps) {
+  const allImages = imageUrls && imageUrls.length > 0 ? imageUrls : (imageUrl ? [imageUrl] : []);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [isLoaded, setIsLoaded] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  const activeIndex = Math.min(currentIndex, Math.max(0, allImages.length - 1));
+  const currentUrl = allImages[activeIndex] || imageUrl;
+
+  const handlePrev = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLoaded(false);
+    setCurrentIndex(prev => (prev - 1 + allImages.length) % allImages.length);
+  };
+
+  const handleNext = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsLoaded(false);
+    setCurrentIndex(prev => (prev + 1) % allImages.length);
+  };
+
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!imageUrl) return;
-    navigator.clipboard.writeText(imageUrl);
+    if (!currentUrl) return;
+    navigator.clipboard.writeText(currentUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!imageUrl) return;
+    if (!currentUrl) return;
     try {
-      const res = await fetch(imageUrl);
+      const res = await fetch(currentUrl);
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -40,13 +59,13 @@ export function ImageGenerationCard({
         .slice(0, 30)
         .replace(/[^a-zA-Z0-9_-]/g, '_')
         .toLowerCase();
-      a.download = `${safeName}.png`;
+      a.download = `${safeName}-${activeIndex + 1}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(blobUrl);
     } catch {
-      window.open(imageUrl, '_blank');
+      window.open(currentUrl, '_blank');
     }
   };
 
@@ -111,16 +130,17 @@ export function ImageGenerationCard({
         )}
 
         {/* 2. HASIL GAMBAR: PERALIHAN SMOOTH SAAT GAMBAR SELESAI */}
-        {imageUrl && (
+        {currentUrl && (
           <div 
-            onClick={() => onOpenMediaScreen && onOpenMediaScreen({ url: imageUrl, type: 'image', name: prompt })}
+            onClick={() => onOpenMediaScreen && onOpenMediaScreen({ url: currentUrl, type: 'image', name: prompt })}
             className={cn(
               "relative w-full h-full cursor-pointer overflow-hidden transition-all duration-700 ease-out",
               isGenerating ? "opacity-0 scale-95" : "opacity-100 scale-100"
             )}
           >
             <motion.img
-              src={imageUrl}
+              key={currentUrl}
+              src={currentUrl}
               alt={prompt}
               data-ai-generated="true"
               data-generator="Bluefox AI"
@@ -128,15 +148,44 @@ export function ImageGenerationCard({
               onLoad={() => setIsLoaded(true)}
               initial={{ opacity: 0, scale: 0.96 }}
               animate={{ opacity: isLoaded ? 1 : 0.4, scale: 1 }}
-              transition={{ duration: 0.6, ease: "easeOut" }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
               className="w-full h-full object-cover object-center group-hover:scale-103 transition-transform duration-500"
             />
 
-            {/* AI Generated Metadata Badge (Memastikan Gambar Dikenali Sebagai Buatan AI) */}
-            <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur-md text-white text-[10px] font-semibold border border-white/20 shadow-xs z-10 pointer-events-none select-none">
-              <Sparkles size={11} className="text-cyan-400" />
-              <span>AI Generated</span>
+            {/* AI Generated Metadata Badge & Counter */}
+            <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10 select-none">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur-md text-white text-[10px] font-semibold border border-white/20 shadow-xs pointer-events-none">
+                <Sparkles size={11} className="text-cyan-400" />
+                <span>AI Generated</span>
+              </div>
+              {allImages.length > 1 && (
+                <div className="px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-white text-[10px] font-mono border border-white/20 shadow-xs pointer-events-none">
+                  {activeIndex + 1}/{allImages.length}
+                </div>
+              )}
             </div>
+
+            {/* Tombol Navigasi Panah Kiri dan Kanan jika terdapat lebih dari 1 gambar */}
+            {allImages.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePrev}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-lg z-20 cursor-pointer active:scale-90 border border-white/20 opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+                  title="Gambar Sebelumnya"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/55 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-lg z-20 cursor-pointer active:scale-90 border border-white/20 opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+                  title="Gambar Selanjutnya"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </>
+            )}
 
             {/* Gradient Dark Overlay on Hover for Action Buttons */}
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-3.5" />
@@ -163,7 +212,7 @@ export function ImageGenerationCard({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (onOpenMediaScreen) onOpenMediaScreen({ url: imageUrl, type: 'image', name: prompt });
+                  if (onOpenMediaScreen) onOpenMediaScreen({ url: currentUrl, type: 'image', name: prompt });
                 }}
                 className="p-2 rounded-xl bg-black/60 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-md cursor-pointer active:scale-90"
                 title="Layar Penuh"
@@ -177,9 +226,12 @@ export function ImageGenerationCard({
               <p className="text-xs text-white font-medium line-clamp-2 drop-shadow-sm">
                 {prompt}
               </p>
-              <span className="text-[10px] text-slate-300 font-mono mt-0.5 inline-block">
-                Klik untuk memperbesar layar penuh
-              </span>
+              <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono mt-0.5">
+                <span>Klik untuk memperbesar layar penuh</span>
+                {allImages.length > 1 && (
+                  <span>{activeIndex + 1} dari {allImages.length} visual</span>
+                )}
+              </div>
             </div>
           </div>
         )}
