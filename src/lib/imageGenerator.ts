@@ -313,18 +313,33 @@ export function extractAllImagesFromResponse(data: any): string[] {
   return uniqueList;
 }
 
-/**
- * Panggil Supabase Edge Function bluefox-image dan ekstrak berbagai format data gambar dari Neosantara
- */
-export async function generateBluefoxImage(params: {
+export interface GenerateBluefoxImageParams {
   sessionId: string;
   userMessage: string;
   prompt: string;
-}): Promise<BluefoxImageResult> {
+  generateImage?: string;
+  imagePrompt?: string;
+}
+
+/**
+ * Panggil Supabase Edge Function bluefox-image dan ekstrak berbagai format data gambar dari Neosantara
+ */
+export async function generateBluefoxImage(params: GenerateBluefoxImageParams): Promise<BluefoxImageResult> {
   const { sessionId, userMessage, prompt } = params;
   const validSessionId = getValidUUID(sessionId);
   const cleanPrompt = extractImagePrompt(prompt || userMessage);
   const expanded = expandImagePrompt(cleanPrompt);
+
+  // KEBUTUHAN UTAMA:
+  // generateImage: harus menyertakan @image biar kedeteksi oleh Edge Function / Neosantara
+  const generateImageVal = params.generateImage
+    ? (params.generateImage.startsWith('@image') ? params.generateImage : `@image ${params.generateImage}`)
+    : (cleanPrompt ? `@image ${cleanPrompt}` : '@image');
+
+  // imagePrompt: adalah prompt user murni TANPA @image
+  const imagePromptVal = params.imagePrompt
+    ? params.imagePrompt.replace(/^@image\s*/i, '').trim()
+    : cleanPrompt;
 
   // 1. Dapatkan auth token aktif jika tersedia
   let authToken = supabaseKey;
@@ -360,8 +375,27 @@ export async function generateBluefoxImage(params: {
     console.warn('[Session Precheck Warn]:', err);
   }
 
-  // 3. Panggil Edge Function bluefox-image
+  // 3. Panggil Edge Function bluefox-image dengan menyertakan generateImage (@image) dan imagePrompt (tanpa @image)
   try {
+    const requestPayload = {
+      sessionId: validSessionId,
+      userMessage: expanded,
+      generateImage: generateImageVal,
+      imagePrompt: imagePromptVal,
+      // Field pendukung untuk kompatibilitas multi-format edge function
+      generate_image: generateImageVal,
+      image_prompt: imagePromptVal,
+      prompt: imagePromptVal,
+      expandedPrompt: expanded,
+      expanded_prompt: expanded
+    };
+
+    console.log('[bluefox-image payload]:', {
+      userMessage: requestPayload.userMessage,
+      generateImage: requestPayload.generateImage,
+      imagePrompt: requestPayload.imagePrompt
+    });
+
     const res = await fetch(BLUEFOX_IMAGE_EDGE_URL, {
       method: 'POST',
       headers: {
@@ -369,11 +403,7 @@ export async function generateBluefoxImage(params: {
         'apikey': supabaseKey,
         'Authorization': `Bearer ${authToken}`
       },
-      body: JSON.stringify({
-        sessionId: validSessionId,
-        userMessage: expanded,
-        prompt: expanded
-      })
+      body: JSON.stringify(requestPayload)
     });
 
     const textResponse = await res.text();

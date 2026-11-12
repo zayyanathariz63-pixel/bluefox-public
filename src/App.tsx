@@ -1952,10 +1952,15 @@ export default function App() {
       }
 
       try {
+        const generateImageStr = rawSubject ? `@image ${rawSubject}` : '@image';
+        const imagePromptStr = rawSubject;
+
         const imageResult = await generateBluefoxImage({
           sessionId: effectiveConvId,
-          userMessage: userText,
-          prompt: expandedPrompt
+          userMessage: expandedPrompt,
+          prompt: expandedPrompt,
+          generateImage: generateImageStr,
+          imagePrompt: imagePromptStr
         });
 
         const completedAiMessage: Message = {
