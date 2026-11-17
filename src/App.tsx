@@ -2394,12 +2394,19 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const currentModelName = (selectedModel || 'agnes-3.0-flash').trim();
       const isBluefoxNative = true;
 
-      // Filter HANYA gambar nyata (WebP, PNG, GIF, JPG/JPEG) untuk pemrosesan vision
+      // Filter gambar nyata (WebP, PNG, GIF, JPG/JPEG) atau frame hasil ekstraksi video untuk vision
       const imageAttachments = mediaList.filter(m => 
         m.type === 'image' || 
         (m.url && m.url.startsWith('data:image/'))
       );
-      const onlyImageUrl = imageAttachments.length > 0 ? imageAttachments[0].url : (imageUrl || null);
+      const mediaBundles = mediaList.filter(m => m.type === 'video' || m.type === 'audio' || m.audioPayloadJson || m.imagesPayloadJson);
+      const firstVideoFrameUrl = mediaBundles
+        .find(m => m.extractedFrames && m.extractedFrames.length > 0)
+        ?.extractedFrames?.[0]?.dataUrl || null;
+
+      const onlyImageUrl = imageAttachments.length > 0
+        ? imageAttachments[0].url
+        : (imageUrl || firstVideoFrameUrl || null);
       const hasRealImage = Boolean(onlyImageUrl);
 
       // KEBUTUHAN 3: Analisis apa yang dikirim pengguna
@@ -2511,7 +2518,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // Simpan berkas lampiran ke Local Storage dan siapkan attachmentMetadata untuk database
       const attachmentMetadata: any[] = [];
       for (const m of mediaList) {
-        if (m.url) {
+        if (m.url && !m.url.startsWith('blob:')) {
           const saved = saveBase64ToLocalStorage(m.url, m.name || 'image.png', m.type || 'image/png', m.size);
           if (saved) {
             attachmentMetadata.push({
@@ -2522,6 +2529,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               pageCount: (m as any).pageCount,
             });
           }
+        } else if (m.type === 'video' || m.type === 'audio') {
+          attachmentMetadata.push({
+            local_id: m.id || `media_${Date.now()}`,
+            name: m.name,
+            type: m.type,
+            size: m.size || 0,
+            duration: m.duration || 0,
+          });
         }
       }
 
@@ -2629,6 +2644,51 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
+      // Siapkan 3 file JSON (audio.json, gambar.json, prompt_user.json) jika ada lampiran video atau audio
+      const primaryMediaBundle = mediaBundles[0] || null;
+      let audioJsonFile: Record<string, any> | null = null;
+      let imagesJsonFile: Record<string, any> | null = null;
+      let promptJsonFile: Record<string, any> | null = null;
+
+      if (primaryMediaBundle) {
+        const promptForMedia = effectiveAiPrompt.trim() || (
+          primaryMediaBundle.type === 'video'
+            ? 'Tolong jelaskan dan analisis video beserta audio dan frame gambarnya.'
+            : 'Tolong jelaskan dan analisis berkas audio ini.'
+        );
+
+        audioJsonFile = primaryMediaBundle.audioPayloadJson || {
+          file_name: 'audio.json',
+          source_file: primaryMediaBundle.name,
+          media_type: primaryMediaBundle.type,
+          has_audio: primaryMediaBundle.type === 'audio',
+          duration_seconds: primaryMediaBundle.duration || 0,
+          timeline_audio: [],
+        };
+
+        imagesJsonFile = primaryMediaBundle.imagesPayloadJson || {
+          file_name: 'gambar.json',
+          source_file: primaryMediaBundle.name,
+          media_type: primaryMediaBundle.type,
+          fps: primaryMediaBundle.type === 'video' ? 1 : 0,
+          total_frames: primaryMediaBundle.extractedFrames?.length || 0,
+          frames: primaryMediaBundle.extractedFrames || [],
+        };
+
+        promptJsonFile = {
+          ...(primaryMediaBundle.promptPayloadJson || {}),
+          file_name: 'prompt_user.json',
+          source_file: primaryMediaBundle.name,
+          media_type: primaryMediaBundle.type,
+          duration_seconds: primaryMediaBundle.duration || 0,
+          has_audio: Boolean(audioJsonFile?.has_audio),
+          total_frames: primaryMediaBundle.extractedFrames?.length || 0,
+          prompt_user: promptForMedia,
+          session_id: effectiveConvId,
+          sent_at: new Date().toISOString(),
+        };
+      }
+
       // Ekstrak teks dari lampiran file multi-format (TXT, MD, JSON, YAML, PDF, kode sumber)
       const docTexts = mediaList
         .filter(m => m.textContent && m.textContent.trim().length > 0)
@@ -2636,7 +2696,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         .join('\n');
 
       let promptToSend = effectiveAiPrompt;
-      if (docTexts) {
+      if (primaryMediaBundle && promptJsonFile) {
+        const compactAudioSummary = {
+          ...audioJsonFile,
+          audio_data_url: audioJsonFile?.audio_data_url ? '[TERLAMPIR_DI_AUDIO_JSON]' : null,
+        };
+        const compactImagesSummary = {
+          ...imagesJsonFile,
+          frames: (imagesJsonFile?.frames || []).map((f: any) => ({
+            detik: f.detik,
+            timestamp: f.timestamp,
+            nama_file_gambar: f.nama_file_gambar,
+            ukuran_kb: f.ukuran_kb,
+          })),
+        };
+        const threeJsonSummary = `\n\n--- [3 BERKAS JSON MEDIA TERLAMPIR] ---\n1. audio.json:\n\`\`\`json\n${JSON.stringify(compactAudioSummary, null, 2)}\n\`\`\`\n2. gambar.json:\n\`\`\`json\n${JSON.stringify(compactImagesSummary, null, 2)}\n\`\`\`\n3. prompt_user.json:\n\`\`\`json\n${JSON.stringify(promptJsonFile, null, 2)}\n\`\`\``;
+        promptToSend = `${promptJsonFile.prompt_user}${threeJsonSummary}${docTexts ? `\n${docTexts}` : ''}`;
+      } else if (docTexts) {
         if (effectiveAiPrompt.trim()) {
           promptToSend = `${effectiveAiPrompt}\n\n${docTexts}`;
         } else {
@@ -2761,6 +2837,22 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           const b64 = onlyImageUrl.split('base64,')[1];
           chatPayload.image_base64 = b64;
           chatPayload.base64_image = b64;
+        }
+      }
+
+      if (primaryMediaBundle && audioJsonFile && imagesJsonFile && promptJsonFile) {
+        chatPayload.audio_json = audioJsonFile;
+        chatPayload.images_json = imagesJsonFile;
+        chatPayload.prompt_json = promptJsonFile;
+        chatPayload.media_json_files = [
+          { name: 'audio.json', mimeType: 'application/json', data: audioJsonFile },
+          { name: 'gambar.json', mimeType: 'application/json', data: imagesJsonFile },
+          { name: 'prompt_user.json', mimeType: 'application/json', data: promptJsonFile },
+        ];
+        if (primaryMediaBundle.extractedFrames && primaryMediaBundle.extractedFrames.length > 0) {
+          const frameUrls = primaryMediaBundle.extractedFrames.map(f => f.dataUrl);
+          chatPayload.extracted_images = frameUrls;
+          chatPayload.image_urls = frameUrls;
         }
       }
 

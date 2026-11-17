@@ -14,6 +14,15 @@ import { MOTION_PRESETS, MOTION_MODELS, formatMotionModelName } from '../lib/mot
 import { getAppStyle, AppStyle } from '../lib/styleManager';
 import { startRecording, stopAndSendRecording, cancelRecording, attachAudioVolumeListener, stopAudioVolumeListener } from '../lib/voiceRecorder';
 import { isUserAdmin } from '../lib/accountManager';
+import { MediaExtractProgressModal } from './MediaExtractProgressModal';
+import {
+  detectVideoOrAudioKind,
+  readMediaDuration,
+  extractVideoToAttachment,
+  extractAudioToAttachment,
+  MAX_VIDEO_DURATION_SECONDS,
+  MAX_AUDIO_DURATION_SECONDS,
+} from '../lib/mediaExtractor';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[], motionModel?: string) => void;
@@ -128,6 +137,13 @@ export function ChatInput({
   const [recordingText, setRecordingText] = useState('');
   const [attachedMediaList, setAttachedMediaList] = useState<MediaAttachment[]>([]);
   const [isProcessingMedia, setIsProcessingMedia] = useState(false);
+  const [extractProgress, setExtractProgress] = useState<{
+    isOpen: boolean;
+    progress: number;
+    status: string;
+    subStatus?: string;
+    fileName?: string;
+  }>({ isOpen: false, progress: 0, status: '' });
   const [errorModal, setErrorModal] = useState<CustomErrorModal | null>(null);
   const [domainConfirmTarget, setDomainConfirmTarget] = useState<DetectedDomain | null>(null);
   const [actionToast, setActionToast] = useState<string | null>(null);
@@ -438,17 +454,67 @@ export function ChatInput({
         const lowerName = file.name.toLowerCase();
         const fileId = `media-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-        // Cek eksplisit jika pengguna mencoba mengunggah MP4, MP3, atau file audio/video lainnya
-        const isVideoAttempt = file.type.startsWith('video/') || ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.3gp'].some(ext => lowerName.endsWith(ext));
-        const isAudioAttempt = file.type.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.aac', '.flac', '.wma', '.opus', '.aiff'].some(ext => lowerName.endsWith(ext));
+        // 0. Cek apakah berkas adalah Video (maks 2 menit / 120s) atau Audio (maks 3 menit / 180s)
+        const avKind = detectVideoOrAudioKind(file);
+        if (avKind === 'video' || avKind === 'audio') {
+          try {
+            const duration = await readMediaDuration(file, avKind);
+            const maxSecs = avKind === 'video' ? MAX_VIDEO_DURATION_SECONDS : MAX_AUDIO_DURATION_SECONDS;
+            const maxMins = avKind === 'video' ? 2 : 3;
 
-        if (isVideoAttempt || isAudioAttempt) {
-          setErrorModal({
-            isOpen: true,
-            title: "Format Video/Audio Ditolak",
-            message: `File "${file.name}" tidak diizinkan. Sesuai kebijakan format, file audio (MP3, dll) dan video (MP4, dll) ditolak.\n\nFormat yang diizinkan:\n• Gambar: WebP, PNG, GIF, JPG\n• Dokumen & Teks: PDF (ekstraksi slide/teks), TXT, MD\n• Data: JSON, YAML, YML\n• Kode Program: Semua file kode pemrograman`,
-            fileName: file.name
-          });
+            if (duration > maxSecs) {
+              setErrorModal({
+                isOpen: true,
+                title: avKind === 'video' ? 'Durasi Video Melebihi Batas' : 'Durasi Audio Melebihi Batas',
+                message: `Berkas ${avKind} "${file.name}" memiliki durasi lebih dari batas maksimal ${maxMins} menit (${maxSecs} detik). Silakan pilih berkas yang lebih singkat.`,
+                fileName: file.name,
+                durationInfo: `Durasi terdeteksi: ${duration.toFixed(1)} detik`,
+                maxLimitInfo: `Batas maksimal ${avKind}: ${maxMins} menit (${maxSecs} detik)`,
+              });
+              continue;
+            }
+
+            // Langsung jalankan ekstraksi dengan popup roket terbang & bar progres di atas latar abu-abu
+            setExtractProgress({
+              isOpen: true,
+              progress: 3,
+              status: avKind === 'video' ? 'Memulai ekstraksi video...' : 'Memulai pemrosesan audio...',
+              subStatus: 'Menyiapkan proses di perangkat',
+              fileName: file.name,
+            });
+
+            const extractedAttachment =
+              avKind === 'video'
+                ? await extractVideoToAttachment(file, duration, (pct, st, sub) => {
+                    setExtractProgress({
+                      isOpen: true,
+                      progress: pct,
+                      status: st,
+                      subStatus: sub,
+                      fileName: file.name,
+                    });
+                  })
+                : await extractAudioToAttachment(file, duration, (pct, st, sub) => {
+                    setExtractProgress({
+                      isOpen: true,
+                      progress: pct,
+                      status: st,
+                      subStatus: sub,
+                      fileName: file.name,
+                    });
+                  });
+
+            newAttachments.push(extractedAttachment);
+          } catch (avErr: any) {
+            setErrorModal({
+              isOpen: true,
+              title: avKind === 'video' ? 'Gagal Memproses Video' : 'Gagal Memproses Audio',
+              message: avErr?.message || `Berkas "${file.name}" tidak dapat diproses.`,
+              fileName: file.name,
+            });
+          } finally {
+            setExtractProgress({ isOpen: false, progress: 0, status: '' });
+          }
           continue;
         }
 
@@ -456,12 +522,12 @@ export function ChatInput({
         const isPdf = isPdfFile(file, lowerName);
         const isCodeOrText = isCodeOrTextFile(file, lowerName);
 
-        // Jika bukan gambar, bukan PDF, dan bukan file kode/teks yang diizinkan -> TOLAK
+        // Jika bukan gambar, bukan PDF, bukan video/audio, dan bukan file kode/teks yang diizinkan -> TOLAK
         if (!isImage && !isPdf && !isCodeOrText) {
           setErrorModal({
             isOpen: true,
             title: "Format File Tidak Didukung",
-            message: `File "${file.name}" ditolak. Format yang diizinkan:\n• Gambar: WebP, PNG, GIF, JPG\n• Dokumen: PDF (hingga 20 slide), TXT, MD\n• Data: JSON, YAML, YML\n• Kode: Semua format file kode program (.js, .ts, .py, .java, .cpp, .html, .css, .sql, dll)\n\nFile lain termasuk video (MP4) dan audio (MP3) ditolak.`,
+            message: `File "${file.name}" ditolak. Format yang diizinkan:\n• Video (maks. 2 menit) & Audio (maks. 3 menit)\n• Gambar: WebP, PNG, GIF, JPG\n• Dokumen: PDF (hingga 20 slide), TXT, MD\n• Data: JSON, YAML, YML\n• Kode: Semua format file kode program (.js, .ts, .py, .java, .cpp, .html, .css, .sql, dll)`,
             fileName: file.name
           });
           continue;
@@ -706,9 +772,11 @@ export function ChatInput({
       }
 
       if (newAttachments.length > 0) {
-        setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 10));
-        // Otomatis aktifkan mode Vision jika ada gambar terunggah
-        const hasVisionMedia = newAttachments.some(a => a.type === 'image');
+        setAttachedMediaList(prev => [...prev, ...newAttachments].slice(0, 20));
+        // Otomatis aktifkan mode Vision jika ada gambar atau frame video hasil ekstraksi
+        const hasVisionMedia = newAttachments.some(
+          a => a.type === 'image' || (a.type === 'video' && Boolean(a.extractedFrames && a.extractedFrames.length > 0))
+        );
         if (hasVisionMedia && onAutoEnableVision) {
           onAutoEnableVision();
         }
@@ -1099,14 +1167,23 @@ export function ChatInput({
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4 sm:px-8 pb-4 sm:pb-6 pt-1 select-none relative">
-      {/* Hidden file input untuk format yang diizinkan (WebP, PNG, GIF, PDF, TXT, MD, JSON, YML, YAML, Kode Program) */}
+      {/* Hidden file input untuk format yang diizinkan (Video, Audio, Gambar, PDF, TXT, MD, JSON, YML, YAML, Kode Program) */}
       <input 
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".webp,.png,.gif,.jpg,.jpeg,image/webp,image/png,image/gif,image/jpeg,.pdf,application/pdf,.txt,.md,.markdown,.json,.yml,.yaml,.js,.jsx,.ts,.tsx,.py,.ipynb,.html,.css,.scss,.java,.kt,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sh,.bash,.zsh,.sql,.vue,.svelte,.xml,.toml,.ini,.env,.graphql,.proto,.sol,.dart,.swift,.lua,.r"
+        accept="video/*,audio/*,.mp4,.mov,.webm,.mkv,.avi,.3gp,.m4v,.mp3,.wav,.m4a,.ogg,.aac,.flac,.opus,.webp,.png,.gif,.jpg,.jpeg,image/webp,image/png,image/gif,image/jpeg,.pdf,application/pdf,.txt,.md,.markdown,.json,.yml,.yaml,.js,.jsx,.ts,.tsx,.py,.ipynb,.html,.css,.scss,.java,.kt,.c,.cpp,.h,.hpp,.cs,.go,.rs,.php,.rb,.sh,.bash,.zsh,.sql,.vue,.svelte,.xml,.toml,.ini,.env,.graphql,.proto,.sol,.dart,.swift,.lua,.r"
         onChange={handleFileChange}
         className="hidden"
+      />
+
+      {/* POPUP ROKET TERBANG & BAR PROGRES SAAT EKSTRAKSI VIDEO/AUDIO */}
+      <MediaExtractProgressModal
+        isOpen={extractProgress.isOpen}
+        progress={extractProgress.progress}
+        status={extractProgress.status}
+        subStatus={extractProgress.subStatus}
+        fileName={extractProgress.fileName}
       />
 
       {/* POPUP PERINGATAN KUSTOM YANG ELEGAN (ANTI-BROWSER ALERT) */}
@@ -1347,7 +1424,7 @@ export function ChatInput({
                         "text-[10px] truncate",
                         isBlueRilis ? "text-slate-400" : "text-slate-500"
                       )}>
-                        PDF (hingga 20 slide), WebP, PNG, GIF, TXT, MD, JSON, YAML, Kode
+                        Video (maks. 2m), Audio (maks. 3m), PDF, Gambar, Kode
                       </div>
                     </div>
                   </div>
@@ -1586,6 +1663,10 @@ export function ChatInput({
                         <span className="text-[10px] text-slate-500 truncate">
                           {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
                             ? `PDF • ${item.pageCount} Halaman`
+                            : isVid
+                            ? `Video • ${item.duration ? `${Math.round(item.duration)} detik` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`}`
+                            : isAud
+                            ? `Audio • ${item.duration ? `${Math.round(item.duration)} detik` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`}`
                             : isDoc && item.textContent
                             ? `${item.name.split('.').pop()?.toUpperCase() || 'Dokumen'} • ${item.textContent.length.toLocaleString()} k`
                             : isImg

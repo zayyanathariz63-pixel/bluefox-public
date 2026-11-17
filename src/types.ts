@@ -1,3 +1,11 @@
+export interface ExtractedFrameData {
+  detik: number;
+  timestamp: string;
+  nama_file_gambar: string;
+  ukuran_kb: number;
+  dataUrl: string;
+}
+
 export interface MediaAttachment {
   id?: string;
   url: string;
@@ -7,6 +15,10 @@ export interface MediaAttachment {
   duration?: number;
   textContent?: string;
   pageCount?: number;
+  extractedFrames?: ExtractedFrameData[];
+  audioPayloadJson?: Record<string, any>;
+  imagesPayloadJson?: Record<string, any>;
+  promptPayloadJson?: Record<string, any>;
 }
 
 export interface SearchSource {

@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Media Extractor to ZIP - Video &amp; Audio Processor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    body {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tabular-nums {
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen antialiased selection:bg-blue-100 selection:text-blue-900">
+
+  <!-- Hidden processing elements -->
+  <video id="hiddenVideo" class="hidden" muted playsinline preload="auto"></video>
+  <audio id="hiddenAudio" class="hidden" preload="auto"></audio>
+  <canvas id="workCanvas" class="hidden"></canvas>
+
+  <div class="min-h-screen flex flex-col">
+    <!-- Top Header -->
+    <header class="sticky top-0 z-20 bg-white/90 backdrop-blur-md border-b border-slate-200">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 8v13H3V8" />
+              <path d="M1 3h22v5H1z" />
+              <path d="M10 12h4" />
+            </svg>
+          </div>
+          <h1 class="text-sm sm:text-base font-semibold tracking-tight text-slate-900 truncate whitespace-nowrap">
+            Media Extractor ZIP
+          </h1>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs text-slate-500 font-mono tabular-nums whitespace-nowrap shrink-0">
+          <span>Video max 120d</span>
+          <span aria-hidden="true">/</span>
+          <span>Audio max 180d</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- Left Column: Upload, Validation & Processing Controls -->
+        <section class="lg:col-span-7 flex flex-col gap-5">
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+            <div class="mb-5">
+              <h2 class="text-lg sm:text-xl font-semibold tracking-tight text-slate-900">
+                Ekstraksi Frame, Audio, dan Timestamps
+              </h2>
+              <p class="text-sm text-slate-600 mt-1 leading-relaxed">
+                Unggah berkas video (maksimal 2 menit) atau audio (maksimal 3 menit). Sistem memproses sepenuhnya di browser menjadi paket .zip berisi gambar JPG 1 FPS (100-300 KB), jalur audio, dan berkas timestamps.json.
+              </p>
+            </div>
+
+            <!-- Upload Dropzone -->
+            <label
+              id="dropZone"
+              for="mediaInput"
+              class="block border-2 border-dashed border-slate-300 hover:border-blue-600 hover:bg-blue-50/40 rounded-xl p-6 sm:p-8 text-center cursor-pointer transition-colors"
+            >
+              <input
+                id="mediaInput"
+                type="file"
+                accept="video/*,audio/*"
+                class="sr-only"
+              />
+              <div class="w-12 h-12 rounded-xl bg-slate-100 text-slate-700 mx-auto mb-3 flex items-center justify-center">
+                <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+              </div>
+              <span class="block text-sm font-semibold text-slate-900">
+                Pilih Berkas Video atau Audio
+              </span>
+              <span class="block text-xs text-slate-500 mt-1">
+                Mendukung MP4, WebM, MOV, MP3, WAV, M4A, OGG
+              </span>
+              <span class="inline-flex items-center justify-center mt-4 min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs sm:text-sm font-medium hover:bg-slate-800 transition-colors">
+                Telusuri Perangkat
+              </span>
+            </label>
+
+            <!-- Error / Warning Alert -->
+            <div
+              id="errorBox"
+              role="alert"
+              class="hidden mt-4 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-sm"
+            >
+              <div class="flex items-start gap-3">
+                <svg class="w-5 h-5 text-rose-600 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <div class="min-w-0 flex-1">
+                  <p id="errorTitle" class="font-semibold text-rose-950">Validasi Gagal</p>
+                  <p id="errorMessage" class="text-xs sm:text-sm text-rose-800 mt-0.5 leading-relaxed"></p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Selected File Summary -->
+            <div id="fileSummary" class="hidden mt-5 pt-5 border-t border-slate-100">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-slate-500 font-medium">Berkas Terpilih</p>
+                  <p id="fileNameText" class="text-sm font-semibold text-slate-900 truncate mt-0.5">-</p>
+                  <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 font-mono tabular-nums mt-1">
+                    <span id="fileTypeText">-</span>
+                    <span aria-hidden="true">·</span>
+                    <span id="fileSizeText">-</span>
+                    <span aria-hidden="true">·</span>
+                    <span id="fileDurationText">-</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                  <button
+                    id="resetBtn"
+                    type="button"
+                    class="min-h-[44px] px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs sm:text-sm font-medium hover:bg-slate-50 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    Ganti Berkas
+                  </button>
+                  <button
+                    id="startBtn"
+                    type="button"
+                    class="min-h-[44px] px-5 py-2 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    Mulai Ekstraksi
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progressSection" class="hidden mt-5 pt-5 border-t border-slate-100">
+              <div class="flex items-center justify-between gap-3 mb-2">
+                <span id="statusText" class="text-xs sm:text-sm font-medium text-slate-800 truncate">
+                  Menyiapkan proses...
+                </span>
+                <span id="percentText" class="text-xs sm:text-sm font-mono font-semibold text-blue-600 tabular-nums shrink-0">
+                  0%
+                </span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  id="progressBar"
+                  class="h-full bg-blue-600 transition-all duration-150 ease-out"
+                  style="width: 0%"
+                ></div>
+              </div>
+              <p id="subStatusText" class="text-xs text-slate-500 font-mono tabular-nums mt-2">
+                Menunggu inisialisasi media...
+              </p>
+            </div>
+
+            <!-- Download ZIP Result Box -->
+            <div id="resultSection" class="hidden mt-5 pt-5 border-t border-slate-100">
+              <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 sm:p-5">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div class="min-w-0">
+                    <p class="text-xs font-medium text-emerald-700">Paket ZIP Siap Diunduh</p>
+                    <p id="zipFileNameText" class="text-sm font-semibold text-slate-900 truncate mt-0.5">-</p>
+                    <p id="zipStatsText" class="text-xs text-slate-600 font-mono tabular-nums mt-1">-</p>
+                  </div>
+                  <a
+                    id="downloadZipBtn"
+                    href="#"
+                    download="extracted_media.zip"
+                    class="min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors shrink-0 whitespace-nowrap"
+                  >
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="7 10 12 15 17 10" />
+                      <line x1="12" y1="15" x2="12" y2="3" />
+                    </svg>
+                    <span>Unduh File .zip</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Technical Spec Table -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">Spesifikasi Pemrosesan</h3>
+            <dl class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+              <div>
+                <dt class="text-slate-500">Batas Video</dt>
+                <dd class="font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">120 detik</dd>
+              </div>
+              <div>
+                <dt class="text-slate-500">Batas Audio</dt>
+                <dd class="font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">180 detik</dd>
+              </div>
+              <div>
+                <dt class="text-slate-500">Laju Frame</dt>
+                <dd class="font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">1 FPS (JPG)</dd>
+              </div>
+              <div>
+                <dt class="text-slate-500">Target Ukuran</dt>
+                <dd class="font-mono font-semibold text-slate-900 mt-0.5 tabular-nums">100 - 300 KB</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+
+        <!-- Right Column: Live Frame Preview & Timestamps Inspection -->
+        <aside class="lg:col-span-5 flex flex-col gap-5">
+          <!-- Frame Preview Card -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="text-sm font-semibold text-slate-900">Pratinjau Frame Terakhir</h3>
+              <span id="frameMetricBadge" class="text-xs font-mono text-slate-500 tabular-nums">Belum ada frame</span>
+            </div>
+
+            <div class="aspect-video w-full rounded-xl bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center">
+              <img id="previewImg" alt="Pratinjau frame hasil ekstraksi" class="hidden w-full h-full object-contain bg-slate-950" />
+              <div id="previewEmpty" class="text-center px-4">
+                <p class="text-xs text-slate-500">
+                  Pratinjau frame JPG muncul di sini saat ekstraksi video berjalan.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline & timestamps.json Preview -->
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 sm:p-6">
+            <div class="flex items-center justify-between gap-2 mb-3">
+              <h3 class="text-sm font-semibold text-slate-900">Ringkasan timestamps.json</h3>
+              <span id="timelineCountText" class="text-xs font-mono text-slate-500 tabular-nums">0 entri</span>
+            </div>
+
+            <div id="timelineContainer" class="max-h-72 overflow-y-auto border border-slate-200 rounded-xl bg-slate-50 p-3">
+              <p id="timelinePlaceholder" class="text-xs text-slate-500 py-6 text-center">
+                Data kronologi detik per detik akan tercatat otomatis setelah proses dimulai.
+              </p>
+              <table id="timelineTable" class="hidden w-full text-left text-xs font-mono tabular-nums">
+                <thead>
+                  <tr class="text-slate-500 border-b border-slate-200">
+                    <th class="pb-2 pr-2 font-medium">Detik</th>
+                    <th class="pb-2 pr-2 font-medium">Gambar</th>
+                    <th class="pb-2 font-medium text-right">Audio</th>
+                  </tr>
+                </thead>
+                <tbody id="timelineBody" class="divide-y divide-slate-200/70 text-slate-800"></tbody>
+              </table>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var MAX_VIDEO_SECONDS = 120;
+      var MAX_AUDIO_SECONDS = 180;
+      var MIN_JPG_BYTES = 100 * 1024;
+      var MAX_JPG_BYTES = 300 * 1024;
+      var VIDEO_EXTS = ['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi', 'ogv', '3gp'];
+      var AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus', 'weba'];
+
+      var mediaInput = document.getElementById('mediaInput');
+      var dropZone = document.getElementById('dropZone');
+      var hiddenVideo = document.getElementById('hiddenVideo');
+      var hiddenAudio = document.getElementById('hiddenAudio');
+      var workCanvas = document.getElementById('workCanvas');
+      var ctx = workCanvas.getContext('2d', { willReadFrequently: false });
+
+      var errorBox = document.getElementById('errorBox');
+      var errorTitle = document.getElementById('errorTitle');
+      var errorMessage = document.getElementById('errorMessage');
+
+      var fileSummary = document.getElementById('fileSummary');
+      var fileNameText = document.getElementById('fileNameText');
+      var fileTypeText = document.getElementById('fileTypeText');
+      var fileSizeText = document.getElementById('fileSizeText');
+      var fileDurationText = document.getElementById('fileDurationText');
+
+      var resetBtn = document.getElementById('resetBtn');
+      var startBtn = document.getElementById('startBtn');
+
+      var progressSection = document.getElementById('progressSection');
+      var statusText = document.getElementById('statusText');
+      var percentText = document.getElementById('percentText');
+      var progressBar = document.getElementById('progressBar');
+      var subStatusText = document.getElementById('subStatusText');
+
+      var resultSection = document.getElementById('resultSection');
+      var zipFileNameText = document.getElementById('zipFileNameText');
+      var zipStatsText = document.getElementById('zipStatsText');
+      var downloadZipBtn = document.getElementById('downloadZipBtn');
+
+      var previewImg = document.getElementById('previewImg');
+      var previewEmpty = document.getElementById('previewEmpty');
+      var frameMetricBadge = document.getElementById('frameMetricBadge');
+
+      var timelineCountText = document.getElementById('timelineCountText');
+      var timelinePlaceholder = document.getElementById('timelinePlaceholder');
+      var timelineTable = document.getElementById('timelineTable');
+      var timelineBody = document.getElementById('timelineBody');
+
+      var currentFile = null;
+      var currentMediaKind = null;
+      var currentDuration = 0;
+      var activeMediaObjectUrl = null;
+      var activeZipObjectUrl = null;
+      var activePreviewObjectUrl = null;
+      var isProcessing = false;
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+      }
+
+      function formatClock(totalSeconds) {
+        var s = Math.max(0, Math.floor(totalSeconds));
+        var mins = Math.floor(s / 60);
+        var secs = s % 60;
+        return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+      }
+
+      function padFrameIndex(num) {
+        return String(num).padStart(4, '0');
+      }
+
+      function sanitizeBaseName(name) {
+        var stripped = name.replace(/\.[^/.]+$/, '');
+        var safe = stripped.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+        return safe || 'media_bundle';
+      }
+
+      function detectMediaKind(file) {
+        if (file.type) {
+          if (file.type.indexOf('video/') === 0) return 'video';
+          if (file.type.indexOf('audio/') === 0) return 'audio';
+        }
+        var ext = (file.name.split('.').pop() || '').toLowerCase();
+        if (VIDEO_EXTS.indexOf(ext) !== -1) return 'video';
+        if (AUDIO_EXTS.indexOf(ext) !== -1) return 'audio';
+        return null;
+      }
+
+      function showError(title, msg) {
+        errorTitle.textContent = title;
+        errorMessage.textContent = msg;
+        errorBox.classList.remove('hidden');
+      }
+
+      function hideError() {
+        errorBox.classList.add('hidden');
+      }
+
+      function revokeObjectUrls() {
+        if (activeMediaObjectUrl) {
+          URL.revokeObjectURL(activeMediaObjectUrl);
+          activeMediaObjectUrl = null;
+        }
+        if (activeZipObjectUrl) {
+          URL.revokeObjectURL(activeZipObjectUrl);
+          activeZipObjectUrl = null;
+        }
+        if (activePreviewObjectUrl) {
+          URL.revokeObjectURL(activePreviewObjectUrl);
+          activePreviewObjectUrl = null;
+        }
+      }
+
+      function updateProgress(percent, status, subStatus) {
+        var clamped = Math.max(0, Math.min(100, Math.round(percent)));
+        progressBar.style.width = clamped + '%';
+        percentText.textContent = clamped + '%';
+        if (status) statusText.textContent = status;
+        if (subStatus !== undefined) subStatusText.textContent = subStatus;
+      }
+
+      function resetUI(clearFile) {
+        hideError();
+        progressSection.classList.add('hidden');
+        resultSection.classList.add('hidden');
+        updateProgress(0, 'Menyiapkan proses...', '');
+
+        previewImg.classList.add('hidden');
+        previewImg.removeAttribute('src');
+        previewEmpty.classList.remove('hidden');
+        frameMetricBadge.textContent = 'Belum ada frame';
+
+        timelineBody.innerHTML = '';
+        timelineTable.classList.add('hidden');
+        timelinePlaceholder.classList.remove('hidden');
+        timelineCountText.textContent = '0 entri';
+
+        if (clearFile) {
+          revokeObjectUrls();
+          currentFile = null;
+          currentMediaKind = null;
+          currentDuration = 0;
+          mediaInput.value = '';
+          fileSummary.classList.add('hidden');
+          startBtn.disabled = false;
+        }
+      }
+
+      function loadMediaDuration(file, kind) {
+        return new Promise(function (resolve, reject) {
+          var objUrl = URL.createObjectURL(file);
+          activeMediaObjectUrl = objUrl;
+          var el = kind === 'video' ? hiddenVideo : hiddenAudio;
+
+          var cleaned = false;
+          var timer = setTimeout(function () {
+            if (!cleaned) {
+              cleaned = true;
+              cleanup();
+              reject(new Error('Waktu muat metadata media habis. Pastikan berkas tidak rusak.'));
+            }
+          }, 15000);
+
+          function cleanup() {
+            clearTimeout(timer);
+            el.removeEventListener('loadedmetadata', onLoaded);
+            el.removeEventListener('error', onErr);
+          }
+
+          function onLoaded() {
+            if (cleaned) return;
+            cleaned = true;
+            cleanup();
+            var dur = el.duration;
+            if (!isFinite(dur) || dur <= 0) {
+              reject(new Error('Durasi media tidak terbaca atau bernilai nol.'));
+              return;
+            }
+            resolve({ duration: dur, element: el, objectUrl: objUrl });
+          }
+
+          function onErr() {
+            if (cleaned) return;
+            cleaned = true;
+            cleanup();
+            reject(new Error('Format media tidak didukung oleh browser ini.'));
+          }
+
+          el.addEventListener('loadedmetadata', onLoaded);
+          el.addEventListener('error', onErr);
+          el.src = objUrl;
+          el.load();
+        });
+      }
+
+      function seekVideoTo(videoEl, timeSec) {
+        return new Promise(function (resolve, reject) {
+          var settled = false;
+          var target = Math.max(0, timeSec);
+
+          var timeout = setTimeout(function () {
+            if (!settled) {
+              settled = true;
+              videoEl.removeEventListener('seeked', onSeeked);
+              resolve();
+            }
+          }, 3000);
+
+          function onSeeked() {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeout);
+            videoEl.removeEventListener('seeked', onSeeked);
+            requestAnimationFrame(function () {
+              resolve();
+            });
+          }
+
+          if (Math.abs(videoEl.currentTime - target) < 0.015 && videoEl.readyState >= 2) {
+            clearTimeout(timeout);
+            settled = true;
+            requestAnimationFrame(function () {
+              resolve();
+            });
+            return;
+          }
+
+          videoEl.addEventListener('seeked', onSeeked);
+          try {
+            videoEl.currentTime = target;
+          } catch (err) {
+            clearTimeout(timeout);
+            videoEl.removeEventListener('seeked', onSeeked);
+            reject(err);
+          }
+        });
+      }
+
+      function canvasToJpegBlob(canvas, quality) {
+        return new Promise(function (resolve, reject) {
+          canvas.toBlob(function (blob) {
+            if (!blob) {
+              reject(new Error('Gagal mengonversi frame canvas ke JPEG.'));
+              return;
+            }
+            resolve(blob);
+          }, 'image/jpeg', quality);
+        });
+      }
+
+      async function captureTargetSizedJpg(videoEl) {
+        var vw = videoEl.videoWidth || 1280;
+        var vh = videoEl.videoHeight || 720;
+
+        var dimensionCaps = [1280, 960, 720, 540];
+        var bestBlob = null;
+
+        for (var d = 0; d < dimensionCaps.length; d++) {
+          var maxDim = dimensionCaps[d];
+          var scale = Math.min(1, maxDim / Math.max(vw, vh));
+          var targetW = Math.max(2, Math.round(vw * scale));
+          var targetH = Math.max(2, Math.round(vh * scale));
+
+          workCanvas.width = targetW;
+          workCanvas.height = targetH;
+          ctx.drawImage(videoEl, 0, 0, targetW, targetH);
+
+          var quality = 0.80;
+          var blob = await canvasToJpegBlob(workCanvas, quality);
+
+          if (blob.size > MAX_JPG_BYTES) {
+            var lowQualities = [0.68, 0.56, 0.44, 0.34, 0.24];
+            for (var i = 0; i < lowQualities.length; i++) {
+              quality = lowQualities[i];
+              blob = await canvasToJpegBlob(workCanvas, quality);
+              if (blob.size <= MAX_JPG_BYTES) {
+                break;
+              }
+            }
+          } else if (blob.size < MIN_JPG_BYTES && d === 0) {
+            var highQualities = [0.90, 0.95, 0.98];
+            for (var j = 0; j < highQualities.length; j++) {
+              var candidate = await canvasToJpegBlob(workCanvas, highQualities[j]);
+              blob = candidate;
+              if (candidate.size >= MIN_JPG_BYTES && candidate.size <= MAX_JPG_BYTES) {
+                break;
+              }
+              if (candidate.size > MAX_JPG_BYTES) {
+                blob = await canvasToJpegBlob(workCanvas, highQualities[j] - 0.05);
+                break;
+              }
+            }
+          }
+
+          bestBlob = blob;
+          if (blob.size <= MAX_JPG_BYTES) {
+            break;
+          }
+        }
+
+        return bestBlob;
+      }
+
+      function computePerSecondAudioStats(audioBuffer, maxSec) {
+        var stats = [];
+        if (!audioBuffer) {
+          for (var s = 0; s <= maxSec; s++) {
+            stats.push({ status: 'tidak_ada_audio', rms: 0 });
+          }
+          return stats;
+        }
+
+        var sampleRate = audioBuffer.sampleRate;
+        var channelData = audioBuffer.getChannelData(0);
+        var totalSamples = channelData.length;
+
+        for (var sec = 0; sec <= maxSec; sec++) {
+          var startSample = Math.floor(sec * sampleRate);
+          var endSample = Math.min(totalSamples, Math.floor((sec + 1) * sampleRate));
+          if (startSample >= totalSamples || endSample <= startSample) {
+            stats.push({ status: 'hening', rms: 0 });
+            continue;
+          }
+
+          var sumSq = 0;
+          var step = Math.max(1, Math.floor((endSample - startSample) / 2000));
+          var count = 0;
+          for (var i = startSample; i < endSample; i += step) {
+            var val = channelData[i];
+            sumSq += val * val;
+            count++;
+          }
+          var rms = count > 0 ? Math.sqrt(sumSq / count) : 0;
+          var roundedRms = Math.round(rms * 10000) / 10000;
+          var statusLabel = rms >= 0.01 ? 'aktif' : 'hening';
+          stats.push({ status: statusLabel, rms: roundedRms });
+        }
+
+        return stats;
+      }
+
+      function encodeMonoWavFromAudioBuffer(audioBuffer, targetRate) {
+        var origRate = audioBuffer.sampleRate;
+        var outRate = Math.min(origRate, targetRate || 22050);
+        var numChannels = audioBuffer.numberOfChannels;
+        var origLength = audioBuffer.length;
+        var ratio = origRate / outRate;
+        var outLength = Math.max(1, Math.floor(origLength / ratio));
+
+        var channels = [];
+        for (var c = 0; c < numChannels; c++) {
+          channels.push(audioBuffer.getChannelData(c));
+        }
+
+        var buffer = new ArrayBuffer(44 + outLength * 2);
+        var view = new DataView(buffer);
+
+        function writeStr(offset, str) {
+          for (var k = 0; k < str.length; k++) {
+            view.setUint8(offset + k, str.charCodeAt(k));
+          }
+        }
+
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + outLength * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, outRate, true);
+        view.setUint32(28, outRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        view.setUint32(40, outLength * 2, true);
+
+        var offset = 44;
+        for (var i = 0; i < outLength; i++) {
+          var srcIdx = Math.min(origLength - 1, Math.floor(i * ratio));
+          var mixed = 0;
+          for (var ch = 0; ch < numChannels; ch++) {
+            mixed += channels[ch][srcIdx];
+          }
+          mixed = mixed / numChannels;
+          var clamped = Math.max(-1, Math.min(1, mixed));
+          view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF, true);
+          offset += 2;
+        }
+
+        return new Blob([buffer], { type: 'audio/wav' });
+      }
+
+      async function decodeMediaAudio(file) {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return null;
+        var audioCtx = null;
+        try {
+          audioCtx = new AudioCtx();
+          var arrBuf = await file.arrayBuffer();
+          var decoded = await audioCtx.decodeAudioData(arrBuf);
+          return decoded;
+        } catch (err) {
+          return null;
+        } finally {
+          if (audioCtx && typeof audioCtx.close === 'function') {
+            audioCtx.close().catch(function () {});
+          }
+        }
+      }
+
+      function appendTimelineRow(entry) {
+        timelinePlaceholder.classList.add('hidden');
+        timelineTable.classList.remove('hidden');
+
+        var tr = document.createElement('tr');
+        var tdSec = document.createElement('td');
+        tdSec.className = 'py-1.5 pr-2 whitespace-nowrap';
+        tdSec.textContent = entry.timestamp + ' (' + entry.detik + 's)';
+
+        var tdImg = document.createElement('td');
+        tdImg.className = 'py-1.5 pr-2 truncate max-w-[140px]';
+        if (entry.nama_file_gambar) {
+          tdImg.textContent = entry.nama_file_gambar.replace('images/', '') + ' (' + entry.ukuran_gambar_kb + ' KB)';
+        } else {
+          tdImg.textContent = 'Tanpa gambar';
+          tdImg.className += ' text-slate-400';
+        }
+
+        var tdAudio = document.createElement('td');
+        tdAudio.className = 'py-1.5 text-right whitespace-nowrap';
+        tdAudio.textContent = entry.status_audio_point;
+
+        tr.appendChild(tdSec);
+        tr.appendChild(tdImg);
+        tr.appendChild(tdAudio);
+        timelineBody.appendChild(tr);
+
+        timelineCountText.textContent = timelineBody.children.length + ' entri';
+      }
+
+      async function handleFileSelect(file) {
+        if (!file || isProcessing) return;
+        resetUI(true);
+
+        var kind = detectMediaKind(file);
+        if (!kind) {
+          showError('Format Tidak Didukung', 'Silakan pilih berkas video atau audio yang valid.');
+          return;
+        }
+
+        currentFile = file;
+        currentMediaKind = kind;
+        fileSummary.classList.remove('hidden');
+        fileNameText.textContent = file.name;
+        fileTypeText.textContent = kind === 'video' ? 'Video' : 'Audio';
+        fileSizeText.textContent = formatBytes(file.size);
+        fileDurationText.textContent = 'Memeriksa durasi...';
+        startBtn.disabled = true;
+
+        try {
+          var meta = await loadMediaDuration(file, kind);
+          currentDuration = meta.duration;
+          fileDurationText.textContent = meta.duration.toFixed(1) + ' detik';
+
+          var maxAllowed = kind === 'video' ? MAX_VIDEO_SECONDS : MAX_AUDIO_SECONDS;
+          if (meta.duration > maxAllowed) {
+            var limitLabel = kind === 'video' ? '2 menit (120 detik)' : '3 menit (180 detik)';
+            showError(
+              'Durasi Melebihi Batas Maksimal',
+              'Berkas berdurasi ' + meta.duration.toFixed(1) + ' detik. Batas maksimal untuk ' + kind + ' adalah ' + limitLabel + '. Proses dibatalkan.'
+            );
+            startBtn.disabled = true;
+            return;
+          }
+
+          startBtn.disabled = false;
+        } catch (err) {
+          fileDurationText.textContent = 'Gagal membaca durasi';
+          showError('Gagal Memuat Media', err.message || 'Berkas tidak dapat diproses oleh browser.');
+          startBtn.disabled = true;
+        }
+      }
+
+      async function startExtraction() {
+        if (!currentFile || !currentMediaKind || isProcessing) return;
+        if (typeof JSZip === 'undefined') {
+          showError('Pustaka Tidak Tersedia', 'JSZip gagal dimuat dari CDN. Periksa koneksi internet Anda lalu muat ulang halaman.');
+          return;
+        }
+
+        var maxAllowed = currentMediaKind === 'video' ? MAX_VIDEO_SECONDS : MAX_AUDIO_SECONDS;
+        if (currentDuration > maxAllowed) {
+          showError('Durasi Melebihi Batas', 'Proses dihentikan karena durasi melewati batas yang diizinkan.');
+          return;
+        }
+
+        isProcessing = true;
+        startBtn.disabled = true;
+        resetBtn.disabled = true;
+        hideError();
+        resultSection.classList.add('hidden');
+        progressSection.classList.remove('hidden');
+        timelineBody.innerHTML = '';
+        timelineTable.classList.add('hidden');
+        timelinePlaceholder.classList.remove('hidden');
+        timelineCountText.textContent = '0 entri';
+
+        try {
+          var zip = new JSZip();
+          var baseName = sanitizeBaseName(currentFile.name);
+          var maxSec = Math.floor(currentDuration);
+          var timeline = [];
+          var hasAudioTrack = false;
+          var audioZipPath = null;
+          var totalImageBytes = 0;
+          var totalFrames = 0;
+
+          updateProgress(5, 'Menganalisis jalur audio...', 'Memproses dekode audio di browser');
+          var decodedAudio = await decodeMediaAudio(currentFile);
+          var audioStats = computePerSecondAudioStats(decodedAudio, maxSec);
+
+          if (currentMediaKind === 'video') {
+            if (decodedAudio) {
+              hasAudioTrack = true;
+              updateProgress(12, 'Mengekstrak jalur audio ke WAV...', 'Menyimpan audio/audio_track.wav');
+              var wavBlob = encodeMonoWavFromAudioBuffer(decodedAudio, 22050);
+              audioZipPath = 'audio/audio_track.wav';
+              zip.file(audioZipPath, wavBlob);
+            }
+
+            var imagesFolder = zip.folder('images');
+            var totalSteps = maxSec + 1;
+
+            for (var sec = 0; sec <= maxSec; sec++) {
+              var safeSeek = Math.min(sec, Math.max(0, currentDuration - 0.04));
+              await seekVideoTo(hiddenVideo, safeSeek);
+
+              var jpgBlob = await captureTargetSizedJpg(hiddenVideo);
+              var frameFileName = 'frame_' + padFrameIndex(sec + 1) + '.jpg';
+              var frameRelPath = 'images/' + frameFileName;
+              var kbSize = Math.round((jpgBlob.size / 1024) * 10) / 10;
+
+              imagesFolder.file(frameFileName, jpgBlob);
+              totalImageBytes += jpgBlob.size;
+              totalFrames++;
+
+              if (activePreviewObjectUrl) {
+                URL.revokeObjectURL(activePreviewObjectUrl);
+              }
+              activePreviewObjectUrl = URL.createObjectURL(jpgBlob);
+              previewImg.src = activePreviewObjectUrl;
+              previewImg.classList.remove('hidden');
+              previewEmpty.classList.add('hidden');
+              frameMetricBadge.textContent = frameFileName + ' · ' + kbSize + ' KB';
+
+              var audioPoint = audioStats[sec] || { status: 'tidak_ada_audio', rms: 0 };
+              var entry = {
+                detik: sec,
+                timestamp: formatClock(sec),
+                nama_file_gambar: frameRelPath,
+                ukuran_gambar_kb: kbSize,
+                status_audio_point: audioPoint.status,
+                rms_level: audioPoint.rms
+              };
+              timeline.push(entry);
+              appendTimelineRow(entry);
+
+              var loopPct = 15 + ((sec + 1) / totalSteps) * 65;
+              updateProgress(
+                loopPct,
+                'Mengekstrak frame ' + (sec + 1) + ' dari ' + totalSteps + '...',
+                frameFileName + ' (' + kbSize + ' KB) · Audio: ' + audioPoint.status
+              );
+            }
+          } else {
+            hasAudioTrack = true;
+            var audioExt = (currentFile.name.split('.').pop() || 'audio').toLowerCase();
+            audioZipPath = 'audio/' + baseName + '.' + audioExt;
+            zip.file(audioZipPath, currentFile);
+
+            var audioSteps = maxSec + 1;
+            for (var aSec = 0; aSec <= maxSec; aSec++) {
+              var aPoint = audioStats[aSec] || { status: decodedAudio ? 'hening' : 'terlampir', rms: 0 };
+              var aEntry = {
+                detik: aSec,
+                timestamp: formatClock(aSec),
+                nama_file_gambar: null,
+                status_audio_point: aPoint.status,
+                rms_level: aPoint.rms
+              };
+              timeline.push(aEntry);
+              appendTimelineRow(aEntry);
+
+              var aPct = 20 + ((aSec + 1) / audioSteps) * 55;
+              updateProgress(
+                aPct,
+                'Mencatat timeline audio detik ke-' + aSec + '...',
+                'Status audio: ' + aPoint.status
+              );
+            }
+          }
+
+          var timestampsPayload = {
+            source_file: currentFile.name,
+            media_type: currentMediaKind,
+            duration_seconds: Math.round(currentDuration * 100) / 100,
+            fps: currentMediaKind === 'video' ? 1 : 0,
+            has_audio: hasAudioTrack,
+            audio_file: audioZipPath,
+            total_frames: totalFrames,
+            timeline: timeline
+          };
+
+          zip.file('timestamps.json', JSON.stringify(timestampsPayload, null, 2));
+
+          updateProgress(85, 'Mengemas berkas ke arsip .zip...', 'Mengompresi dengan JSZip');
+
+          var zipBlob = await zip.generateAsync(
+            {
+              type: 'blob',
+              compression: 'DEFLATE',
+              compressionOptions: { level: 6 }
+            },
+            function (metadata) {
+              var zipPct = 85 + (metadata.percent * 0.15);
+              updateProgress(zipPct, 'Mengemas arsip .zip...', 'Kompresi ' + Math.round(metadata.percent) + '%');
+            }
+          );
+
+          if (activeZipObjectUrl) {
+            URL.revokeObjectURL(activeZipObjectUrl);
+          }
+          activeZipObjectUrl = URL.createObjectURL(zipBlob);
+
+          var outputZipName = baseName + '_extracted.zip';
+          downloadZipBtn.href = activeZipObjectUrl;
+          downloadZipBtn.download = outputZipName;
+          zipFileNameText.textContent = outputZipName;
+
+          var avgKb = totalFrames > 0 ? Math.round((totalImageBytes / totalFrames / 1024) * 10) / 10 : 0;
+          var statsParts = [];
+          if (currentMediaKind === 'video') {
+            statsParts.push(totalFrames + ' frame JPG (rata-rata ' + avgKb + ' KB)');
+          }
+          statsParts.push(hasAudioTrack ? 'Audio tersimpan' : 'Tanpa jalur audio');
+          statsParts.push('Ukuran ZIP ' + formatBytes(zipBlob.size));
+          zipStatsText.textContent = statsParts.join(' · ');
+
+          updateProgress(100, 'Ekstraksi dan pengemasan selesai.', 'Berkas siap diunduh.');
+          resultSection.classList.remove('hidden');
+        } catch (err) {
+          showError('Terjadi Kesalahan Pemrosesan', err && err.message ? err.message : 'Gagal memproses berkas media.');
+          updateProgress(0, 'Proses terhenti karena kesalahan.', '');
+        } finally {
+          isProcessing = false;
+          startBtn.disabled = false;
+          resetBtn.disabled = false;
+        }
+      }
+
+      mediaInput.addEventListener('change', function (e) {
+        var file = e.target.files && e.target.files[0];
+        if (file) handleFileSelect(file);
+      });
+
+      dropZone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        dropZone.classList.add('border-blue-600', 'bg-blue-50/50');
+      });
+
+      dropZone.addEventListener('dragleave', function () {
+        dropZone.classList.remove('border-blue-600', 'bg-blue-50/50');
+      });
+
+      dropZone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        dropZone.classList.remove('border-blue-600', 'bg-blue-50/50');
+        var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) handleFileSelect(file);
+      });
+
+      startBtn.addEventListener('click', startExtraction);
+      resetBtn.addEventListener('click', function () {
+        if (!isProcessing) resetUI(true);
+      });
+
+      window.addEventListener('beforeunload', revokeObjectUrls);
+    })();
+  </script>
+</body>
+</html>

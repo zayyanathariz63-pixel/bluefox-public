@@ -369,8 +369,20 @@ export function ChatMessage({
                           <video
                             src={item.url}
                             controls
+                            onClick={(e) => e.stopPropagation()}
                             className="max-h-44 sm:max-h-52 w-full rounded-t-xl bg-black"
                           />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenMediaScreen && onOpenMediaScreen(item);
+                            }}
+                            className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/65 hover:bg-black/85 text-white transition-all backdrop-blur-xs shadow-sm cursor-pointer z-10"
+                            title={isId ? "Buka Layar Penuh (Video / Gambar)" : "Open Fullscreen (Video / Frames)"}
+                          >
+                            <Maximize2 size={13} />
+                          </button>
                         </div>
                       )}
 
@@ -381,8 +393,9 @@ export function ChatMessage({
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{item.name || 'Audio'}</p>
-                            <p className="text-[10px] text-slate-500">{item.duration ? `${Math.round(item.duration)}s` : 'Audio'}</p>
+                            <p className="text-[10px] text-slate-500">{item.duration ? `${Math.round(item.duration)} detik` : 'Audio'}</p>
                           </div>
+                          <Maximize2 size={13} className="text-slate-400 group-hover:text-blue-600 shrink-0" />
                         </div>
                       )}
 
@@ -409,6 +422,9 @@ export function ChatMessage({
 
                       <div className="text-[11px] text-slate-500 px-2.5 py-1 bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
                         <span className="truncate max-w-[150px] font-medium">{item.name || 'File'}</span>
+                        {isVid && (
+                          <span className="text-[10px] font-medium text-blue-600 shrink-0">Layar Penuh</span>
+                        )}
                       </div>
                     </div>
                   );

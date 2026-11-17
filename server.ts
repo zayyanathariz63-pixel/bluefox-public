@@ -584,6 +584,11 @@ Hindari jawaban klise atau template umum. Hadirkan perspektif baru yang inspirat
     res.sendFile(path.join(process.cwd(), 'public', 'llms.txt'));
   });
 
+  app.get(['/extractor', '/media-extractor'], (_req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.sendFile(path.join(process.cwd(), 'public', 'media-extractor.html'));
+  });
+
   // Serve static files from public directory (manifest, icons, service worker, robots, sitemap)
   const publicPath = path.join(process.cwd(), 'public');
   app.use(express.static(publicPath, {

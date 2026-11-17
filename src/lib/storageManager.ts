@@ -204,13 +204,17 @@ export function safeSaveSessionsToLocal(sessions: any[]): boolean {
               stripped.imageUrl = '';
             }
             if (stripped.media) {
-              if (Array.isArray(stripped.media)) {
-                stripped.media = stripped.media.map((m: any) => ({
-                  ...m,
+              const stripMediaItem = (m: any) => {
+                const { extractedFrames, audioPayloadJson, imagesPayloadJson, ...rest } = m;
+                return {
+                  ...rest,
                   url: m.url?.startsWith('data:') ? '' : m.url,
-                }));
-              } else if (stripped.media.url?.startsWith('data:')) {
-                stripped.media = { ...stripped.media, url: '' };
+                };
+              };
+              if (Array.isArray(stripped.media)) {
+                stripped.media = stripped.media.map(stripMediaItem);
+              } else {
+                stripped.media = stripMediaItem(stripped.media);
               }
             }
             return stripped;
