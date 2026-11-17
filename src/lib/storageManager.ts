@@ -209,6 +209,7 @@ export function safeSaveSessionsToLocal(sessions: any[]): boolean {
                   extractedFrames,
                   audioPayloadJson,
                   imagesPayloadJson,
+                  zipBlob,
                   zipBase64,
                   zipDataUrl,
                   ...rest

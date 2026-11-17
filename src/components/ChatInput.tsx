@@ -23,6 +23,12 @@ import {
   MAX_VIDEO_DURATION_SECONDS,
   MAX_AUDIO_DURATION_SECONDS,
 } from '../lib/mediaExtractor';
+import {
+  startMediaZipUpload,
+  clearMediaZipUploadRecord,
+  MEDIA_STORAGE_BUCKET,
+  MEDIA_UPLOAD_STATUS_EVENT,
+} from '../lib/mediaStorageUploader';
 
 interface ChatInputProps {
   onSend: (message: string, media?: MediaAttachment[], motionModel?: string) => void;
@@ -96,6 +102,30 @@ export function ChatInput({
     return () => {
       window.removeEventListener('tmpa_app_style_changed', handleStyleChange);
       window.removeEventListener('storage', handleStyleChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleUploadStatus = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      if (!detail?.attachmentId) return;
+      setAttachedMediaList((prev) =>
+        prev.map((item) =>
+          item.id === detail.attachmentId
+            ? {
+                ...item,
+                uploadStatus: detail.status,
+                storageBucket: detail.bucket_name,
+                storageFilePath: detail.file_path || item.storageFilePath,
+                uploadError: detail.error,
+              }
+            : item
+        )
+      );
+    };
+    window.addEventListener(MEDIA_UPLOAD_STATUS_EVENT, handleUploadStatus);
+    return () => {
+      window.removeEventListener(MEDIA_UPLOAD_STATUS_EVENT, handleUploadStatus);
     };
   }, []);
 
@@ -504,6 +534,14 @@ export function ChatInput({
                     });
                   });
 
+            if (extractedAttachment.id && extractedAttachment.zipBlob) {
+              startMediaZipUpload(
+                extractedAttachment.id,
+                extractedAttachment.zipBlob,
+                MEDIA_STORAGE_BUCKET
+              ).catch(() => {});
+            }
+
             newAttachments.push(extractedAttachment);
           } catch (avErr: any) {
             setErrorModal({
@@ -795,6 +833,10 @@ export function ChatInput({
   };
 
   const handleRemoveSingleMedia = (indexToRemove: number) => {
+    const target = attachedMediaList[indexToRemove];
+    if (target?.id) {
+      clearMediaZipUploadRecord(target.id);
+    }
     const updated = attachedMediaList.filter((_, idx) => idx !== indexToRemove);
     setAttachedMediaList(updated);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -805,6 +847,9 @@ export function ChatInput({
   };
 
   const handleClearAllMedia = () => {
+    attachedMediaList.forEach((m) => {
+      if (m.id) clearMediaZipUploadRecord(m.id);
+    });
     setAttachedMediaList([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
     // Matikan mode Vision otomatis saat semua foto ditutup
@@ -1660,13 +1705,39 @@ export function ChatInput({
                         <span className="text-xs text-slate-800 font-medium truncate">
                           {item.name}
                         </span>
-                        <span className="text-[10px] text-slate-500 truncate">
+                        <span
+                          className={cn(
+                            "text-[10px] truncate",
+                            item.uploadStatus === 'error'
+                              ? "text-rose-600 font-medium"
+                              : item.uploadStatus === 'uploaded'
+                              ? "text-emerald-600 font-medium"
+                              : "text-slate-500"
+                          )}
+                          title={item.uploadError || item.storageFilePath || undefined}
+                        >
                           {item.name.toLowerCase().endsWith('.pdf') && item.pageCount
                             ? `PDF • ${item.pageCount} Halaman`
                             : isVid
-                            ? `Video • ${item.duration ? `${Math.round(item.duration)} detik` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`}`
+                            ? `Video • ${item.duration ? `${Math.round(item.duration)}s` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`} • ${
+                                item.uploadStatus === 'uploading'
+                                  ? 'Mengunggah ZIP...'
+                                  : item.uploadStatus === 'uploaded'
+                                  ? 'Siap di bucket'
+                                  : item.uploadStatus === 'error'
+                                  ? 'Gagal unggah ZIP'
+                                  : 'Arsip ZIP'
+                              }`
                             : isAud
-                            ? `Audio • ${item.duration ? `${Math.round(item.duration)} detik` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`}`
+                            ? `Audio • ${item.duration ? `${Math.round(item.duration)}s` : `${(item.size ? (item.size / 1024).toFixed(0) : 0)} KB`} • ${
+                                item.uploadStatus === 'uploading'
+                                  ? 'Mengunggah ZIP...'
+                                  : item.uploadStatus === 'uploaded'
+                                  ? 'Siap di bucket'
+                                  : item.uploadStatus === 'error'
+                                  ? 'Gagal unggah ZIP'
+                                  : 'Arsip ZIP'
+                              }`
                             : isDoc && item.textContent
                             ? `${item.name.split('.').pop()?.toUpperCase() || 'Dokumen'} • ${item.textContent.length.toLocaleString()} k`
                             : isImg

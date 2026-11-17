@@ -93,7 +93,11 @@ import {
   consumeImageGenQuota, 
   generateBluefoxImage 
 } from './lib/imageGenerator';
-import { finalizeZipWithPrompt } from './lib/mediaExtractor';
+import {
+  waitForMediaZipUpload,
+  clearMediaZipUploadRecord,
+  MEDIA_STORAGE_BUCKET,
+} from './lib/mediaStorageUploader';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -599,6 +603,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [customInstruction, setCustomInstruction] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [mediaUploadWaitMessage, setMediaUploadWaitMessage] = useState<string | null>(null);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [sharedAccessMode, setSharedAccessMode] = useState<ShareMode | null>(null);
   const [showSplash, setShowSplash] = useState<boolean>(() => {
@@ -1843,6 +1848,7 @@ export default function App() {
     }
     setIsMotionLoading(false);
     setIsMotionFinalizing(false);
+    setMediaUploadWaitMessage(null);
     setIsLoading(false);
   };
 
@@ -2395,19 +2401,18 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const currentModelName = (selectedModel || 'agnes-3.0-flash').trim();
       const isBluefoxNative = true;
 
-      // Filter gambar nyata (WebP, PNG, GIF, JPG/JPEG) atau frame hasil ekstraksi video untuk vision
+      // Filter gambar nyata (WebP, PNG, GIF, JPG/JPEG) untuk vision
       const imageAttachments = mediaList.filter(m => 
         m.type === 'image' || 
         (m.url && m.url.startsWith('data:image/'))
       );
-      const mediaBundles = mediaList.filter(m => m.type === 'video' || m.type === 'audio' || m.audioPayloadJson || m.imagesPayloadJson);
-      const firstVideoFrameUrl = mediaBundles
-        .find(m => m.extractedFrames && m.extractedFrames.length > 0)
-        ?.extractedFrames?.[0]?.dataUrl || null;
+      const mediaBundles = mediaList.filter(
+        m => m.type === 'video' || m.type === 'audio' || m.zipBlob || m.storageFilePath || m.audioPayloadJson || m.imagesPayloadJson
+      );
 
       const onlyImageUrl = imageAttachments.length > 0
         ? imageAttachments[0].url
-        : (imageUrl || firstVideoFrameUrl || null);
+        : (imageUrl || null);
       const hasRealImage = Boolean(onlyImageUrl);
 
       // KEBUTUHAN 3: Analisis apa yang dikirim pengguna
@@ -2645,59 +2650,75 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
-      // Siapkan 3 file JSON (audio.json, gambar.json, prompt_user.json) & arsip JSZip jika ada lampiran video atau audio
+      // Tunggu upload arsip JSZip ke Supabase Storage (bucket temp-media) jika masih berlangsung
       const primaryMediaBundle = mediaBundles[0] || null;
-      let audioJsonFile: Record<string, any> | null = null;
-      let imagesJsonFile: Record<string, any> | null = null;
-      let promptJsonFile: Record<string, any> | null = null;
-      let finalizedZip: { zipBase64: string; zipDataUrl: string; zipSize: number } | null = null;
+      let storageUploadResult: { bucket_name: string; file_path: string; size: number } | null = null;
+      let promptForMedia = '';
 
       if (primaryMediaBundle) {
-        const promptForMedia = effectiveAiPrompt.trim() || (
+        promptForMedia = effectiveAiPrompt.trim() || (
           primaryMediaBundle.type === 'video'
-            ? 'Tolong jelaskan dan analisis video beserta audio dan frame gambarnya.'
-            : 'Tolong jelaskan dan analisis berkas audio ini.'
+            ? 'Tolong jelaskan dan analisis video beserta audio dan frame gambar di dalam arsip ZIP ini.'
+            : 'Tolong jelaskan dan analisis berkas audio di dalam arsip ZIP ini.'
         );
 
-        audioJsonFile = primaryMediaBundle.audioPayloadJson || {
-          file_name: 'audio.json',
-          source_file: primaryMediaBundle.name,
-          media_type: primaryMediaBundle.type,
-          has_audio: primaryMediaBundle.type === 'audio',
-          duration_seconds: primaryMediaBundle.duration || 0,
-          timeline_audio: [],
-        };
+        setMediaUploadWaitMessage(
+          lang === 'id'
+            ? 'Menunggu proses unggah file ZIP ke bucket Supabase Storage selesai...'
+            : 'Waiting for media ZIP upload to Supabase Storage bucket to finish...'
+        );
 
-        imagesJsonFile = primaryMediaBundle.imagesPayloadJson || {
-          file_name: 'gambar.json',
-          source_file: primaryMediaBundle.name,
-          media_type: primaryMediaBundle.type,
-          fps: primaryMediaBundle.type === 'video' ? 1 : 0,
-          total_frames: primaryMediaBundle.extractedFrames?.length || 0,
-          frames: (primaryMediaBundle.extractedFrames || []).map((f) => ({
-            detik: f.detik,
-            timestamp: f.timestamp,
-            nama_file_gambar: `images/${f.nama_file_gambar}`,
-            ukuran_kb: f.ukuran_kb,
-          })),
-        };
-
-        promptJsonFile = {
-          ...(primaryMediaBundle.promptPayloadJson || {}),
-          file_name: 'prompt_user.json',
-          source_file: primaryMediaBundle.name,
-          media_type: primaryMediaBundle.type,
-          duration_seconds: primaryMediaBundle.duration || 0,
-          has_audio: Boolean(audioJsonFile?.has_audio),
-          total_frames: primaryMediaBundle.extractedFrames?.length || 0,
-          prompt_user: promptForMedia,
-          session_id: effectiveConvId,
-          sent_at: new Date().toISOString(),
-        };
-
-        if (primaryMediaBundle.zipBase64) {
-          finalizedZip = await finalizeZipWithPrompt(primaryMediaBundle, promptJsonFile);
+        try {
+          if (
+            primaryMediaBundle.storageBucket &&
+            primaryMediaBundle.storageFilePath &&
+            primaryMediaBundle.uploadStatus === 'uploaded'
+          ) {
+            storageUploadResult = {
+              bucket_name: primaryMediaBundle.storageBucket,
+              file_path: primaryMediaBundle.storageFilePath,
+              size: primaryMediaBundle.zipSize || 0,
+            };
+          } else {
+            const uploaded = await waitForMediaZipUpload(
+              primaryMediaBundle.id,
+              primaryMediaBundle.zipBlob,
+              MEDIA_STORAGE_BUCKET
+            );
+            storageUploadResult = {
+              bucket_name: uploaded.bucket_name,
+              file_path: uploaded.file_path,
+              size: uploaded.size,
+            };
+          }
+        } catch (uploadErr: any) {
+          setMediaUploadWaitMessage(null);
+          const rawUploadErr = uploadErr?.message || 'Gagal mengunggah file ZIP ke Supabase Storage.';
+          throw new Error([
+            '### Gagal Mengunggah Arsip Media ke Supabase Storage',
+            '',
+            `Arsip ZIP media tidak berhasil diunggah ke bucket \`${MEDIA_STORAGE_BUCKET}\` sebelum memanggil Edge Function.`,
+            '',
+            '| Parameter | Detail Keterangan |',
+            '| :--- | :--- |',
+            `| **Bucket** | \`${MEDIA_STORAGE_BUCKET}\` |`,
+            `| **Berkas** | \`${primaryMediaBundle.name}\` |`,
+            `| **Detail Error** | \`${rawUploadErr}\` |`,
+            '',
+            '> **Saran Solusi:**',
+            `> Pastikan bucket \`${MEDIA_STORAGE_BUCKET}\` tersedia dan memiliki izin unggah di Supabase Storage, lalu kirim ulang pesan Anda.`,
+          ].join('\n'));
+        } finally {
+          setMediaUploadWaitMessage(null);
         }
+
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new DOMException('Request aborted', 'AbortError');
+        }
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        timeoutId = setTimeout(() => abortControllerRef.current?.abort(), isMotionReq ? 600000 : 80000);
       }
 
       // Ekstrak teks dari lampiran file multi-format (TXT, MD, JSON, YAML, PDF, kode sumber)
@@ -2707,10 +2728,24 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         .join('\n');
 
       let promptToSend = effectiveAiPrompt;
-      if (primaryMediaBundle && promptJsonFile) {
-        const zipLabel = primaryMediaBundle.zipFileName || 'media_bundle.zip';
-        const threeJsonSummary = `\n\n--- [ARSIP JSZIP (${zipLabel}) & 3 BERKAS JSON TERLAMPIR] ---\n1. audio.json:\n\`\`\`json\n${JSON.stringify(audioJsonFile, null, 2)}\n\`\`\`\n2. gambar.json:\n\`\`\`json\n${JSON.stringify(imagesJsonFile, null, 2)}\n\`\`\`\n3. prompt_user.json:\n\`\`\`json\n${JSON.stringify(promptJsonFile, null, 2)}\n\`\`\``;
-        promptToSend = `${promptJsonFile.prompt_user}${threeJsonSummary}${docTexts ? `\n${docTexts}` : ''}`;
+      if (primaryMediaBundle && storageUploadResult) {
+        const frameCount = primaryMediaBundle.extractedFrames?.length || 0;
+        const durationSec = Math.round((primaryMediaBundle.duration || 0) * 100) / 100;
+        const specialMediaPrompt = [
+          '[INSTRUKSI KHUSUS PEMROSESAN ARSIP MEDIA SUPABASE STORAGE]',
+          `Pengguna melampirkan paket media ${primaryMediaBundle.type === 'video' ? 'video (frame 1 FPS + audio + timestamps.json)' : 'audio + timestamps.json'} dalam arsip ZIP di Supabase Storage.`,
+          `- bucket_name: ${storageUploadResult.bucket_name}`,
+          `- file_path: ${storageUploadResult.file_path}`,
+          `- source_file: ${primaryMediaBundle.name}`,
+          `- duration_seconds: ${durationSec}`,
+          `- total_frames: ${frameCount}`,
+          '- struktur_arsip_zip: folder frames/ (gambar JPG 100-300 KB), folder audio/ (audio track), dan timestamps.json.',
+          '',
+          `Instruksi / Prompt Pengguna:`,
+          promptForMedia,
+        ].join('\n');
+
+        promptToSend = `${specialMediaPrompt}${docTexts ? `\n${docTexts}` : ''}`;
       } else if (docTexts) {
         if (effectiveAiPrompt.trim()) {
           promptToSend = `${effectiveAiPrompt}\n\n${docTexts}`;
@@ -2841,43 +2876,23 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         }
       }
 
-      if (primaryMediaBundle && audioJsonFile && imagesJsonFile && promptJsonFile) {
-        chatPayload.audio_json = audioJsonFile;
-        chatPayload.images_json = imagesJsonFile;
-        chatPayload.prompt_json = promptJsonFile;
-        chatPayload.media_json_files = [
-          { name: 'audio.json', mimeType: 'application/json', data: audioJsonFile },
-          { name: 'gambar.json', mimeType: 'application/json', data: imagesJsonFile },
-          { name: 'prompt_user.json', mimeType: 'application/json', data: promptJsonFile },
-        ];
-
-        // Kirim arsip JSZip (.zip) berisi audio + gambar hasil ekstraksi, bukan mp4/mp3 mentah
-        if (finalizedZip && finalizedZip.zipBase64) {
-          const zipFileName = primaryMediaBundle.zipFileName || 'media_bundle.zip';
-          chatPayload.zip_file_name = zipFileName;
-          chatPayload.zipFileName = zipFileName;
-          chatPayload.zip_mime_type = 'application/zip';
-          chatPayload.zip_base64 = finalizedZip.zipBase64;
-          chatPayload.zipBase64 = finalizedZip.zipBase64;
-          chatPayload.zip_data_url = finalizedZip.zipDataUrl;
-          chatPayload.zipDataUrl = finalizedZip.zipDataUrl;
-          chatPayload.media_zip = {
-            name: zipFileName,
-            mimeType: 'application/zip',
-            size: finalizedZip.zipSize,
-            base64: finalizedZip.zipBase64,
-            dataUrl: finalizedZip.zipDataUrl,
-          };
-          chatPayload.attachments = [
-            {
-              name: zipFileName,
-              type: 'application/zip',
-              mimeType: 'application/zip',
-              size: finalizedZip.zipSize,
-              base64: finalizedZip.zipBase64,
-              data_url: finalizedZip.zipDataUrl,
-            },
-          ];
+      if (primaryMediaBundle && storageUploadResult) {
+        chatPayload.bucket_name = storageUploadResult.bucket_name;
+        chatPayload.file_path = storageUploadResult.file_path;
+        chatPayload.user_prompt = promptForMedia;
+        chatPayload.media_type = primaryMediaBundle.type;
+        chatPayload.zip_file_name = primaryMediaBundle.zipFileName || 'media_bundle.zip';
+        chatPayload.zip_size = storageUploadResult.size;
+        chatPayload.media_storage = {
+          bucket_name: storageUploadResult.bucket_name,
+          file_path: storageUploadResult.file_path,
+          user_prompt: promptForMedia,
+          media_type: primaryMediaBundle.type,
+          duration_seconds: primaryMediaBundle.duration || 0,
+          total_frames: primaryMediaBundle.extractedFrames?.length || 0,
+        };
+        if (primaryMediaBundle.id) {
+          clearMediaZipUploadRecord(primaryMediaBundle.id);
         }
       }
 
@@ -3456,6 +3471,7 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
         typewriterIntervalRef.current = null;
       }
       // Matikan loading animasi (...) dalam kondisi apapun
+      setMediaUploadWaitMessage(null);
       setIsLoading(false);
       setIsMotionLoading(false);
       setIsMotionFinalizing(false);
@@ -3850,10 +3866,17 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                   animate={{ opacity: 1 }}
                   className="py-4 sm:py-5 px-4 sm:px-8 flex w-full"
                 >
-                  <div className="max-w-3xl mx-auto flex w-full items-center gap-1.5 pl-1 sm:pl-2">
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <div className="max-w-3xl mx-auto flex w-full items-center gap-3 pl-1 sm:pl-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                    {mediaUploadWaitMessage && (
+                      <span className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 font-medium">
+                        {mediaUploadWaitMessage}
+                      </span>
+                    )}
                   </div>
                 </motion.div>
               )

@@ -20,9 +20,14 @@ export interface MediaAttachment {
   imagesPayloadJson?: Record<string, any>;
   promptPayloadJson?: Record<string, any>;
   zipFileName?: string;
+  zipBlob?: Blob;
   zipBase64?: string;
   zipDataUrl?: string;
   zipSize?: number;
+  storageBucket?: string;
+  storageFilePath?: string;
+  uploadStatus?: 'uploading' | 'uploaded' | 'error';
+  uploadError?: string;
 }
 
 export interface SearchSource {
