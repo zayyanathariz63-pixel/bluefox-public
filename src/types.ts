@@ -19,6 +19,10 @@ export interface MediaAttachment {
   audioPayloadJson?: Record<string, any>;
   imagesPayloadJson?: Record<string, any>;
   promptPayloadJson?: Record<string, any>;
+  zipFileName?: string;
+  zipBase64?: string;
+  zipDataUrl?: string;
+  zipSize?: number;
 }
 
 export interface SearchSource {

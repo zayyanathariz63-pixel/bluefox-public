@@ -150,6 +150,29 @@ export async function invokeBluefoxProcessor(payload: any, signal?: AbortSignal)
   safePayload.resolved_model = normalized;
   safePayload.resolvedModel = normalized;
 
+  // Pastikan sessionId dan userMessage wajib terisi sesuai kontrak Edge Function bluefox-processor-
+  const resolvedSessionId =
+    safePayload.sessionId ||
+    safePayload.session_id ||
+    safePayload.conversation_id ||
+    getValidUUID(null);
+
+  const resolvedUserMessage =
+    typeof safePayload.userMessage === 'string' && safePayload.userMessage.trim().length > 0
+      ? safePayload.userMessage
+      : typeof safePayload.message === 'string' && safePayload.message.trim().length > 0
+        ? safePayload.message
+        : typeof safePayload.prompt === 'string' && safePayload.prompt.trim().length > 0
+          ? safePayload.prompt
+          : 'Halo';
+
+  safePayload.sessionId = resolvedSessionId;
+  safePayload.session_id = safePayload.session_id || resolvedSessionId;
+  safePayload.conversation_id = safePayload.conversation_id || resolvedSessionId;
+  safePayload.userMessage = resolvedUserMessage;
+  safePayload.message = safePayload.message || resolvedUserMessage;
+  safePayload.prompt = safePayload.prompt || resolvedUserMessage;
+
   // 1. Ekstrak access token sesi aktif pengguna
   let authToken = anonKey;
   try {

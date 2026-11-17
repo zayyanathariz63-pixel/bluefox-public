@@ -93,6 +93,7 @@ import {
   consumeImageGenQuota, 
   generateBluefoxImage 
 } from './lib/imageGenerator';
+import { finalizeZipWithPrompt } from './lib/mediaExtractor';
 
 // Fungsi pembaca cookie domain bersama (.tmpa.my.id)
 function getSharedTmpaSession() {
@@ -2644,11 +2645,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       };
       setMessages([...updatedMessages, initialAiMessage]);
 
-      // Siapkan 3 file JSON (audio.json, gambar.json, prompt_user.json) jika ada lampiran video atau audio
+      // Siapkan 3 file JSON (audio.json, gambar.json, prompt_user.json) & arsip JSZip jika ada lampiran video atau audio
       const primaryMediaBundle = mediaBundles[0] || null;
       let audioJsonFile: Record<string, any> | null = null;
       let imagesJsonFile: Record<string, any> | null = null;
       let promptJsonFile: Record<string, any> | null = null;
+      let finalizedZip: { zipBase64: string; zipDataUrl: string; zipSize: number } | null = null;
 
       if (primaryMediaBundle) {
         const promptForMedia = effectiveAiPrompt.trim() || (
@@ -2672,7 +2674,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           media_type: primaryMediaBundle.type,
           fps: primaryMediaBundle.type === 'video' ? 1 : 0,
           total_frames: primaryMediaBundle.extractedFrames?.length || 0,
-          frames: primaryMediaBundle.extractedFrames || [],
+          frames: (primaryMediaBundle.extractedFrames || []).map((f) => ({
+            detik: f.detik,
+            timestamp: f.timestamp,
+            nama_file_gambar: `images/${f.nama_file_gambar}`,
+            ukuran_kb: f.ukuran_kb,
+          })),
         };
 
         promptJsonFile = {
@@ -2687,6 +2694,10 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           session_id: effectiveConvId,
           sent_at: new Date().toISOString(),
         };
+
+        if (primaryMediaBundle.zipBase64) {
+          finalizedZip = await finalizeZipWithPrompt(primaryMediaBundle, promptJsonFile);
+        }
       }
 
       // Ekstrak teks dari lampiran file multi-format (TXT, MD, JSON, YAML, PDF, kode sumber)
@@ -2697,20 +2708,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
 
       let promptToSend = effectiveAiPrompt;
       if (primaryMediaBundle && promptJsonFile) {
-        const compactAudioSummary = {
-          ...audioJsonFile,
-          audio_data_url: audioJsonFile?.audio_data_url ? '[TERLAMPIR_DI_AUDIO_JSON]' : null,
-        };
-        const compactImagesSummary = {
-          ...imagesJsonFile,
-          frames: (imagesJsonFile?.frames || []).map((f: any) => ({
-            detik: f.detik,
-            timestamp: f.timestamp,
-            nama_file_gambar: f.nama_file_gambar,
-            ukuran_kb: f.ukuran_kb,
-          })),
-        };
-        const threeJsonSummary = `\n\n--- [3 BERKAS JSON MEDIA TERLAMPIR] ---\n1. audio.json:\n\`\`\`json\n${JSON.stringify(compactAudioSummary, null, 2)}\n\`\`\`\n2. gambar.json:\n\`\`\`json\n${JSON.stringify(compactImagesSummary, null, 2)}\n\`\`\`\n3. prompt_user.json:\n\`\`\`json\n${JSON.stringify(promptJsonFile, null, 2)}\n\`\`\``;
+        const zipLabel = primaryMediaBundle.zipFileName || 'media_bundle.zip';
+        const threeJsonSummary = `\n\n--- [ARSIP JSZIP (${zipLabel}) & 3 BERKAS JSON TERLAMPIR] ---\n1. audio.json:\n\`\`\`json\n${JSON.stringify(audioJsonFile, null, 2)}\n\`\`\`\n2. gambar.json:\n\`\`\`json\n${JSON.stringify(imagesJsonFile, null, 2)}\n\`\`\`\n3. prompt_user.json:\n\`\`\`json\n${JSON.stringify(promptJsonFile, null, 2)}\n\`\`\``;
         promptToSend = `${promptJsonFile.prompt_user}${threeJsonSummary}${docTexts ? `\n${docTexts}` : ''}`;
       } else if (docTexts) {
         if (effectiveAiPrompt.trim()) {
@@ -2792,6 +2791,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       const effectiveEffort = getSmartSelectEffort(internalModelId, smartSelectLevel);
 
       const chatPayload: any = {
+        sessionId: effectiveConvId,
+        userMessage: promptToSend,
         message: promptToSend,
         prompt: promptToSend,
         history: formattedHistory,
@@ -2849,10 +2850,34 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
           { name: 'gambar.json', mimeType: 'application/json', data: imagesJsonFile },
           { name: 'prompt_user.json', mimeType: 'application/json', data: promptJsonFile },
         ];
-        if (primaryMediaBundle.extractedFrames && primaryMediaBundle.extractedFrames.length > 0) {
-          const frameUrls = primaryMediaBundle.extractedFrames.map(f => f.dataUrl);
-          chatPayload.extracted_images = frameUrls;
-          chatPayload.image_urls = frameUrls;
+
+        // Kirim arsip JSZip (.zip) berisi audio + gambar hasil ekstraksi, bukan mp4/mp3 mentah
+        if (finalizedZip && finalizedZip.zipBase64) {
+          const zipFileName = primaryMediaBundle.zipFileName || 'media_bundle.zip';
+          chatPayload.zip_file_name = zipFileName;
+          chatPayload.zipFileName = zipFileName;
+          chatPayload.zip_mime_type = 'application/zip';
+          chatPayload.zip_base64 = finalizedZip.zipBase64;
+          chatPayload.zipBase64 = finalizedZip.zipBase64;
+          chatPayload.zip_data_url = finalizedZip.zipDataUrl;
+          chatPayload.zipDataUrl = finalizedZip.zipDataUrl;
+          chatPayload.media_zip = {
+            name: zipFileName,
+            mimeType: 'application/zip',
+            size: finalizedZip.zipSize,
+            base64: finalizedZip.zipBase64,
+            dataUrl: finalizedZip.zipDataUrl,
+          };
+          chatPayload.attachments = [
+            {
+              name: zipFileName,
+              type: 'application/zip',
+              mimeType: 'application/zip',
+              size: finalizedZip.zipSize,
+              base64: finalizedZip.zipBase64,
+              data_url: finalizedZip.zipDataUrl,
+            },
+          ];
         }
       }
 

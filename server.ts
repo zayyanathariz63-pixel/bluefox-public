@@ -191,7 +191,9 @@ async function startServer() {
       const payload = req.method === "GET" ? req.query : (req.body || {});
       const { 
         history = [], 
-        message = "", 
+        message: rawMessage = "",
+        userMessage = "",
+        prompt = "",
         model = "agnes-2.5-flash", 
         customInstruction = "", 
         reasoningMode = "", 
@@ -207,6 +209,7 @@ async function startServer() {
         stream = true,
         customApi = null
       } = payload as any;
+      const message = String(userMessage || rawMessage || prompt || "");
 
       const nvidiaKey = process.env.NVIDIA_API_KEY || process.env.NVIDIA_KEY;
       const naraApiKey = process.env.NARA_API_KEY || process.env.BYNARA_API_KEY || "";

@@ -205,7 +205,14 @@ export function safeSaveSessionsToLocal(sessions: any[]): boolean {
             }
             if (stripped.media) {
               const stripMediaItem = (m: any) => {
-                const { extractedFrames, audioPayloadJson, imagesPayloadJson, ...rest } = m;
+                const {
+                  extractedFrames,
+                  audioPayloadJson,
+                  imagesPayloadJson,
+                  zipBase64,
+                  zipDataUrl,
+                  ...rest
+                } = m;
                 return {
                   ...rest,
                   url: m.url?.startsWith('data:') ? '' : m.url,

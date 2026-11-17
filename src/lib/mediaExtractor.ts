@@ -1,3 +1,4 @@
+import JSZip from 'jszip';
 import { ExtractedFrameData, MediaAttachment } from '../types';
 
 export const MAX_VIDEO_DURATION_SECONDS = 120; // 2 menit
@@ -45,6 +46,12 @@ function formatClock(totalSeconds: number): string {
 
 function padFrameIndex(num: number): string {
   return String(num).padStart(4, '0');
+}
+
+function sanitizeBaseName(name: string): string {
+  const stripped = name.replace(/\.[^/.]+$/, '');
+  const safe = stripped.replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+  return safe || 'media_bundle';
 }
 
 export function readMediaDuration(file: File, kind: 'video' | 'audio'): Promise<number> {
@@ -343,6 +350,37 @@ async function captureFrameWithTargetSize(
   return bestBlob;
 }
 
+export async function finalizeZipWithPrompt(
+  attachment: MediaAttachment,
+  promptJson: Record<string, any>
+): Promise<{ zipBase64: string; zipDataUrl: string; zipSize: number }> {
+  if (!attachment.zipBase64) {
+    return { zipBase64: '', zipDataUrl: '', zipSize: 0 };
+  }
+  try {
+    const zip = await JSZip.loadAsync(attachment.zipBase64, { base64: true });
+    zip.file('prompt_user.json', JSON.stringify(promptJson, null, 2));
+    const updatedBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    });
+    const updatedDataUrl = await blobToDataUrl(updatedBlob);
+    const updatedBase64 = updatedDataUrl.split(',')[1] || attachment.zipBase64;
+    return {
+      zipBase64: updatedBase64,
+      zipDataUrl: updatedDataUrl,
+      zipSize: updatedBlob.size,
+    };
+  } catch {
+    return {
+      zipBase64: attachment.zipBase64,
+      zipDataUrl: attachment.zipDataUrl || `data:application/zip;base64,${attachment.zipBase64}`,
+      zipSize: attachment.zipSize || 0,
+    };
+  }
+}
+
 export async function extractVideoToAttachment(
   file: File,
   knownDuration: number,
@@ -388,18 +426,21 @@ export async function extractVideoToAttachment(
     videoEl.load();
   });
 
+  const zip = new JSZip();
+  const baseName = sanitizeBaseName(file.name);
   const maxSec = Math.floor(knownDuration);
 
   onProgress(8, 'Mengekstrak jalur audio dari video...', 'Memproses dekode audio');
   const decodedAudio = await decodeAudioBuffer(file);
   const audioTimeline = computePerSecondAudioTimeline(decodedAudio, maxSec);
 
-  let audioBase64: string | null = null;
   const hasAudioTrack = Boolean(decodedAudio);
-  if (decodedAudio) {
-    onProgress(15, 'Mengonversi jalur audio...', 'Menyiapkan data audio.json');
+  const audioZipPath = hasAudioTrack ? 'audio/audio_track.wav' : null;
+
+  if (decodedAudio && audioZipPath) {
+    onProgress(15, 'Mengemas jalur audio ke WAV...', 'Menambahkan audio ke arsip JSZip');
     const wavBlob = encodeMonoWavBuffer(decodedAudio, 16000);
-    audioBase64 = await blobToDataUrl(wavBlob);
+    zip.file(audioZipPath, wavBlob);
   }
 
   const canvas = document.createElement('canvas');
@@ -408,6 +449,7 @@ export async function extractVideoToAttachment(
     throw new Error('Konteks canvas 2D tidak tersedia.');
   }
 
+  const imagesFolder = zip.folder('images');
   const extractedFrames: ExtractedFrameData[] = [];
   const totalSteps = maxSec + 1;
 
@@ -420,6 +462,10 @@ export async function extractVideoToAttachment(
     const frameName = `frame_${padFrameIndex(sec + 1)}.jpg`;
     const kb = Math.round((jpgBlob.size / 1024) * 10) / 10;
 
+    if (imagesFolder) {
+      imagesFolder.file(frameName, jpgBlob);
+    }
+
     extractedFrames.push({
       detik: sec,
       timestamp: formatClock(sec),
@@ -428,7 +474,7 @@ export async function extractVideoToAttachment(
       dataUrl: frameDataUrl,
     });
 
-    const pct = 18 + ((sec + 1) / totalSteps) * 74;
+    const pct = 18 + ((sec + 1) / totalSteps) * 64;
     onProgress(
       Math.round(pct),
       `Mengekstrak frame ${sec + 1} dari ${totalSteps}...`,
@@ -439,17 +485,15 @@ export async function extractVideoToAttachment(
   videoEl.removeAttribute('src');
   videoEl.load();
 
-  onProgress(95, 'Menyusun 3 berkas JSON...', 'Audio, Gambar, dan Prompt User');
-
   const audioPayloadJson = {
     file_name: 'audio.json',
     source_file: file.name,
     media_type: 'video',
     has_audio: hasAudioTrack,
-    duration_seconds: Math.round(knownDuration * 100) / 100,
+    audio_zip_path: audioZipPath,
     format: hasAudioTrack ? 'audio/wav' : null,
     sample_rate: hasAudioTrack ? 16000 : null,
-    audio_data_url: audioBase64,
+    duration_seconds: Math.round(knownDuration * 100) / 100,
     timeline_audio: audioTimeline,
   };
 
@@ -463,9 +507,8 @@ export async function extractVideoToAttachment(
     frames: extractedFrames.map((f) => ({
       detik: f.detik,
       timestamp: f.timestamp,
-      nama_file_gambar: f.nama_file_gambar,
+      nama_file_gambar: `images/${f.nama_file_gambar}`,
       ukuran_kb: f.ukuran_kb,
-      data_url: f.dataUrl,
     })),
   };
 
@@ -479,7 +522,48 @@ export async function extractVideoToAttachment(
     prompt_user: '',
   };
 
-  onProgress(100, 'Ekstraksi selesai.', 'Menampilkan video di ruang obrolan');
+  const timestampsPayload = {
+    source_file: file.name,
+    media_type: 'video',
+    duration_seconds: Math.round(knownDuration * 100) / 100,
+    fps: 1,
+    has_audio: hasAudioTrack,
+    audio_file: audioZipPath,
+    total_frames: extractedFrames.length,
+    timeline: extractedFrames.map((f, idx) => ({
+      detik: f.detik,
+      timestamp: f.timestamp,
+      nama_file_gambar: `images/${f.nama_file_gambar}`,
+      ukuran_gambar_kb: f.ukuran_kb,
+      status_audio_point: audioTimeline[idx]?.status_audio_point || 'tidak_ada_audio',
+      rms_level: audioTimeline[idx]?.rms_level || 0,
+    })),
+  };
+
+  zip.file('audio.json', JSON.stringify(audioPayloadJson, null, 2));
+  zip.file('gambar.json', JSON.stringify(imagesPayloadJson, null, 2));
+  zip.file('prompt_user.json', JSON.stringify(promptPayloadJson, null, 2));
+  zip.file('timestamps.json', JSON.stringify(timestampsPayload, null, 2));
+
+  onProgress(85, 'Mengemas gambar dan audio ke JSZip...', 'Membuat arsip .zip untuk server');
+
+  const zipBlob = await zip.generateAsync(
+    {
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+    },
+    (meta) => {
+      const zipPct = 85 + meta.percent * 0.14;
+      onProgress(Math.round(zipPct), 'Mengemas gambar dan audio ke JSZip...', `${Math.round(meta.percent)}%`);
+    }
+  );
+
+  const zipDataUrl = await blobToDataUrl(zipBlob);
+  const zipBase64 = zipDataUrl.split(',')[1] || '';
+  const zipFileName = `${baseName}_bundle.zip`;
+
+  onProgress(100, 'Ekstraksi dan pengemasan JSZip selesai.', 'Menampilkan video di ruang obrolan');
 
   return {
     id: `video-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
@@ -492,6 +576,10 @@ export async function extractVideoToAttachment(
     audioPayloadJson,
     imagesPayloadJson,
     promptPayloadJson,
+    zipFileName,
+    zipBase64,
+    zipDataUrl,
+    zipSize: zipBlob.size,
   };
 }
 
@@ -504,25 +592,36 @@ export async function extractAudioToAttachment(
     throw new MediaDurationExceededError('audio', knownDuration, MAX_AUDIO_DURATION_SECONDS);
   }
 
-  onProgress(20, 'Membaca berkas audio...', file.name);
+  onProgress(15, 'Mendekode berkas audio...', file.name);
   const audioUrl = URL.createObjectURL(file);
-  const audioBase64 = await blobToDataUrl(file);
-
-  onProgress(60, 'Menganalisis timeline audio...', 'Menghitung level suara per detik');
+  const baseName = sanitizeBaseName(file.name);
   const maxSec = Math.floor(knownDuration);
   const decodedAudio = await decodeAudioBuffer(file);
   const audioTimeline = computePerSecondAudioTimeline(decodedAudio, maxSec);
 
-  onProgress(90, 'Menyusun 3 berkas JSON...', 'Audio, Gambar, dan Prompt User');
+  const zip = new JSZip();
+  let audioZipPath = 'audio/audio_track.wav';
+  let audioFormat = 'audio/wav';
+
+  if (decodedAudio) {
+    onProgress(50, 'Mengonversi audio ke WAV untuk arsip JSZip...', 'Menghindari format MP3/video mentah');
+    const wavBlob = encodeMonoWavBuffer(decodedAudio, 16000);
+    zip.file(audioZipPath, wavBlob);
+  } else {
+    const ext = (file.name.split('.').pop() || 'wav').toLowerCase();
+    audioZipPath = `audio/${baseName}.${ext}`;
+    audioFormat = file.type || 'audio/wav';
+    zip.file(audioZipPath, file);
+  }
 
   const audioPayloadJson = {
     file_name: 'audio.json',
     source_file: file.name,
     media_type: 'audio',
     has_audio: true,
+    audio_zip_path: audioZipPath,
+    format: audioFormat,
     duration_seconds: Math.round(knownDuration * 100) / 100,
-    format: file.type || 'audio/mpeg',
-    audio_data_url: audioBase64,
     timeline_audio: audioTimeline,
   };
 
@@ -545,7 +644,42 @@ export async function extractAudioToAttachment(
     prompt_user: '',
   };
 
-  onProgress(100, 'Ekstraksi audio selesai.', 'Audio siap dikirim');
+  const timestampsPayload = {
+    source_file: file.name,
+    media_type: 'audio',
+    duration_seconds: Math.round(knownDuration * 100) / 100,
+    fps: 0,
+    has_audio: true,
+    audio_file: audioZipPath,
+    total_frames: 0,
+    timeline: audioTimeline.map((pt) => ({
+      detik: pt.detik,
+      timestamp: pt.timestamp,
+      nama_file_gambar: null,
+      status_audio_point: pt.status_audio_point,
+      rms_level: pt.rms_level,
+    })),
+  };
+
+  zip.folder('images');
+  zip.file('audio.json', JSON.stringify(audioPayloadJson, null, 2));
+  zip.file('gambar.json', JSON.stringify(imagesPayloadJson, null, 2));
+  zip.file('prompt_user.json', JSON.stringify(promptPayloadJson, null, 2));
+  zip.file('timestamps.json', JSON.stringify(timestampsPayload, null, 2));
+
+  onProgress(80, 'Mengemas audio ke arsip JSZip...', 'Membuat file .zip untuk server');
+
+  const zipBlob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
+
+  const zipDataUrl = await blobToDataUrl(zipBlob);
+  const zipBase64 = zipDataUrl.split(',')[1] || '';
+  const zipFileName = `${baseName}_bundle.zip`;
+
+  onProgress(100, 'Ekstraksi audio ke JSZip selesai.', 'Audio siap dikirim');
 
   return {
     id: `audio-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
@@ -558,5 +692,9 @@ export async function extractAudioToAttachment(
     audioPayloadJson,
     imagesPayloadJson,
     promptPayloadJson,
+    zipFileName,
+    zipBase64,
+    zipDataUrl,
+    zipSize: zipBlob.size,
   };
 }
