@@ -33,6 +33,7 @@ import {
   isUserAdmin
 } from './lib/accountManager';
 import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse, invokeMotionGenerator } from './lib/motion';
+import { applyGtaBuffDiscount } from './lib/gtaSeasonPass';
 import { useLanguage } from './lib/i18n';
 import { 
   saveBase64ToLocalStorage, 
@@ -540,7 +541,10 @@ export default function App() {
       }
     }
     
-    const newEvent = { h, w, ts: Date.now() };
+    const finalH = applyGtaBuffDiscount(h);
+    const finalW = applyGtaBuffDiscount(w);
+
+    const newEvent = { h: finalH, w: finalW, ts: Date.now() };
     const now = Date.now();
     const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
     const nextEvents = [...usageEvents.filter(e => e.ts > oneWeekAgo), newEvent];

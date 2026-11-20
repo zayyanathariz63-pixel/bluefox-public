@@ -5,7 +5,7 @@ import {
   Camera, Clock, Calendar, Globe, Sparkles, Check,
   Key, Plus, Trash2, Eye, EyeOff, Copy, AlertCircle, Layers, ExternalLink, RotateCcw,
   HardDrive, AlertTriangle, Image as ImageIcon, Video as VideoIcon, Loader2,
-  Share2, GitFork, Pencil, Radio, Palette, Lock, Unlock
+  Share2, GitFork, Pencil, Radio, Palette, Lock, Unlock, Zap, ChevronRight
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { IntegrationsPage } from './IntegrationsPage';
@@ -42,6 +42,13 @@ import {
 } from '../lib/storageManager';
 import { UserGradientAvatar } from './UserGradientAvatar';
 import { PWAInstallButton } from './PWAInstallButton';
+import { GtaSeasonPassBanner } from './GtaSeasonPassBanner';
+import {
+  isGtaBuffActive,
+  formatGtaBuffRemaining,
+  formatDiscountedPercent,
+  GTA_SEASON_PASS_EVENT,
+} from '../lib/gtaSeasonPass';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -112,6 +119,31 @@ export function SettingsModal({
   }, [propAppStyle]);
 
   const isBlueRilis = currentAppStyle === 'blue_rilis';
+
+  const isAdmin = isUserAdmin(user);
+  const [isSessionPassOpen, setIsSessionPassOpen] = useState<boolean>(false);
+  const [gtaBuffActive, setGtaBuffActive] = useState<boolean>(() => isGtaBuffActive());
+  const [gtaBuffTimer, setGtaBuffTimer] = useState<string>(() => formatGtaBuffRemaining());
+
+  useEffect(() => {
+    if (isOpen) {
+      setCurrentView('menu');
+      setIsSessionPassOpen(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const syncBuff = () => {
+      setGtaBuffActive(isGtaBuffActive());
+      setGtaBuffTimer(formatGtaBuffRemaining());
+    };
+    window.addEventListener(GTA_SEASON_PASS_EVENT, syncBuff);
+    const interval = setInterval(syncBuff, 1000);
+    return () => {
+      window.removeEventListener(GTA_SEASON_PASS_EVENT, syncBuff);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     const handleStyleChange = (e: any) => {
@@ -403,24 +435,52 @@ export function SettingsModal({
         >
           {/* Main List Menu View */}
           {currentView === 'menu' && (
-            <div className="flex-1 overflow-y-auto w-full px-4 sm:px-6 md:px-8 py-6 max-w-2xl mx-auto flex flex-col">
-              {/* Back & Title */}
-              <div className="flex flex-col mb-8 mt-2">
-                <button 
-                  onClick={onClose} 
-                  className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
-                  title={t.backToChat}
-                >
-                  <ArrowLeft size={22} />
-                </button>
-                <h1 className="text-3xl sm:text-4xl font-normal text-slate-900 mt-4 tracking-tight">
-                  {t.settingsTitle}
-                </h1>
-              </div>
+            <div className="flex-1 overflow-y-auto w-full">
+              <div className="w-full px-4 sm:px-6 md:px-8 pt-3 pb-8 max-w-2xl mx-auto">
+                {/* Top Header Row */}
+                <div className="flex items-center justify-between mb-4">
+                  <button 
+                    onClick={onClose} 
+                    className="w-10 h-10 -ml-2 rounded-full flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer"
+                    title={t.backToChat}
+                    aria-label={t.backToChat}
+                  >
+                    <ArrowLeft size={22} />
+                  </button>
+                  <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+                    {t.settingsTitle}
+                  </h1>
+                  <div className="w-10" aria-hidden="true" />
+                </div>
 
-              {/* Settings Rows */}
-              <div className="space-y-1.5">
-                {/* 1. Info Akun (Interactive) */}
+                {/* Settings Rows */}
+                <div className="space-y-1.5">
+                  {/* 0. Admin-only Single Button: Session Pass */}
+                  {isAdmin && (
+                    <button
+                      onClick={() => setIsSessionPassOpen(true)}
+                      className="w-full text-left flex items-center justify-between gap-3 py-3.5 px-4 rounded-2xl border border-[#F36A78]/35 bg-gradient-to-r from-[#F36A78]/10 via-[#FF9B55]/10 to-[#FFB458]/15 hover:from-[#F36A78]/20 hover:to-[#FFB458]/25 active:scale-[0.99] transition-all cursor-pointer mb-1.5"
+                    >
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#3B146B] via-[#7B208F] to-[#C9349B] text-[#FFB458] flex items-center justify-center shrink-0 shadow-xs">
+                          <Zap size={18} strokeWidth={2.4} />
+                        </div>
+                        <span className="text-[16px] font-extrabold text-[#3B146B] tracking-tight">
+                          Session Pass
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {gtaBuffActive && (
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#3B146B] text-[#FFB458]">
+                            20% OFF
+                          </span>
+                        )}
+                        <ChevronRight size={18} className="text-[#7B208F] shrink-0" />
+                      </div>
+                    </button>
+                  )}
+
+                  {/* 1. Info Akun (Interactive) */}
                 <button
                   onClick={() => setCurrentView('account')}
                   className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
@@ -713,6 +773,7 @@ export function SettingsModal({
                     />
                   </a>
                 </div>
+                </div>
               </div>
             </div>
           )}
@@ -780,7 +841,7 @@ export function SettingsModal({
 
               {/* Sub-screen body container */}
               <div className="flex-1 py-8 px-4 sm:px-6 max-w-2xl mx-auto w-full">
-                
+
                 {/* View: LANGUAGE / BAHASA */}
                 {currentView === 'language' && (
                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
@@ -1077,6 +1138,30 @@ export function SettingsModal({
                       </p>
                     </div>
 
+                    {/* Banner Indikator 1-Hour GTA Limit Buff (-20% Consumption) */}
+                    {gtaBuffActive && (
+                      <div className="bg-gradient-to-r from-[#3B146B] via-[#7B208F] to-[#C9349B] text-white rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-[#FFB458] shrink-0">
+                            <Zap size={18} strokeWidth={2.4} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="font-bold text-sm text-white">
+                                GTA Limit Buff Active (-20%)
+                              </h4>
+                            </div>
+                            <p className="text-xs text-white/80 mt-0.5">
+                              Kriminal Bank reward: all model & search quota consumption is reduced by 20%.
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-[#3B146B] border border-[#FFB458]/40 text-[#FFB458] shrink-0">
+                          {gtaBuffTimer}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Banner Indikator Mode Development (No Limit) */}
                     {isDevMode && (
                       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl p-4.5 flex items-start justify-between gap-3 shadow-xs">
@@ -1164,13 +1249,21 @@ export function SettingsModal({
 
                     {/* Rincian Tarif Model & Pencarian */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
-                      <div>
-                        <h4 className="text-base font-bold text-slate-900">
-                          {lang === 'id' ? 'Rincian Tarif Limit Pencarian Web' : 'Web Search Usage Limit Rates'}
-                        </h4>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {lang === 'id' ? 'Konsumsi kuota pencarian per 5 jam dan per minggu' : 'Search quota consumption per 5 hours and per week'}
-                        </p>
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <div>
+                          <h4 className="text-base font-bold text-slate-900">
+                            {lang === 'id' ? 'Rincian Tarif Limit Pencarian Web' : 'Web Search Usage Limit Rates'}
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {lang === 'id' ? 'Konsumsi kuota pencarian per 5 jam dan per minggu' : 'Search quota consumption per 5 hours and per week'}
+                          </p>
+                        </div>
+                        {gtaBuffActive && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#3B146B] text-[#FFB458] text-[10px] font-extrabold uppercase tracking-wider">
+                            <Zap size={11} strokeWidth={2.5} />
+                            20% OFF
+                          </span>
+                        )}
                       </div>
 
                       <div className="overflow-x-auto border border-slate-200 rounded-xl">
@@ -1178,73 +1271,137 @@ export function SettingsModal({
                           <thead className="bg-slate-50 text-slate-900 font-bold border-b border-slate-200">
                             <tr>
                               <th className="py-2.5 px-3.5">Jenis Pencarian</th>
-                              <th className="py-2.5 px-3.5 text-blue-700">Per 5 Jam</th>
-                              <th className="py-2.5 px-3.5 text-emerald-700">Per Minggu</th>
+                              <th className="py-2.5 px-3.5 text-blue-700">
+                                Per 5 Jam {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                              </th>
+                              <th className="py-2.5 px-3.5 text-emerald-700">
+                                Per Minggu {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-mono">
-                            <tr className="hover:bg-slate-50/70">
-                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Advanced search</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">5%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/70">
-                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Standard search</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">3%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">2%</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/70">
-                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map search advanced</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">7%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
-                            </tr>
-                            <tr className="hover:bg-slate-50/70">
-                              <td className="py-2 px-3.5 font-sans font-medium text-slate-900">Map standard search</td>
-                              <td className="py-2 px-3.5 text-blue-600 font-bold">6%</td>
-                              <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
-                            </tr>
+                            {[
+                              { name: 'Advanced search', h: 5, w: 3 },
+                              { name: 'Standard search', h: 3, w: 2 },
+                              { name: 'Map search advanced', h: 7, w: 4 },
+                              { name: 'Map standard search', h: 6, w: 3 },
+                            ].map((row) => (
+                              <tr key={row.name} className="hover:bg-slate-50/70">
+                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">{row.name}</td>
+                                <td className="py-2 px-3.5 text-blue-600 font-bold">
+                                  {gtaBuffActive ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <span className="line-through text-slate-400 font-normal">{row.h}%</span>
+                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.h)}</span>
+                                    </span>
+                                  ) : (
+                                    `${row.h}%`
+                                  )}
+                                </td>
+                                <td className="py-2 px-3.5 text-emerald-600 font-bold">
+                                  {gtaBuffActive ? (
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <span className="line-through text-slate-400 font-normal">{row.w}%</span>
+                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.w)}</span>
+                                    </span>
+                                  ) : (
+                                    `${row.w}%`
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
                           </tbody>
+                          {gtaBuffActive && (
+                            <tfoot className="bg-[#3B146B]/5 border-t border-[#7B208F]/20 font-mono">
+                              <tr>
+                                <td className="py-2.5 px-3.5 font-sans font-bold text-[#3B146B]">
+                                  Total Limit (20% OFF)
+                                </td>
+                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">16.8% / 21%</td>
+                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">9.6% / 12%</td>
+                              </tr>
+                            </tfoot>
+                          )}
                         </table>
                       </div>
 
                       <div className="pt-2">
-                        <h4 className="text-base font-bold text-slate-900 mb-1">
-                          {lang === 'id' ? 'Rincian Tarif Model AI' : 'AI Model Usage Rates'}
-                        </h4>
+                        <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                          <h4 className="text-base font-bold text-slate-900">
+                            {lang === 'id' ? 'Rincian Tarif Model AI' : 'AI Model Usage Rates'}
+                          </h4>
+                          {gtaBuffActive && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#3B146B] text-[#FFB458] text-[10px] font-extrabold uppercase tracking-wider">
+                              20% OFF
+                            </span>
+                          )}
+                        </div>
                         <div className="overflow-x-auto border border-slate-200 rounded-xl">
                           <table className="w-full text-xs text-left text-slate-700">
                             <thead className="bg-slate-50 text-slate-900 font-bold border-b border-slate-200">
                               <tr>
                                 <th className="py-2.5 px-3.5">Nama Model</th>
-                                <th className="py-2.5 px-3.5 text-blue-700">Per 5 Jam</th>
-                                <th className="py-2.5 px-3.5 text-emerald-700">Per Minggu</th>
+                                <th className="py-2.5 px-3.5 text-blue-700">
+                                  Per 5 Jam {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                </th>
+                                <th className="py-2.5 px-3.5 text-emerald-700">
+                                  Per Minggu {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                </th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-mono">
-                              <tr className="hover:bg-slate-50/70">
-                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Vision Aktif)</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">5%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">7%</td>
-                              </tr>
-                              <tr className="hover:bg-slate-50/70">
-                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox pro (Standar Teks)</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">3%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">4%</td>
-                              </tr>
-                              <tr className="hover:bg-slate-50/70">
-                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox standard</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">2%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">3%</td>
-                              </tr>
-                              <tr className="hover:bg-slate-50/70">
-                                <td className="py-2 px-3.5 font-sans font-medium text-slate-900">bluefox Dilo</td>
-                                <td className="py-2 px-3.5 text-blue-600 font-bold">2%</td>
-                                <td className="py-2 px-3.5 text-emerald-600 font-bold">2%</td>
-                              </tr>
+                              {[
+                                { name: 'bluefox pro (Vision Aktif)', h: 5, w: 7 },
+                                { name: 'bluefox pro (Standar Teks)', h: 3, w: 4 },
+                                { name: 'bluefox standard', h: 2, w: 3 },
+                                { name: 'bluefox Dilo', h: 2, w: 2 },
+                              ].map((row) => (
+                                <tr key={row.name} className="hover:bg-slate-50/70">
+                                  <td className="py-2 px-3.5 font-sans font-medium text-slate-900">{row.name}</td>
+                                  <td className="py-2 px-3.5 text-blue-600 font-bold">
+                                    {gtaBuffActive ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className="line-through text-slate-400 font-normal">{row.h}%</span>
+                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.h)}</span>
+                                      </span>
+                                    ) : (
+                                      `${row.h}%`
+                                    )}
+                                  </td>
+                                  <td className="py-2 px-3.5 text-emerald-600 font-bold">
+                                    {gtaBuffActive ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        <span className="line-through text-slate-400 font-normal">{row.w}%</span>
+                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.w)}</span>
+                                      </span>
+                                    ) : (
+                                      `${row.w}%`
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
                             </tbody>
+                            {gtaBuffActive && (
+                              <tfoot className="bg-[#3B146B]/5 border-t border-[#7B208F]/20 font-mono">
+                                <tr>
+                                  <td className="py-2.5 px-3.5 font-sans font-bold text-[#3B146B]">
+                                    Total Limit (20% OFF)
+                                  </td>
+                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">9.6% / 12%</td>
+                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">12.8% / 16%</td>
+                                </tr>
+                              </tfoot>
+                            )}
                           </table>
                         </div>
                       </div>
+
+                      {gtaBuffActive && (
+                        <div className="rounded-xl p-3.5 bg-[#3B146B] text-white flex items-center justify-between gap-3 text-xs">
+                          <span className="font-bold text-[#FFB458]">Total Limit dari 20% OFF (Kapasitas Efektif)</span>
+                          <span className="font-mono font-extrabold text-white">125% (Hemat 20%)</span>
+                        </div>
+                      )}
                     </div>
 
 
@@ -2466,6 +2623,13 @@ export function SettingsModal({
               </motion.div>
             )}
           </AnimatePresence>
+          {/* Full-screen Admin-only Session Pass Modal */}
+          <GtaSeasonPassBanner
+            isOpen={isSessionPassOpen}
+            onClose={() => setIsSessionPassOpen(false)}
+            isAdmin={isAdmin}
+            onNotify={showToast}
+          />
         </motion.div>
       )}
     </AnimatePresence>

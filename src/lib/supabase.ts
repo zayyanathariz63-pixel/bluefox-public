@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_CONFIG } from './env';
+import { applyGtaBuffDiscount } from './gtaSeasonPass';
 
 export const supabaseUrl: string = SUPABASE_CONFIG.url;
 export const supabaseKey: string = SUPABASE_CONFIG.anonKey;
@@ -1244,8 +1245,11 @@ export async function consumeAiLimit(
       }
     }
 
-    const next5h = Math.min(100, Number((current5h + delta5h).toFixed(2)));
-    const nextWeekly = Math.min(100, Number((currentWeekly + deltaWeekly).toFixed(2)));
+    const discounted5h = applyGtaBuffDiscount(delta5h);
+    const discountedWeekly = applyGtaBuffDiscount(deltaWeekly);
+
+    const next5h = Math.min(100, Number((current5h + discounted5h).toFixed(2)));
+    const nextWeekly = Math.min(100, Number((currentWeekly + discountedWeekly).toFixed(2)));
 
     const reset5hAt = (row?.reset_5h_at && now <= new Date(row.reset_5h_at))
       ? row.reset_5h_at 
