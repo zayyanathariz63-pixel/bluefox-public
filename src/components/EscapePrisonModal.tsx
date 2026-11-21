@@ -13,6 +13,7 @@ import {
   ArrowDown,
   ArrowUp,
   Gauge,
+  Video,
 } from 'lucide-react';
 import {
   completeEscapePrisonMission,
@@ -30,8 +31,9 @@ interface EscapePrisonModalProps {
   onMissionSuccess?: (state: GtaSeasonPassState) => void;
 }
 
-type ModalStage = 'briefing' | 'playing' | 'victory_anim';
+type ModalStage = 'briefing' | 'playing' | 'escape_cutscene' | 'victory_anim';
 type CyclePhase = 'night' | 'day';
+type FoxWalkState = 'at_rest' | 'walking_to_hole' | 'inside_hole' | 'walking_to_rest';
 
 interface DirtParticle {
   x: number;
@@ -40,11 +42,34 @@ interface DirtParticle {
   vy: number;
   age: number;
   maxAge: number;
+  color: string;
+  size: number;
 }
 
-const LOGICAL_W = 800;
-const LOGICAL_H = 420;
+const LOGICAL_W = 960;
+const LOGICAL_H = 540;
+const WORLD_W = 1520;
+const WORLD_H = 720;
+const GROUND_Y = 340;
+const REST_X = 190;
+const HOLE_X = 340;
+const EXIT_X = 1090;
+const TUNNEL_Y = 485;
 const PHASE_DURATION_SEC = 120; // 2 minutes Night / 2 minutes Day
+
+// Deterministic underground rocks & stars so nothing flickers between frames
+const SOIL_ROCKS = Array.from({ length: 42 }, (_, i) => ({
+  x: 40 + ((i * 197 + 53) % 1440),
+  y: 375 + ((i * 89 + 17) % 315),
+  r: 3 + (i % 5),
+}));
+
+const NIGHT_STARS = Array.from({ length: 48 }, (_, i) => ({
+  x: 635 + ((i * 163 + 29) % 865),
+  y: 18 + ((i * 71 + 11) % 210),
+  r: 1 + (i % 2) * 0.9,
+  phase: i * 0.7,
+}));
 
 function PickaxeSvg({ className = 'w-5 h-5' }: { className?: string }) {
   return (
@@ -68,6 +93,136 @@ function formatClock(secFloat: number): string {
   const m = Math.floor(clamped / 60);
   const s = clamped % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function drawBluefoxCharacter(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  opts: {
+    facing?: 1 | -1;
+    walkPhase?: number;
+    isWalking?: boolean;
+    pickaxeSwing?: number;
+    armsUp?: boolean;
+    scale?: number;
+  }
+) {
+  const {
+    facing = 1,
+    walkPhase = 0,
+    isWalking = false,
+    pickaxeSwing = 0,
+    armsUp = false,
+    scale = 1,
+  } = opts;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(facing * scale, scale);
+
+  const stride = isWalking ? Math.sin(walkPhase) * 8 : 0;
+  const bob = isWalking ? Math.abs(Math.cos(walkPhase)) * 2.5 : 0;
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.34)';
+  ctx.beginPath();
+  ctx.ellipse(0, 34, 17, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.translate(0, -bob);
+
+  // Legs
+  ctx.strokeStyle = '#1E3A8A';
+  ctx.lineWidth = 6.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-4, 14);
+  ctx.lineTo(-4 - stride, 32);
+  ctx.moveTo(4, 14);
+  ctx.lineTo(4 + stride, 32);
+  ctx.stroke();
+
+  // Back arm
+  ctx.strokeStyle = '#1D4ED8';
+  ctx.lineWidth = 5.5;
+  ctx.beginPath();
+  if (armsUp) {
+    ctx.moveTo(-8, -8);
+    ctx.lineTo(-18, -28);
+  } else {
+    ctx.moveTo(-8, -8);
+    ctx.lineTo(-12 + stride * 0.65, 9);
+  }
+  ctx.stroke();
+
+  // Prison striped jumpsuit torso
+  ctx.fillStyle = '#2563EB';
+  ctx.beginPath();
+  ctx.roundRect(-12, -14, 24, 29, 7);
+  ctx.fill();
+  ctx.fillStyle = '#FF9B55';
+  ctx.fillRect(-11, -5, 22, 4);
+  ctx.fillRect(-11, 4, 22, 4);
+
+  // Fox head & ears
+  ctx.fillStyle = '#2563EB';
+  ctx.beginPath();
+  ctx.arc(0, -25, 13, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-9, -34);
+  ctx.lineTo(-13, -48);
+  ctx.lineTo(-1, -37);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(1, -37);
+  ctx.lineTo(13, -48);
+  ctx.lineTo(9, -34);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cyan cyber visor
+  ctx.fillStyle = '#67E8F9';
+  ctx.beginPath();
+  ctx.roundRect(0, -29, 12, 6, 3);
+  ctx.fill();
+
+  // Front arm (plus optional pickaxe)
+  ctx.strokeStyle = '#3B82F6';
+  ctx.lineWidth = 5.5;
+  ctx.beginPath();
+  if (armsUp) {
+    ctx.moveTo(8, -8);
+    ctx.lineTo(18, -28);
+  } else {
+    ctx.moveTo(8, -8);
+    ctx.lineTo(13 - stride * 0.65, 8);
+  }
+  ctx.stroke();
+
+  if (pickaxeSwing > 0) {
+    const swingAngle = Math.sin(pickaxeSwing * Math.PI) * 0.95;
+    ctx.save();
+    ctx.translate(12, 2);
+    ctx.rotate(swingAngle - 0.35);
+    ctx.strokeStyle = '#92400E';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(22, -18);
+    ctx.stroke();
+    ctx.strokeStyle = '#CBD5E1';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(14, -22);
+    ctx.lineTo(28, -11);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
 }
 
 export function EscapePrisonModal({
@@ -95,12 +250,25 @@ export function EscapePrisonModal({
   const particlesRef = useRef<DirtParticle[]>([]);
   const swingAnimRef = useRef<number>(0);
   const rugSlideRef = useRef<number>(1); // 1 = covered, 0 = uncovered
-  const guardXRef = useRef<number>(740);
+  const guardXRef = useRef<number>(760);
+  const cctvAngleRef = useRef<number>(0);
+  const camStateRef = useRef({ x: 345, y: 215, zoom: 1.48 });
+
+  // Walking & cutscene state refs
+  const foxWalkStateRef = useRef<FoxWalkState>('at_rest');
+  const foxXRef = useRef<number>(REST_X);
+  const walkCycleRef = useRef<number>(0);
+  const cutsceneTimeRef = useRef<number>(0);
+  const cutsceneDoneRef = useRef<boolean>(false);
+  const zoomedOutAnnouncedRef = useRef<boolean>(false);
+
   const rafRef = useRef<number | null>(null);
   const digHoldIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastDigSfxMsRef = useRef<number>(0);
 
   // Synced refs for animation loop & timers
+  const stageRef = useRef<ModalStage>('briefing');
   const phaseRef = useRef<CyclePhase>('night');
   const progressRef = useRef<number>(0);
   const inHoleRef = useRef<boolean>(false);
@@ -108,6 +276,9 @@ export function EscapePrisonModal({
   const bustedRef = useRef<boolean>(false);
   const speedRef = useRef<1 | 10>(1);
 
+  useEffect(() => {
+    stageRef.current = stage;
+  }, [stage]);
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
@@ -132,7 +303,7 @@ export function EscapePrisonModal({
     if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
     hintTimeoutRef.current = setTimeout(() => {
       setActionHint(null);
-    }, 2100);
+    }, 2400);
   }, []);
 
   const stopHoldDig = useCallback(() => {
@@ -146,16 +317,28 @@ export function EscapePrisonModal({
     if (isOpen) {
       setSeasonState(getSeasonPassState());
       setStage('briefing');
+      stageRef.current = 'briefing';
       setPhase('night');
+      phaseRef.current = 'night';
       setPhaseSecondsLeft(PHASE_DURATION_SEC);
       setTimerSpeed(1);
       setDigProgress(0);
+      progressRef.current = 0;
       setInHole(false);
+      inHoleRef.current = false;
       setRugCovered(true);
+      rugCoveredRef.current = true;
       setBustedReason(null);
+      bustedRef.current = false;
       setActionHint(null);
       particlesRef.current = [];
       rugSlideRef.current = 1;
+      foxWalkStateRef.current = 'at_rest';
+      foxXRef.current = REST_X;
+      camStateRef.current = { x: 345, y: 215, zoom: 1.48 };
+      cutsceneTimeRef.current = 0;
+      cutsceneDoneRef.current = false;
+      zoomedOutAnnouncedRef.current = false;
     } else {
       stopHoldDig();
       gtaAudio.stopHeistBgm();
@@ -170,19 +353,28 @@ export function EscapePrisonModal({
 
   const triggerBusted = useCallback(
     (reason: string) => {
-      if (bustedRef.current) return;
+      if (bustedRef.current || stageRef.current !== 'playing') return;
       stopHoldDig();
       bustedRef.current = true;
       gtaAudio.playBustedSfx();
       setBustedReason(reason);
-      setDigProgress((prev) => Math.max(0, prev - 25));
+      setDigProgress((prev) => {
+        const penalized = Math.max(0, Number((prev - 25).toFixed(1)));
+        progressRef.current = penalized;
+        if (penalized < 10) zoomedOutAnnouncedRef.current = false;
+        return penalized;
+      });
       setInHole(false);
+      inHoleRef.current = false;
       setRugCovered(true);
+      rugCoveredRef.current = true;
+      foxWalkStateRef.current = 'at_rest';
+      foxXRef.current = REST_X;
     },
     [stopHoldDig]
   );
 
-  // Day/Night cycle countdown loop
+  // Day/Night cycle countdown loop (active only during 'playing')
   useEffect(() => {
     if (!isOpen || stage !== 'playing') return;
 
@@ -199,10 +391,10 @@ export function EscapePrisonModal({
           gtaAudio.startPrisonBgm(nextPhase);
 
           if (nextPhase === 'day') {
-            if (inHoleRef.current) {
-              triggerBusted('Kamu masih berada di dalam lubang saat Siang tiba!');
+            if (inHoleRef.current || foxWalkStateRef.current === 'walking_to_hole') {
+              triggerBusted('CCTV Sel dan Sipir mendeteksi kamu masih berada di lubang saat Siang tiba!');
             } else if (!rugCoveredRef.current) {
-              triggerBusted('Karpet belum ditutup saat Sipir berpatroli di Siang hari!');
+              triggerBusted('CCTV Sel melihat lubang galian karena Karpet belum ditutup saat Siang!');
             }
           }
           return PHASE_DURATION_SEC;
@@ -214,43 +406,308 @@ export function EscapePrisonModal({
     return () => clearInterval(tickInterval);
   }, [isOpen, stage, triggerBusted]);
 
-  // Canvas 2D Prison Cell renderer
+  // Helper to spawn dirt or confetti particles
+  const spawnParticles = useCallback((x: number, y: number, count: number, celebration = false) => {
+    const colors = celebration
+      ? ['#FFB458', '#F36A78', '#C9349B', '#67E8F9']
+      : ['#D97706', '#92400E', '#F59E0B'];
+    for (let i = 0; i < count; i++) {
+      particlesRef.current.push({
+        x: x + (Math.random() - 0.5) * 24,
+        y,
+        vx: (Math.random() - 0.5) * (celebration ? 240 : 150),
+        vy: -90 - Math.random() * (celebration ? 150 : 90),
+        age: 0,
+        maxAge: celebration ? 0.85 : 0.45,
+        color: colors[i % colors.length],
+        size: celebration ? 4.5 : 3.8,
+      });
+    }
+  }, []);
+
+  // Main 2D Cutaway World Renderer (Prison Cell + Outside Landscape + Soil Tunnel + Walk + Cutscene)
   useEffect(() => {
-    if (!isOpen || stage !== 'playing') {
+    if (!isOpen || (stage !== 'playing' && stage !== 'escape_cutscene')) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
 
     let prevNow = performance.now();
 
-    const drawCell = (now: number) => {
+    const drawWorld = (now: number) => {
       const dt = Math.min(0.05, (now - prevNow) / 1000);
       prevNow = now;
       const tSec = now / 1000;
 
+      const curStage = stageRef.current;
       const isNight = phaseRef.current === 'night';
+      const pct = Math.max(0, Math.min(100, progressRef.current));
+
+      // Smooth Rug slide
       const targetRug = rugCoveredRef.current ? 1 : 0;
       rugSlideRef.current += (targetRug - rugSlideRef.current) * Math.min(1, dt * 10);
 
       if (swingAnimRef.current > 0) {
-        swingAnimRef.current = Math.max(0, swingAnimRef.current - dt * 4.5);
+        swingAnimRef.current = Math.max(0, swingAnimRef.current - dt * 5.2);
       }
 
-      // Guard patrol movement during Day (peeks past cell window/bars)
-      if (!isNight) {
-        guardXRef.current = 640 + Math.sin(tSec * 1.15) * 95;
+      // Guard patrol sweep during Day ONLY (walks along corridor & outside doorway bounds; clipped inside corridor!)
+      if (!isNight && curStage === 'playing') {
+        guardXRef.current = 520 + Math.sin(tSec * 1.1) * 145;
       } else {
-        guardXRef.current = 860;
+        guardXRef.current = 900; // Completely absent at Night or Cutscene
       }
+
+      // CCTV pan angle inside cell
+      cctvAngleRef.current = Math.sin(tSec * 1.05);
+      const cctvTargetX = 330 + cctvAngleRef.current * 140; // Sweeps from x=190 to x=470 on cell floor
+
+      // Character walking state machine (when entering/exiting hole)
+      if (curStage === 'playing') {
+        if (foxWalkStateRef.current === 'walking_to_hole') {
+          walkCycleRef.current += dt * 16;
+          foxXRef.current = Math.min(HOLE_X, foxXRef.current + dt * 210);
+          if (foxXRef.current >= HOLE_X - 1) {
+            foxXRef.current = HOLE_X;
+            foxWalkStateRef.current = 'inside_hole';
+            inHoleRef.current = true;
+            setInHole(true);
+            gtaAudio.playHoleToggleSfx(true);
+          }
+        } else if (foxWalkStateRef.current === 'walking_to_rest') {
+          walkCycleRef.current += dt * 16;
+          foxXRef.current = Math.max(REST_X, foxXRef.current - dt * 210);
+          if (foxXRef.current <= REST_X + 1) {
+            foxXRef.current = REST_X;
+            foxWalkStateRef.current = 'at_rest';
+          }
+        }
+      }
+
+      // Cutscene progress at 100.0%
+      if (curStage === 'escape_cutscene') {
+        cutsceneTimeRef.current += dt;
+        const ct = cutsceneTimeRef.current;
+        if (ct >= 2.95 && ct < 3.05 && Math.random() < 0.45) {
+          spawnParticles(EXIT_X + 20, GROUND_Y - 12, 4, true);
+        }
+        if (ct >= 4.65 && !cutsceneDoneRef.current) {
+          cutsceneDoneRef.current = true;
+          const updated = completeEscapePrisonMission();
+          setSeasonState(updated);
+          onMissionSuccess?.(updated);
+          setStage('victory_anim');
+          stageRef.current = 'victory_anim';
+          return;
+        }
+      }
+
+      // Camera target: < 10% zoomed closely inside cell; >= 10% (or cutscene) zooms out to reveal exterior, sky, sun/moon & underground soil tunnel
+      const shouldZoomOut = pct >= 10 || curStage === 'escape_cutscene';
+      let targetCamX = 345;
+      let targetCamY = 215;
+      let targetCamZoom = 1.48;
+
+      if (curStage === 'escape_cutscene') {
+        const panRatio = Math.min(1, cutsceneTimeRef.current / 3.1);
+        targetCamX = 720 + panRatio * 140;
+        targetCamY = 345;
+        targetCamZoom = 0.65;
+      } else if (shouldZoomOut) {
+        targetCamX = 760;
+        targetCamY = 352;
+        targetCamZoom = 0.62;
+      }
+
+      camStateRef.current.x += (targetCamX - camStateRef.current.x) * Math.min(1, dt * 3.4);
+      camStateRef.current.y += (targetCamY - camStateRef.current.y) * Math.min(1, dt * 3.4);
+      camStateRef.current.zoom +=
+        (targetCamZoom - camStateRef.current.zoom) * Math.min(1, dt * 3.4);
 
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.clearRect(0, 0, LOGICAL_W, LOGICAL_H);
+          // Backdrop fill behind world camera
+          ctx.fillStyle = isNight ? '#0B0419' : '#2C1838';
+          ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
-          // 1. Back Wall & Ambient Lighting
-          const wallGrad = ctx.createLinearGradient(0, 0, 0, 290);
+          ctx.save();
+          ctx.translate(LOGICAL_W / 2, LOGICAL_H / 2);
+          ctx.scale(camStateRef.current.zoom, camStateRef.current.zoom);
+          ctx.translate(-camStateRef.current.x, -camStateRef.current.y);
+
+          // =========================================================
+          // 1. SKY, SUN / MOON & OUTSIDE VICE CITY LANDSCAPE
+          // =========================================================
+          const skyGrad = ctx.createLinearGradient(0, -140, 0, GROUND_Y);
+          if (isNight) {
+            skyGrad.addColorStop(0, '#070314');
+            skyGrad.addColorStop(0.55, '#1B0B36');
+            skyGrad.addColorStop(1, '#3B146B');
+          } else {
+            skyGrad.addColorStop(0, '#F36A78');
+            skyGrad.addColorStop(0.45, '#FF9B55');
+            skyGrad.addColorStop(1, '#FFB458');
+          }
+          ctx.fillStyle = skyGrad;
+          ctx.fillRect(-160, -220, WORLD_W + 320, GROUND_Y + 220);
+
+          if (isNight) {
+            // Twinkling stars in outdoor sky
+            for (const s of NIGHT_STARS) {
+              const alpha = 0.45 + Math.sin(tSec * 2.2 + s.phase) * 0.4;
+              ctx.fillStyle = `rgba(255, 245, 220, ${alpha.toFixed(2)})`;
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Crescent Moon (Bulan) in outdoor sky
+            ctx.save();
+            ctx.translate(1190, 96);
+            const moonHalo = ctx.createRadialGradient(0, 0, 12, 0, 0, 92);
+            moonHalo.addColorStop(0, 'rgba(254, 240, 138, 0.35)');
+            moonHalo.addColorStop(1, 'rgba(254, 240, 138, 0)');
+            ctx.fillStyle = moonHalo;
+            ctx.beginPath();
+            ctx.arc(0, 0, 92, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#FEF08A';
+            ctx.beginPath();
+            ctx.arc(0, 0, 34, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#15082B';
+            ctx.beginPath();
+            ctx.arc(13, -8, 30, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } else {
+            // Radiant Sun (Matahari) in outdoor sky
+            ctx.save();
+            ctx.translate(1190, 96);
+            const sunHalo = ctx.createRadialGradient(0, 0, 18, 0, 0, 135);
+            sunHalo.addColorStop(0, 'rgba(255, 248, 195, 0.9)');
+            sunHalo.addColorStop(0.45, 'rgba(255, 180, 88, 0.35)');
+            sunHalo.addColorStop(1, 'rgba(255, 180, 88, 0)');
+            ctx.fillStyle = sunHalo;
+            ctx.beginPath();
+            ctx.arc(0, 0, 135, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#FFF7AE';
+            ctx.beginPath();
+            ctx.arc(0, 0, 38, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Distant Vice City skyline silhouettes outside prison
+          ctx.fillStyle = isNight ? '#16092E' : 'rgba(59, 20, 107, 0.42)';
+          const cityBuildings = [
+            { x: 690, w: 55, h: 120 },
+            { x: 755, w: 42, h: 85 },
+            { x: 840, w: 72, h: 155 },
+            { x: 925, w: 48, h: 105 },
+            { x: 1020, w: 68, h: 138 },
+            { x: 1120, w: 58, h: 95 },
+            { x: 1220, w: 80, h: 168 },
+            { x: 1320, w: 64, h: 115 },
+            { x: 1405, w: 85, h: 142 },
+          ];
+          for (const b of cityBuildings) {
+            ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
+          }
+
+          // Perimeter Prison Yard Fence (x = 810)
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(810, GROUND_Y);
+          ctx.lineTo(810, 190);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+          ctx.lineWidth = 1.5;
+          for (let fy = 205; fy < GROUND_Y; fy += 18) {
+            ctx.beginPath();
+            ctx.moveTo(800, fy);
+            ctx.lineTo(820, fy + 10);
+            ctx.stroke();
+          }
+          // Barbed wire rings atop fence
+          ctx.strokeStyle = '#94A3B8';
+          ctx.lineWidth = 1.6;
+          for (let wx = 798; wx <= 822; wx += 8) {
+            ctx.beginPath();
+            ctx.arc(wx, 186, 7, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // Palm trees outside yard (Vice City flavor)
+          const drawPalm = (px: number, py: number, scale: number) => {
+            ctx.save();
+            ctx.translate(px, py);
+            ctx.scale(scale, scale);
+            ctx.strokeStyle = isNight ? '#1E1136' : '#3B146B';
+            ctx.lineWidth = 9;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(10, -68, -6, -130);
+            ctx.stroke();
+
+            ctx.fillStyle = isNight ? '#271347' : '#3B146B';
+            const angles = [-2.5, -1.9, -1.1, -0.4, 0.25];
+            for (const a of angles) {
+              ctx.save();
+              ctx.translate(-6, -130);
+              ctx.rotate(a + Math.sin(tSec * 1.4 + px) * 0.04);
+              ctx.beginPath();
+              ctx.ellipse(24, 0, 28, 7, 0.12, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            }
+            ctx.restore();
+          };
+          drawPalm(955, GROUND_Y, 0.95);
+          drawPalm(1340, GROUND_Y, 1.15);
+
+          // Outdoor Freedom Road / Curb & Exit Flag at x = 1090
+          ctx.fillStyle = isNight ? '#1D1433' : '#475569';
+          ctx.fillRect(1240, GROUND_Y - 6, 360, 10);
+          ctx.fillStyle = isNight ? '#22C55E' : '#16A34A';
+          ctx.fillRect(620, GROUND_Y - 6, 620, 10);
+
+          // Subtle "BEBAS" marker post beyond exit hole
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(1152, GROUND_Y - 56, 4, 56);
+          ctx.fillStyle = '#FFB458';
+          ctx.beginPath();
+          ctx.roundRect(1156, GROUND_Y - 54, 42, 18, 4);
+          ctx.fill();
+          ctx.fillStyle = '#111827';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('KELUAR', 1177, GROUND_Y - 42);
+
+          // =========================================================
+          // 2. PRISON BUILDING & INTERIOR CELL (x = 30 .. 622)
+          // =========================================================
+          // Exterior concrete roof & right exterior brick wall
+          ctx.fillStyle = '#1E293B';
+          ctx.fillRect(26, 38, 600, 16);
+          // Barbed wire on prison roof
+          ctx.strokeStyle = '#94A3B8';
+          ctx.lineWidth = 1.6;
+          for (let rx = 40; rx <= 610; rx += 18) {
+            ctx.beginPath();
+            ctx.arc(rx, 31, 7, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+
+          // Interior cell back wall
+          const wallGrad = ctx.createLinearGradient(0, 54, 0, GROUND_Y);
           if (isNight) {
             wallGrad.addColorStop(0, '#1D0B38');
             wallGrad.addColorStop(1, '#3B146B');
@@ -259,360 +716,463 @@ export function EscapePrisonModal({
             wallGrad.addColorStop(1, '#856556');
           }
           ctx.fillStyle = wallGrad;
-          ctx.fillRect(0, 0, LOGICAL_W, 290);
+          ctx.fillRect(40, 54, 562, GROUND_Y - 54);
 
-          // Brick masonry lines
+          // Brick masonry lines inside cell
           ctx.strokeStyle = isNight ? 'rgba(123,32,143,0.28)' : 'rgba(17,24,39,0.18)';
           ctx.lineWidth = 2;
           for (let row = 0; row < 6; row++) {
-            const ry = 35 + row * 44;
+            const ry = 82 + row * 44;
             ctx.beginPath();
-            ctx.moveTo(0, ry);
-            ctx.lineTo(LOGICAL_W, ry);
+            ctx.moveTo(40, ry);
+            ctx.lineTo(602, ry);
             ctx.stroke();
             const offset = row % 2 === 0 ? 0 : 45;
-            for (let cx = offset; cx < LOGICAL_W; cx += 90) {
+            for (let cx = 40 + offset; cx < 602; cx += 90) {
               ctx.beginPath();
               ctx.moveTo(cx, ry);
-              ctx.lineTo(cx, ry + 44);
+              ctx.lineTo(cx, Math.min(GROUND_Y, ry + 44));
               ctx.stroke();
             }
           }
 
-          // 2. High Barred Cell Window (Left-Center)
+          // Thick Left & Right Prison Concrete Walls
+          ctx.fillStyle = '#334155';
+          ctx.fillRect(16, 48, 28, GROUND_Y - 48);
+          ctx.fillRect(600, 48, 30, GROUND_Y - 48);
+          ctx.strokeStyle = '#0F172A';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(600, 48, 30, GROUND_Y - 48);
+
+          // High Barred Cell Window (Left-Center) showing true sky outside
           ctx.fillStyle = isNight ? '#120726' : '#FFB458';
-          ctx.fillRect(150, 44, 150, 88);
+          ctx.fillRect(138, 92, 136, 82);
           if (isNight) {
-            // Crescent Moon
             ctx.fillStyle = '#FDE68A';
             ctx.beginPath();
-            ctx.arc(255, 76, 14, 0, Math.PI * 2);
+            ctx.arc(236, 122, 12, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#120726';
             ctx.beginPath();
-            ctx.arc(261, 72, 12, 0, Math.PI * 2);
+            ctx.arc(241, 118, 10, 0, Math.PI * 2);
             ctx.fill();
           } else {
-            // Warm Vice City Day Sun Glow
-            const sunGrad = ctx.createLinearGradient(150, 44, 300, 132);
-            sunGrad.addColorStop(0, '#FFB458');
-            sunGrad.addColorStop(1, '#FF9B55');
-            ctx.fillStyle = sunGrad;
-            ctx.fillRect(150, 44, 150, 88);
+            const winSun = ctx.createLinearGradient(138, 92, 274, 174);
+            winSun.addColorStop(0, '#FFB458');
+            winSun.addColorStop(1, '#FF9B55');
+            ctx.fillStyle = winSun;
+            ctx.fillRect(138, 92, 136, 82);
           }
-
-          // Window steel bars
           ctx.strokeStyle = '#1E293B';
-          ctx.lineWidth = 6;
-          ctx.strokeRect(150, 44, 150, 88);
-          [185, 225, 265].forEach((bx) => {
+          ctx.lineWidth = 5.5;
+          ctx.strokeRect(138, 92, 136, 82);
+          [172, 206, 240].forEach((bx) => {
             ctx.beginPath();
-            ctx.moveTo(bx, 44);
-            ctx.lineTo(bx, 132);
+            ctx.moveTo(bx, 92);
+            ctx.lineTo(bx, 174);
             ctx.stroke();
           });
 
-          // Angled light shaft onto cell floor
-          const beamGrad = ctx.createLinearGradient(220, 132, 340, 380);
-          if (isNight) {
-            beamGrad.addColorStop(0, 'rgba(123, 32, 143, 0.25)');
-            beamGrad.addColorStop(1, 'rgba(59, 20, 107, 0)');
-          } else {
-            beamGrad.addColorStop(0, 'rgba(255, 180, 88, 0.35)');
-            beamGrad.addColorStop(1, 'rgba(255, 155, 85, 0.05)');
-          }
-          ctx.fillStyle = beamGrad;
-          ctx.beginPath();
-          ctx.moveTo(150, 132);
-          ctx.lineTo(300, 132);
-          ctx.lineTo(440, 410);
-          ctx.lineTo(190, 410);
-          ctx.closePath();
-          ctx.fill();
-
-          // 3. Stone Cell Floor (Angled 2D perspective)
-          ctx.fillStyle = isNight ? '#24143B' : '#574E5B';
-          ctx.fillRect(0, 286, LOGICAL_W, LOGICAL_H - 286);
-          ctx.fillStyle = isNight ? '#3B146B' : '#786D7D';
-          ctx.fillRect(0, 286, LOGICAL_W, 6);
-
-          // Floor perspective seams
-          ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-          ctx.lineWidth = 2;
-          for (let fx = 100; fx < LOGICAL_W; fx += 140) {
-            ctx.beginPath();
-            ctx.moveTo(fx, 290);
-            ctx.lineTo(fx - 40, LOGICAL_H);
-            ctx.stroke();
-          }
-
-          // 4. Prison Bunk / Bed on Left
+          // Prison Bunk on Left
           ctx.fillStyle = '#334155';
-          ctx.fillRect(28, 224, 154, 18);
-          ctx.fillRect(34, 242, 10, 56);
-          ctx.fillRect(166, 242, 10, 56);
+          ctx.fillRect(54, 278, 132, 15);
+          ctx.fillRect(60, 293, 9, 47);
+          ctx.fillRect(172, 293, 9, 47);
           ctx.fillStyle = '#E2E8F0';
           ctx.beginPath();
-          ctx.roundRect(36, 208, 42, 16, 6);
+          ctx.roundRect(62, 264, 38, 14, 5);
           ctx.fill();
           ctx.fillStyle = '#7B208F';
           ctx.beginPath();
-          ctx.roundRect(74, 210, 102, 16, 4);
+          ctx.roundRect(96, 266, 86, 14, 4);
           ctx.fill();
 
-          // 5. Right Cell Gate & Corridor Guard Window
-          ctx.fillStyle = isNight ? '#10071F' : '#2C2236';
-          ctx.fillRect(585, 58, 195, 228);
+          // Cell Door Corridor Opening (x = 435..585, y = 115..340)
+          const corrX = 435;
+          const corrY = 115;
+          const corrW = 150;
+          const corrH = GROUND_Y - corrY;
+          ctx.fillStyle = isNight ? '#10071F' : '#261D30';
+          ctx.fillRect(corrX, corrY, corrW, corrH);
 
-          // Prison Guard (Sipir) visible patrolling behind cell bars during Day
-          if (guardXRef.current < 810) {
+          // STRICTLY CLIPPED GUARD (Sipir) — NEVER bleeds onto prison walls outside steel bars!
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(corrX, corrY, corrW, corrH);
+          ctx.clip();
+
+          if (!isNight && curStage === 'playing' && guardXRef.current >= corrX - 35 && guardXRef.current <= corrX + corrW + 35) {
             const gx = guardXRef.current;
-            const gy = 178;
+            const gy = 236;
             ctx.save();
             ctx.translate(gx, gy);
 
-            // Flashlight / inspection cone during Day
-            const guardBeam = ctx.createLinearGradient(0, 0, -250, 140);
+            // Guard flashlight cone clipped within corridor doorway
+            const guardBeam = ctx.createLinearGradient(0, 0, -140, 90);
             guardBeam.addColorStop(0, 'rgba(255, 180, 88, 0.35)');
             guardBeam.addColorStop(1, 'rgba(255, 180, 88, 0)');
             ctx.fillStyle = guardBeam;
             ctx.beginPath();
-            ctx.moveTo(-14, 4);
-            ctx.lineTo(-270, 110);
-            ctx.lineTo(-220, 190);
+            ctx.moveTo(-12, 4);
+            ctx.lineTo(-160, 75);
+            ctx.lineTo(-120, 125);
             ctx.closePath();
             ctx.fill();
 
             // Sipir body & peaked cap
             ctx.fillStyle = '#1E293B';
             ctx.beginPath();
-            ctx.roundRect(-18, -14, 36, 78, 8);
+            ctx.roundRect(-16, -12, 32, 74, 7);
             ctx.fill();
             ctx.fillStyle = '#FBBF24';
-            ctx.fillRect(-10, -2, 8, 8); // Badge
+            ctx.fillRect(-9, 0, 7, 7);
             ctx.fillStyle = '#FDE68A';
             ctx.beginPath();
-            ctx.arc(0, -30, 15, 0, Math.PI * 2);
+            ctx.arc(0, -26, 13.5, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#0F172A';
-            ctx.fillRect(-18, -46, 36, 11);
-            ctx.fillRect(-22, -37, 26, 4);
+            ctx.fillRect(-16, -41, 32, 10);
+            ctx.fillRect(-20, -33, 24, 4);
             ctx.restore();
           }
+          ctx.restore(); // End Guard corridor clip
 
-          // Vertical steel cell door bars
+          // Vertical steel cell bars over doorway
           ctx.strokeStyle = '#0F172A';
-          ctx.lineWidth = 8;
-          ctx.strokeRect(585, 58, 195, 228);
-          for (let gx = 618; gx < 780; gx += 32) {
+          ctx.lineWidth = 7;
+          ctx.strokeRect(corrX, corrY, corrW, corrH);
+          for (let bx = corrX + 30; bx < corrX + corrW; bx += 30) {
             ctx.beginPath();
-            ctx.moveTo(gx, 58);
-            ctx.lineTo(gx, 286);
+            ctx.moveTo(bx, corrY);
+            ctx.lineTo(bx, GROUND_Y);
             ctx.stroke();
           }
 
-          // 6. Dig Spot & Excavated Escape Tunnel (Center Floor x=385, y=352)
-          const holeX = 385;
-          const holeY = 354;
-          const pct = progressRef.current / 100;
-          const holeRx = 34 + pct * 38;
-          const holeRy = 14 + pct * 14;
-
-          // Dirt rim mound around hole
-          if (progressRef.current > 0) {
-            ctx.fillStyle = '#78350F';
-            ctx.beginPath();
-            ctx.ellipse(holeX, holeY + 3, holeRx + 12, holeRy + 7, 0, 0, Math.PI * 2);
-            ctx.fill();
+          // =========================================================
+          // 3. CELL CCTV CAMERA (Penglihatan Extra) at (566, 76)
+          // =========================================================
+          // Surveillance vision beam across cell floor
+          const camOriginX = 552;
+          const camOriginY = 88;
+          ctx.save();
+          const cctvGrad = ctx.createLinearGradient(camOriginX, camOriginY, cctvTargetX, GROUND_Y);
+          if (isNight) {
+            cctvGrad.addColorStop(0, 'rgba(201, 52, 155, 0.22)');
+            cctvGrad.addColorStop(1, 'rgba(201, 52, 155, 0.02)');
+          } else {
+            cctvGrad.addColorStop(0, 'rgba(243, 106, 120, 0.36)');
+            cctvGrad.addColorStop(1, 'rgba(255, 180, 88, 0.08)');
           }
-
-          // Deep pit cavity
-          ctx.fillStyle = '#090512';
+          ctx.fillStyle = cctvGrad;
           ctx.beginPath();
-          ctx.ellipse(holeX, holeY, holeRx, holeRy, 0, 0, Math.PI * 2);
+          ctx.moveTo(camOriginX, camOriginY);
+          ctx.lineTo(cctvTargetX - 54, GROUND_Y);
+          ctx.lineTo(cctvTargetX + 54, GROUND_Y);
+          ctx.closePath();
           ctx.fill();
 
-          // Tunnel inner rim glow near completion
-          if (progressRef.current >= 70) {
-            ctx.strokeStyle = 'rgba(255, 180, 88, 0.55)';
-            ctx.lineWidth = 2.5;
+          // Subtle scan edge line during Day
+          if (!isNight) {
+            ctx.strokeStyle = 'rgba(243, 106, 120, 0.48)';
+            ctx.lineWidth = 1.6;
             ctx.stroke();
           }
+          ctx.restore();
 
-          // 7. Bluefox Prisoner Avatar (inside hole vs standing next to hole)
-          const swingAngle = Math.sin(swingAnimRef.current * Math.PI) * 0.9;
-          if (inHoleRef.current) {
-            // Inside hole: waist & upper torso emerging from tunnel pit
-            ctx.save();
-            ctx.translate(holeX, holeY - 6);
+          // CCTV Ceiling Bracket & Rotating Camera Body
+          ctx.save();
+          ctx.translate(566, 76);
+          ctx.strokeStyle = '#475569';
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.moveTo(14, -18);
+          ctx.lineTo(0, 0);
+          ctx.stroke();
 
-            // Prison striped torso
-            ctx.fillStyle = '#2563EB';
-            ctx.beginPath();
-            ctx.roundRect(-14, -18, 28, 26, 6);
-            ctx.fill();
-            ctx.fillStyle = '#FF9B55';
-            ctx.fillRect(-13, -10, 26, 4);
-            ctx.fillRect(-13, -1, 26, 4);
+          const aimAngle = Math.atan2(GROUND_Y - 76, cctvTargetX - 566);
+          ctx.rotate(aimAngle - Math.PI);
+          ctx.fillStyle = '#E2E8F0';
+          ctx.beginPath();
+          ctx.roundRect(-24, -8, 28, 16, 4);
+          ctx.fill();
+          ctx.fillStyle = '#0F172A';
+          ctx.fillRect(-28, -6, 6, 12);
 
-            // Fox head
-            ctx.fillStyle = '#2563EB';
+          // Blinking Red REC LED
+          if (Math.sin(tSec * 5.5) > -0.2) {
+            ctx.fillStyle = '#EF4444';
             ctx.beginPath();
-            ctx.arc(0, -30, 14, 0, Math.PI * 2);
+            ctx.arc(-6, -3, 2.8, 0, Math.PI * 2);
             ctx.fill();
+          }
+          ctx.restore();
+
+          // Cell Wall CAM-01 Tag
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+          ctx.beginPath();
+          ctx.roundRect(518, 59, 64, 16, 4);
+          ctx.fill();
+          ctx.fillStyle = Math.sin(tSec * 5.5) > -0.2 ? '#F87171' : '#94A3B8';
+          ctx.font = 'bold 8.5px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('CAM-01 REC', 550, 70);
+
+          // =========================================================
+          // 4. UNDERGROUND SOIL STRATA & EXCAVATED ESCAPE TUNNEL
+          // =========================================================
+          const soilGrad = ctx.createLinearGradient(0, GROUND_Y, 0, WORLD_H);
+          soilGrad.addColorStop(0, '#59341D');
+          soilGrad.addColorStop(0.32, '#412314');
+          soilGrad.addColorStop(0.75, '#2A1511');
+          soilGrad.addColorStop(1, '#160B14');
+          ctx.fillStyle = soilGrad;
+          ctx.fillRect(-160, GROUND_Y, WORLD_W + 320, WORLD_H - GROUND_Y + 120);
+
+          // Stone cell floor slab top strip (x = 16..630)
+          ctx.fillStyle = isNight ? '#2B1947' : '#6B6070';
+          ctx.fillRect(16, GROUND_Y - 5, 614, 15);
+          ctx.fillStyle = isNight ? '#4C1D95' : '#8A7D91';
+          ctx.fillRect(16, GROUND_Y - 5, 614, 4);
+
+          // Embedded soil rocks
+          ctx.fillStyle = 'rgba(15, 10, 18, 0.38)';
+          for (const rk of SOIL_ROCKS) {
             ctx.beginPath();
-            ctx.moveTo(-10, -40);
-            ctx.lineTo(-14, -54);
-            ctx.lineTo(-2, -43);
-            ctx.closePath();
+            ctx.arc(rk.x, rk.y, rk.r, 0, Math.PI * 2);
             ctx.fill();
+          }
+
+          // Excavated Escape Tunnel Geometry based on digProgress (0.0% .. 100.0%)
+          const shaftDepth = pct <= 0 ? 0 : Math.max(24, (Math.min(10, pct) / 10) * (TUNNEL_Y - GROUND_Y));
+          const horizRatio = Math.max(0, Math.min(1, (pct - 10) / 78));
+          const tunnelEndX = HOLE_X + horizRatio * (EXIT_X - HOLE_X);
+          const exitRatio = Math.max(0, Math.min(1, (pct - 88) / 12));
+          const exitTopY = TUNNEL_Y - exitRatio * (TUNNEL_Y - GROUND_Y);
+
+          if (pct > 0) {
+            // Dirt outline rim around tunnel cavity
+            ctx.fillStyle = '#1B0D0A';
+            // Vertical shaft under cell hole
             ctx.beginPath();
-            ctx.moveTo(2, -43);
-            ctx.lineTo(14, -54);
-            ctx.lineTo(10, -40);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = '#67E8F9';
-            ctx.beginPath();
-            ctx.roundRect(-7, -34, 15, 6, 3);
+            ctx.roundRect(HOLE_X - 30, GROUND_Y - 2, 60, shaftDepth + 28, 18);
             ctx.fill();
 
-            // Pickaxe swinging
-            ctx.save();
-            ctx.translate(12, -10);
-            ctx.rotate(swingAngle - 0.35);
-            ctx.strokeStyle = '#92400E';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(20, -18);
-            ctx.stroke();
-            ctx.strokeStyle = '#CBD5E1';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.moveTo(12, -22);
-            ctx.lineTo(26, -12);
-            ctx.stroke();
-            ctx.restore();
+            // Horizontal tunnel advancing rightward under prison walls toward outside
+            if (pct >= 10) {
+              ctx.beginPath();
+              ctx.roundRect(HOLE_X - 28, TUNNEL_Y - 30, tunnelEndX - HOLE_X + 58, 60, 22);
+              ctx.fill();
+            }
 
-            ctx.restore();
+            // Upward exit shaft breaking surface outside prison
+            if (pct > 88) {
+              ctx.beginPath();
+              ctx.roundRect(EXIT_X - 28, exitTopY - 4, 56, TUNNEL_Y - exitTopY + 32, 18);
+              ctx.fill();
+            }
+
+            // Inner dark tunnel cavity
+            ctx.fillStyle = '#09040F';
+            ctx.beginPath();
+            ctx.roundRect(HOLE_X - 22, GROUND_Y, 44, shaftDepth + 20, 14);
+            ctx.fill();
+
+            if (pct >= 10) {
+              ctx.beginPath();
+              ctx.roundRect(HOLE_X - 22, TUNNEL_Y - 22, tunnelEndX - HOLE_X + 44, 44, 16);
+              ctx.fill();
+
+              // Wooden tunnel support beams every 145px
+              ctx.fillStyle = '#78350F';
+              for (let bx = HOLE_X + 85; bx < tunnelEndX - 20; bx += 145) {
+                ctx.fillRect(bx, TUNNEL_Y - 22, 6, 44);
+                ctx.fillRect(bx - 6, TUNNEL_Y - 22, 18, 5);
+              }
+            }
+
+            if (pct > 88) {
+              ctx.fillStyle = '#09040F';
+              ctx.beginPath();
+              ctx.roundRect(EXIT_X - 22, exitTopY - 2, 44, TUNNEL_Y - exitTopY + 24, 14);
+              ctx.fill();
+            }
+
+            // Cell floor opening ellipse & dirt mound
+            const holeRx = 32 + (pct / 100) * 14;
+            ctx.fillStyle = '#78350F';
+            ctx.beginPath();
+            ctx.ellipse(HOLE_X, GROUND_Y + 2, holeRx + 10, 9, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#09040F';
+            ctx.beginPath();
+            ctx.ellipse(HOLE_X, GROUND_Y + 1, holeRx, 7, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Outside surface breach mound once >= 94%
+            if (pct >= 94) {
+              ctx.fillStyle = '#78350F';
+              ctx.beginPath();
+              ctx.ellipse(EXIT_X, GROUND_Y + 2, 34, 9, 0, 0, Math.PI * 2);
+              ctx.fill();
+              if (pct >= 99.5) {
+                ctx.fillStyle = '#09040F';
+                ctx.beginPath();
+                ctx.ellipse(EXIT_X, GROUND_Y + 1, 24, 6.5, 0, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
           } else {
-            // Standing safely outside hole on the left side
-            const bx = 262;
-            const by = 318 + Math.sin(tSec * 3) * 1.5;
-            ctx.save();
-            ctx.translate(bx, by);
-
-            ctx.fillStyle = 'rgba(0,0,0,0.35)';
+            // Un-dug slight floor mark under rug
+            ctx.fillStyle = '#09040F';
             ctx.beginPath();
-            ctx.ellipse(0, 34, 18, 5, 0, 0, Math.PI * 2);
+            ctx.ellipse(HOLE_X, GROUND_Y + 1, 24, 5, 0, 0, Math.PI * 2);
             ctx.fill();
-
-            // Legs
-            ctx.strokeStyle = '#1E3A8A';
-            ctx.lineWidth = 6.5;
-            ctx.lineCap = 'round';
-            ctx.beginPath();
-            ctx.moveTo(-5, 14);
-            ctx.lineTo(-6, 32);
-            ctx.moveTo(5, 14);
-            ctx.lineTo(6, 32);
-            ctx.stroke();
-
-            // Prison striped torso
-            ctx.fillStyle = '#2563EB';
-            ctx.beginPath();
-            ctx.roundRect(-13, -14, 26, 30, 7);
-            ctx.fill();
-            ctx.fillStyle = '#FF9B55';
-            ctx.fillRect(-12, -5, 24, 4);
-            ctx.fillRect(-12, 4, 24, 4);
-
-            // Head & ears
-            ctx.fillStyle = '#2563EB';
-            ctx.beginPath();
-            ctx.arc(0, -25, 13.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(-9, -35);
-            ctx.lineTo(-13, -49);
-            ctx.lineTo(-1, -38);
-            ctx.closePath();
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(1, -38);
-            ctx.lineTo(13, -49);
-            ctx.lineTo(9, -35);
-            ctx.closePath();
-            ctx.fill();
-            ctx.fillStyle = '#67E8F9';
-            ctx.beginPath();
-            ctx.roundRect(-4, -29, 14, 6, 3);
-            ctx.fill();
-
-            ctx.restore();
           }
 
-          // 8. Movable Rug ("Karpet") covering or slid aside from hole
-          const rugX = holeX + (1 - rugSlideRef.current) * 155;
-          const rugY = holeY;
+          // =========================================================
+          // 5. BLUEFOX CHARACTER (Walking, Inside Tunnel, or Cutscene)
+          // =========================================================
+          if (curStage === 'escape_cutscene') {
+            const ct = cutsceneTimeRef.current;
+            if (ct < 2.25) {
+              // Phase 1: Walking briskly through excavated underground tunnel!
+              const p = ct / 2.25;
+              const cx = HOLE_X + p * (EXIT_X - HOLE_X);
+              drawBluefoxCharacter(ctx, cx, TUNNEL_Y - 12, {
+                facing: 1,
+                walkPhase: ct * 20,
+                isWalking: true,
+                scale: 0.85,
+              });
+            } else if (ct < 2.9) {
+              // Phase 2: Climbing up the outside exit shaft to surface freedom!
+              const p = (ct - 2.25) / 0.65;
+              const cy = TUNNEL_Y - 12 - p * (TUNNEL_Y - 12 - (GROUND_Y - 34));
+              drawBluefoxCharacter(ctx, EXIT_X, cy, {
+                facing: 1,
+                walkPhase: ct * 18,
+                isWalking: true,
+                scale: 0.9,
+              });
+            } else {
+              // Phase 3: Jumping repeatedly outside ("animation lompat-lompat pas keluar")!
+              const jt = ct - 2.9;
+              const jumpX = EXIT_X + Math.min(115, jt * 68);
+              const jumpArc = Math.abs(Math.sin(jt * Math.PI * 3.1)) * 48;
+              drawBluefoxCharacter(ctx, jumpX, GROUND_Y - 34 - jumpArc, {
+                facing: 1,
+                walkPhase: 0,
+                isWalking: false,
+                armsUp: true,
+                scale: 1,
+              });
+            }
+          } else {
+            const wState = foxWalkStateRef.current;
+            if (wState === 'inside_hole') {
+              // Position Bluefox dynamically at the active tunnel digging tip!
+              let digCharX = HOLE_X;
+              let digCharY = GROUND_Y + Math.max(12, shaftDepth - 22);
+              if (pct >= 10 && pct < 88) {
+                digCharX = Math.max(HOLE_X + 12, tunnelEndX - 16);
+                digCharY = TUNNEL_Y - 12;
+              } else if (pct >= 88) {
+                digCharX = EXIT_X;
+                digCharY = Math.max(GROUND_Y - 24, exitTopY + 10);
+              }
+              drawBluefoxCharacter(ctx, digCharX, digCharY, {
+                facing: 1,
+                pickaxeSwing: swingAnimRef.current,
+                scale: pct >= 10 ? 0.85 : 0.92,
+              });
+            } else {
+              const isMoving = wState === 'walking_to_hole' || wState === 'walking_to_rest';
+              const facing: 1 | -1 = wState === 'walking_to_rest' ? -1 : 1;
+              drawBluefoxCharacter(ctx, foxXRef.current, GROUND_Y - 34, {
+                facing,
+                walkPhase: walkCycleRef.current,
+                isWalking: isMoving,
+                scale: 1,
+              });
+            }
+          }
+
+          // =========================================================
+          // 6. MOVABLE RUG ("Karpet") over Cell Dig Spot
+          // =========================================================
+          const rugX = HOLE_X - (1 - rugSlideRef.current) * 112;
+          const rugY = GROUND_Y - 4;
           const rugScaleX = 1 - (1 - rugSlideRef.current) * 0.25;
 
           ctx.save();
           ctx.translate(rugX, rugY);
           ctx.scale(rugScaleX, 1);
-
-          // Rug shadow
-          ctx.fillStyle = 'rgba(0,0,0,0.4)';
+          ctx.fillStyle = 'rgba(0,0,0,0.42)';
           ctx.beginPath();
-          ctx.roundRect(-78, -22, 156, 44, 8);
+          ctx.roundRect(-62, -7, 124, 16, 6);
           ctx.fill();
-
-          // Rug Vice-City body
-          const rugGrad = ctx.createLinearGradient(-76, -24, 76, 20);
+          const rugGrad = ctx.createLinearGradient(-60, -8, 60, 8);
           rugGrad.addColorStop(0, '#7B208F');
           rugGrad.addColorStop(0.5, '#C9349B');
           rugGrad.addColorStop(1, '#F36A78');
           ctx.fillStyle = rugGrad;
           ctx.beginPath();
-          ctx.roundRect(-76, -24, 152, 42, 7);
+          ctx.roundRect(-60, -9, 120, 14, 5);
           ctx.fill();
-
-          // Gold inner woven border
           ctx.strokeStyle = '#FFB458';
-          ctx.lineWidth = 2.5;
-          ctx.strokeRect(-64, -16, 128, 26);
+          ctx.lineWidth = 2;
+          ctx.strokeRect(-50, -6, 100, 8);
           ctx.restore();
 
-          // 9. Dirt Digging Particles
+          // =========================================================
+          // 7. DIRT & CELEBRATION PARTICLES
+          // =========================================================
           particlesRef.current = particlesRef.current.filter((p) => {
             p.age += dt;
             if (p.age >= p.maxAge) return false;
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += 290 * dt;
-            ctx.fillStyle = '#D97706';
+            p.vy += 320 * dt;
+            ctx.fillStyle = p.color;
             ctx.globalAlpha = 1 - p.age / p.maxAge;
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
             ctx.fill();
             ctx.globalAlpha = 1;
             return true;
           });
+
+          ctx.restore(); // End Camera Transform
+
+          // Smooth Vice City sunset crossfade into Mission 2->3 bar sequence at end of jump cutscene
+          if (curStage === 'escape_cutscene' && cutsceneTimeRef.current >= 4.15) {
+            const fadeRatio = Math.min(1, (cutsceneTimeRef.current - 4.15) / 0.5);
+            ctx.save();
+            ctx.globalAlpha = fadeRatio;
+            const transitionGrad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
+            transitionGrad.addColorStop(0, '#F36A78');
+            transitionGrad.addColorStop(0.35, '#F87572');
+            transitionGrad.addColorStop(0.7, '#FF9B55');
+            transitionGrad.addColorStop(1, '#FFB458');
+            ctx.fillStyle = transitionGrad;
+            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+            ctx.restore();
+          }
         }
       }
 
-      rafRef.current = requestAnimationFrame(drawCell);
+      rafRef.current = requestAnimationFrame(drawWorld);
     };
 
-    rafRef.current = requestAnimationFrame(drawCell);
+    rafRef.current = requestAnimationFrame(drawWorld);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [isOpen, stage]);
+  }, [isOpen, stage, onMissionSuccess, spawnParticles]);
 
   const performDigTick = useCallback(() => {
-    if (bustedRef.current || progressRef.current >= 100) return;
+    if (bustedRef.current || stageRef.current !== 'playing' || progressRef.current >= 100) return;
+
     if (phaseRef.current !== 'night') {
       stopHoldDig();
       showHint('Hanya bisa menggali saat fase Malam!');
@@ -623,79 +1183,104 @@ export function EscapePrisonModal({
       showHint('Tekan "Buka Karpet" dulu sebelum menggali.');
       return;
     }
+
+    // If still standing/walking outside hole, trigger smooth walk animation into the hole first
     if (!inHoleRef.current) {
-      inHoleRef.current = true;
-      setInHole(true);
-      gtaAudio.playHoleToggleSfx(true);
+      if (foxWalkStateRef.current !== 'walking_to_hole') {
+        foxWalkStateRef.current = 'walking_to_hole';
+      }
+      return;
     }
 
     swingAnimRef.current = 1;
-    gtaAudio.playDigPickaxeSfx();
-
-    for (let i = 0; i < 6; i++) {
-      particlesRef.current.push({
-        x: 385 + (Math.random() - 0.5) * 26,
-        y: 344,
-        vx: (Math.random() - 0.5) * 140,
-        vy: -80 - Math.random() * 90,
-        age: 0,
-        maxAge: 0.45,
-      });
+    const nowMs = performance.now();
+    if (nowMs - lastDigSfxMsRef.current >= 180) {
+      lastDigSfxMsRef.current = nowMs;
+      gtaAudio.playDigPickaxeSfx();
     }
 
+    const curPct = progressRef.current;
+    const tipX =
+      curPct < 10
+        ? HOLE_X
+        : curPct < 88
+        ? HOLE_X + ((curPct - 10) / 78) * (EXIT_X - HOLE_X)
+        : EXIT_X;
+    const tipY = curPct < 10 ? GROUND_Y + 25 : curPct < 88 ? TUNNEL_Y : GROUND_Y + 25;
+    spawnParticles(tipX, tipY, 3, false);
+
     setDigProgress((prev) => {
-      const next = Math.min(100, prev + 4);
+      // Strictly +0.1% per dig action!
+      const next = Math.min(100, Number((prev + 0.1).toFixed(1)));
+      progressRef.current = next;
+
+      if (prev < 10 && next >= 10 && !zoomedOutAnnouncedRef.current) {
+        zoomedOutAnnouncedRef.current = true;
+        showHint('10% tercapai! Kamera menjauh melihat area luar & jalur galian tanah.');
+      }
+
       if (next >= 100) {
         stopHoldDig();
         gtaAudio.stopHeistBgm();
-        const updated = completeEscapePrisonMission();
-        setSeasonState(updated);
-        onMissionSuccess?.(updated);
-        setTimeout(() => {
-          setStage('victory_anim');
-        }, 260);
+        gtaAudio.playNodeUnlockSfx();
+        cutsceneTimeRef.current = 0;
+        cutsceneDoneRef.current = false;
+        stageRef.current = 'escape_cutscene';
+        setStage('escape_cutscene');
       }
       return next;
     });
-  }, [onMissionSuccess, showHint, stopHoldDig]);
+  }, [showHint, spawnParticles, stopHoldDig]);
 
   const handleDigPointerDown = () => {
     performDigTick();
     stopHoldDig();
     digHoldIntervalRef.current = setInterval(() => {
       performDigTick();
-    }, 220);
+    }, 55);
   };
 
   const handleToggleHole = () => {
-    if (bustedReason) return;
+    if (bustedReason || stage !== 'playing') return;
     if (!inHole && rugCovered) {
       showHint('Tekan "Buka Karpet" dulu sebelum masuk lubang.');
       return;
     }
     if (!inHole && phase === 'day') {
-      setInHole(true);
-      triggerBusted('Sipir melihat kamu masuk ke dalam lubang di Siang hari!');
+      triggerBusted('CCTV Sel & Sipir melihat kamu berjalan menuju lubang di Siang hari!');
       return;
     }
-    const next = !inHole;
-    setInHole(next);
-    gtaAudio.playHoleToggleSfx(next);
+
+    if (!inHole) {
+      // Animate Bluefox walking from rest spot across floor to dig spot, then climb down!
+      if (foxWalkStateRef.current === 'walking_to_hole') return;
+      foxWalkStateRef.current = 'walking_to_hole';
+      showHint('Berjalan menuju titik galian...');
+    } else {
+      // Climb out and walk back to rest spot
+      inHoleRef.current = false;
+      setInHole(false);
+      foxXRef.current = HOLE_X;
+      foxWalkStateRef.current = 'walking_to_rest';
+      gtaAudio.playHoleToggleSfx(false);
+    }
   };
 
   const handleToggleRug = () => {
-    if (bustedReason) return;
+    if (bustedReason || stage !== 'playing') return;
     if (rugCovered && phase === 'day') {
       setRugCovered(false);
-      triggerBusted('Sipir melihat lubang di lantai saat Karpet dibuka pada Siang hari!');
+      rugCoveredRef.current = false;
+      triggerBusted('CCTV Sel melihat lubang terowongan saat Karpet dibuka di Siang hari!');
       return;
     }
-    if (!rugCovered && inHole) {
+    if (!rugCovered && (inHole || foxWalkStateRef.current === 'walking_to_hole')) {
       showHint('Tekan "Keluar Lubang" dulu sebelum menutup Karpet!');
       return;
     }
     const next = !rugCovered;
     setRugCovered(next);
+    rugCoveredRef.current = next;
     gtaAudio.playRugToggleSfx(next);
   };
 
@@ -706,13 +1291,22 @@ export function EscapePrisonModal({
     phaseRef.current = 'night';
     setPhaseSecondsLeft(PHASE_DURATION_SEC);
     setDigProgress(0);
+    progressRef.current = 0;
     setInHole(false);
+    inHoleRef.current = false;
     setRugCovered(true);
+    rugCoveredRef.current = true;
     setBustedReason(null);
+    bustedRef.current = false;
     setActionHint(null);
     rugSlideRef.current = 1;
+    foxWalkStateRef.current = 'at_rest';
+    foxXRef.current = REST_X;
+    camStateRef.current = { x: 345, y: 215, zoom: 1.48 };
+    zoomedOutAnnouncedRef.current = false;
     gtaAudio.startPrisonBgm('night');
     setStage('playing');
+    stageRef.current = 'playing';
   };
 
   const handleToggleMute = () => {
@@ -722,7 +1316,10 @@ export function EscapePrisonModal({
   };
 
   const isNight = phase === 'night';
-  const lowNightWarning = isNight && phaseSecondsLeft <= 12 && (inHole || !rugCovered);
+  const lowNightWarning =
+    isNight &&
+    phaseSecondsLeft <= 12 &&
+    (inHole || foxWalkStateRef.current === 'walking_to_hole' || !rugCovered);
 
   return (
     <>
@@ -732,131 +1329,132 @@ export function EscapePrisonModal({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/85 backdrop-blur-xs p-2.5 sm:p-5"
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[80] w-screen h-[100dvh] bg-[#140A26] text-white flex flex-col overflow-hidden"
             role="dialog"
             aria-modal="true"
             aria-labelledby="escape-prison-title"
           >
-            <motion.div
-              initial={{ y: 20, opacity: 0, scale: 0.97 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 16, opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.22 }}
-              className="w-full max-w-2xl bg-[#140A26] text-white rounded-3xl overflow-hidden shadow-2xl border border-white/15 flex flex-col max-h-[95dvh]"
-            >
-              {/* Header */}
-              <div className="px-4 sm:px-5 py-3.5 bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B] text-white text-[10px] font-extrabold uppercase tracking-wider">
-                    Mission 02
-                  </span>
-                  <h2 id="escape-prison-title" className="text-base sm:text-xl font-extrabold tracking-tight">
-                    Escape from Prison
-                  </h2>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
-                    className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                  >
-                    {muted ? <VolumeX size={18} strokeWidth={2.4} /> : <Volume2 size={18} strokeWidth={2.4} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close Escape from Prison"
-                    className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                  >
-                    <X size={19} strokeWidth={2.5} />
-                  </button>
-                </div>
+            {/* Full-screen Header */}
+            <div className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] flex items-center justify-between shrink-0 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B] text-white text-[10px] font-extrabold uppercase tracking-wider">
+                  Mission 02
+                </span>
+                <h2 id="escape-prison-title" className="text-base sm:text-xl font-extrabold tracking-tight">
+                  Escape from Prison
+                </h2>
               </div>
 
-              {/* Body */}
-              <div className="p-4 sm:p-5 overflow-y-auto">
-                {stage === 'briefing' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                      <div className="rounded-2xl bg-[#3B146B]/55 border border-[#7B208F]/60 p-3.5">
-                        <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
-                          <Moon size={14} strokeWidth={2.4} />
-                          <span>Fase Malam (2:00)</span>
-                        </div>
-                        <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                          Buka Karpet, masuk lubang, lalu tap atau tahan Gali (Pickaxe) hingga progres mencapai 100%.
-                        </p>
-                      </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
+                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  {muted ? <VolumeX size={18} strokeWidth={2.4} /> : <Volume2 size={18} strokeWidth={2.4} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close Escape from Prison"
+                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <X size={19} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
 
-                      <div className="rounded-2xl bg-[#FF9B55]/15 border border-[#FFB458]/40 p-3.5">
-                        <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
-                          <Sun size={14} strokeWidth={2.4} />
-                          <span>Fase Siang (2:00)</span>
-                        </div>
-                        <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                          Sipir berpatroli. Pastikan sudah Keluar Lubang dan Tutup Karpet sebelum Siang tiba agar tidak Busted.
-                        </p>
+            {/* Full-screen Body */}
+            <div className="flex-1 flex flex-col justify-center overflow-y-auto p-3 sm:p-5">
+              {stage === 'briefing' && (
+                <div className="w-full max-w-2xl mx-auto space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-[#3B146B]/55 border border-[#7B208F]/60 p-4">
+                      <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
+                        <Moon size={14} strokeWidth={2.4} />
+                        <span>Fase Malam (2:00)</span>
                       </div>
+                      <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
+                        Buka Karpet, masuk lubang, lalu tap (+0,1%) atau tahan Gali hingga terowongan menembus luar penjara (100%).
+                      </p>
                     </div>
 
-                    {/* Reward Preview */}
-                    <div className="rounded-2xl p-3.5 bg-gradient-to-r from-[#3B146B] via-[#7B208F] to-[#C9349B] border border-white/15 flex items-center gap-3.5">
-                      <div className="w-12 h-11 rounded-xl bg-white/15 border border-[#FFB458]/40 flex items-center justify-center shrink-0">
-                        <TopiGtb6Svg className="w-10 h-7" />
+                    <div className="rounded-2xl bg-[#FF9B55]/15 border border-[#FFB458]/40 p-4">
+                      <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
+                        <Sun size={14} strokeWidth={2.4} />
+                        <span>Fase Siang · Sipir &amp; CCTV (2:00)</span>
                       </div>
-                      <div>
-                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFB458]">
-                          Hadiah Misi 2
-                        </p>
-                        <p className="text-sm font-bold text-white">
-                          Topi GTB 6 (Otomatis dipakai Avatar Bluefox)
-                        </p>
-                      </div>
+                      <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
+                        Sipir berpatroli di balik jeruji &amp; CCTV sel menyapu lantai. Pastikan Keluar Lubang dan Tutup Karpet sebelum Siang!
+                      </p>
                     </div>
-
-                    {completed ? (
-                      <div className="w-full min-h-[50px] rounded-2xl bg-white/10 border border-white/15 text-white/85 font-bold text-sm flex items-center justify-center gap-2">
-                        <Check size={18} className="text-[#FFB458]" />
-                        <span>Misi Selesai · Topi GTB 6 Terpasang</span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleStartMission}
-                        className="w-full min-h-[52px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
-                      >
-                        <Play size={18} fill="currentColor" strokeWidth={2.2} />
-                        <span>PLAY ESCAPE FROM PRISON</span>
-                      </button>
-                    )}
                   </div>
-                )}
 
-                {stage === 'playing' && (
-                  <div className="space-y-3">
-                    {/* Top Cycle & Progress HUD */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
-                            isNight
-                              ? 'bg-[#3B146B] text-[#FFB458] border-[#C9349B]/50'
-                              : 'bg-[#FFB458] text-[#111827] border-[#FF9B55]'
-                          }`}
-                        >
-                          {isNight ? <Moon size={13} strokeWidth={2.5} /> : <Sun size={13} strokeWidth={2.5} />}
-                          <span>{isNight ? 'Malam' : 'Siang'}</span>
-                          <span className="font-mono">{formatClock(phaseSecondsLeft)}</span>
-                        </span>
+                  {/* Reward Preview */}
+                  <div className="rounded-2xl p-4 bg-gradient-to-r from-[#3B146B] via-[#7B208F] to-[#C9349B] border border-white/15 flex items-center gap-3.5">
+                    <div className="w-12 h-11 rounded-xl bg-white/15 border border-[#FFB458]/40 flex items-center justify-center shrink-0">
+                      <TopiGtb6Svg className="w-10 h-7" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#FFB458]">
+                        Hadiah Misi 2
+                      </p>
+                      <p className="text-sm font-bold text-white">
+                        Topi GTB 6 (Otomatis dipakai Avatar Bluefox)
+                      </p>
+                    </div>
+                  </div>
 
-                        <span className="text-[11px] font-semibold text-white/75">
-                          {isNight ? 'Aman Menggali' : 'Sipir Patroli'}
-                        </span>
-                      </div>
+                  {completed ? (
+                    <div className="w-full min-h-[54px] rounded-2xl bg-white/10 border border-white/15 text-white/85 font-bold text-sm flex items-center justify-center gap-2">
+                      <Check size={18} className="text-[#FFB458]" />
+                      <span>Misi Selesai · Topi GTB 6 Terpasang</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartMission}
+                      className="w-full min-h-[54px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                    >
+                      <Play size={18} fill="currentColor" strokeWidth={2.2} />
+                      <span>PLAY ESCAPE FROM PRISON</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
+              {(stage === 'playing' || stage === 'escape_cutscene') && (
+                <div className="w-full max-w-5xl mx-auto flex-1 flex flex-col justify-center gap-2.5 min-h-0">
+                  {/* Top Cycle & CCTV HUD */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
+                          isNight
+                            ? 'bg-[#3B146B] text-[#FFB458] border-[#C9349B]/50'
+                            : 'bg-[#FFB458] text-[#111827] border-[#FF9B55]'
+                        }`}
+                      >
+                        {isNight ? <Moon size={13} strokeWidth={2.5} /> : <Sun size={13} strokeWidth={2.5} />}
+                        <span>{isNight ? 'Malam' : 'Siang'}</span>
+                        <span className="font-mono">{formatClock(phaseSecondsLeft)}</span>
+                      </span>
+
+                      <span
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                          isNight
+                            ? 'bg-white/5 text-white/75 border-white/15'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                        }`}
+                      >
+                        <Video size={12} />
+                        <span>{isNight ? 'CCTV Standby' : 'CCTV Aktif + Sipir'}</span>
+                      </span>
+                    </div>
+
+                    {stage === 'playing' && (
                       <button
                         type="button"
                         onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
@@ -866,27 +1464,35 @@ export function EscapePrisonModal({
                         <Gauge size={12} />
                         <span>Speed {timerSpeed}x</span>
                       </button>
-                    </div>
+                    )}
+                  </div>
 
-                    {/* Dig Progress Bar */}
-                    <div>
-                      <div className="flex items-center justify-between text-xs font-bold mb-1">
-                        <span className="text-white/80">Progres Terowongan</span>
-                        <span className="font-mono text-[#FFB458]">{digProgress}%</span>
-                      </div>
-                      <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
-                        <div
-                          className="h-full rounded-full transition-all duration-200"
-                          style={{
-                            width: `${digProgress}%`,
-                            background: 'linear-gradient(90deg, #7B208F 0%, #C9349B 55%, #FFB458 100%)',
-                          }}
-                        />
-                      </div>
+                  {/* Dig Progress Bar (+0.1% precision) */}
+                  <div className="shrink-0">
+                    <div className="flex items-center justify-between text-xs font-bold mb-1">
+                      <span className="text-white/80">
+                        {stage === 'escape_cutscene'
+                          ? 'Kabur Menembus Terowongan!'
+                          : digProgress >= 10
+                          ? 'Progres Terowongan (Area Luar Terlihat)'
+                          : 'Progres Terowongan (1 Galian = +0,1%)'}
+                      </span>
+                      <span className="font-mono text-[#FFB458]">{digProgress.toFixed(1)}%</span>
                     </div>
+                    <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
+                      <div
+                        className="h-full rounded-full transition-all duration-150"
+                        style={{
+                          width: `${digProgress}%`,
+                          background: 'linear-gradient(90deg, #7B208F 0%, #C9349B 55%, #FFB458 100%)',
+                        }}
+                      />
+                    </div>
+                  </div>
 
-                    {/* 2D Prison Cell Canvas */}
-                    <div className="relative w-full aspect-[800/420] rounded-2xl overflow-hidden border border-white/15 bg-[#120726] select-none">
+                  {/* Full-Screen Responsive 2D Cutaway World Canvas */}
+                  <div className="relative w-full flex-1 min-h-[210px] max-h-[calc(100dvh-230px)] flex items-center justify-center">
+                    <div className="relative w-full h-full max-w-full aspect-[960/540] max-h-full rounded-2xl overflow-hidden border border-white/15 bg-[#120726] select-none shadow-2xl">
                       <canvas
                         ref={canvasRef}
                         width={LOGICAL_W}
@@ -894,22 +1500,33 @@ export function EscapePrisonModal({
                         className="w-full h-full block"
                       />
 
+                      {/* Escape Cutscene Banner */}
+                      {stage === 'escape_cutscene' && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -12 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#7B208F] via-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold uppercase tracking-widest shadow-lg whitespace-nowrap"
+                        >
+                          Bluefox Berhasil Kabur dari Penjara!
+                        </motion.div>
+                      )}
+
                       {/* Low-time danger warning */}
-                      {lowNightWarning && !bustedReason && (
+                      {stage === 'playing' && lowNightWarning && !bustedReason && (
                         <div className="absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wide shadow-md whitespace-nowrap animate-pulse">
                           Siang segera tiba! Keluar Lubang &amp; Tutup Karpet
                         </div>
                       )}
 
                       {/* Status hint */}
-                      {actionHint && !bustedReason && (
+                      {stage === 'playing' && actionHint && !bustedReason && (
                         <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#3B146B]/95 border border-[#FFB458]/50 text-[#FFB458] text-xs font-bold whitespace-nowrap shadow-lg">
                           {actionHint}
                         </div>
                       )}
 
                       {/* Busted Alert Overlay */}
-                      {bustedReason && (
+                      {stage === 'playing' && bustedReason && (
                         <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
                           <div className="max-w-xs w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-4 text-center space-y-3 shadow-2xl">
                             <div className="w-11 h-11 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
@@ -923,12 +1540,15 @@ export function EscapePrisonModal({
                                 {bustedReason}
                               </p>
                               <p className="text-[11px] font-mono font-bold text-[#FFB458] mt-1.5">
-                                Penalti: -25% progres galian
+                                Penalti: -25.0% progres galian
                               </p>
                             </div>
                             <button
                               type="button"
-                              onClick={() => setBustedReason(null)}
+                              onClick={() => {
+                                bustedRef.current = false;
+                                setBustedReason(null);
+                              }}
                               className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer"
                             >
                               Lanjutkan
@@ -937,9 +1557,11 @@ export function EscapePrisonModal({
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Mobile-First Action Controls */}
-                    <div className="grid grid-cols-3 gap-2 pt-0.5">
+                  {/* Mobile-First Action Controls */}
+                  {stage === 'playing' && (
+                    <div className="grid grid-cols-3 gap-2 pt-0.5 shrink-0">
                       <button
                         type="button"
                         onPointerDown={handleDigPointerDown}
@@ -947,21 +1569,21 @@ export function EscapePrisonModal({
                         onPointerLeave={stopHoldDig}
                         onPointerCancel={stopHoldDig}
                         disabled={!isNight || Boolean(bustedReason)}
-                        className={`min-h-[52px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none ${
+                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none ${
                           isNight && !bustedReason
                             ? 'bg-gradient-to-br from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] active:scale-95 shadow-md'
                             : 'bg-white/10 text-white/40 cursor-not-allowed'
                         }`}
                       >
                         <PickaxeSvg className="w-5 h-5" />
-                        <span>Gali (Pickaxe)</span>
+                        <span>Gali (+0,1%)</span>
                       </button>
 
                       <button
                         type="button"
                         onClick={handleToggleHole}
                         disabled={Boolean(bustedReason)}
-                        className={`min-h-[52px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
                           inHole
                             ? 'bg-[#C9349B] text-white border-[#FFB458]/60 shadow-md'
                             : 'bg-[#3B146B] text-white border-white/20 hover:bg-[#7B208F]'
@@ -975,7 +1597,7 @@ export function EscapePrisonModal({
                         type="button"
                         onClick={handleToggleRug}
                         disabled={Boolean(bustedReason)}
-                        className={`min-h-[52px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
                           rugCovered
                             ? 'bg-emerald-600 text-white border-emerald-300/50 shadow-md'
                             : 'bg-amber-600 text-white border-amber-300/60 shadow-md'
@@ -985,10 +1607,10 @@ export function EscapePrisonModal({
                         <span>{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
                       </button>
                     </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
+                  )}
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

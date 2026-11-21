@@ -849,117 +849,111 @@ export function KriminalBankModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18 }}
-            className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-3 sm:p-5"
+            className="fixed inset-0 z-[80] w-screen h-[100dvh] bg-[#140A26] text-white flex flex-col overflow-hidden"
             role="dialog"
             aria-modal="true"
             aria-labelledby="kriminal-bank-title"
           >
-            <motion.div
-              initial={{ y: 20, opacity: 0, scale: 0.97 }}
-              animate={{ y: 0, opacity: 1, scale: 1 }}
-              exit={{ y: 16, opacity: 0, scale: 0.97 }}
-              transition={{ duration: 0.22 }}
-              className="w-full max-w-2xl bg-[#140A26] text-white rounded-3xl overflow-hidden shadow-2xl border border-white/15 flex flex-col"
-            >
-              {/* Minimal Header */}
-              <div className="px-5 py-3.5 bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B] text-white text-[10px] font-extrabold uppercase tracking-wider">
-                    Mission 01
-                  </span>
-                  <h2 id="kriminal-bank-title" className="text-lg sm:text-xl font-extrabold tracking-tight">
-                    Kriminal Bank
-                  </h2>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
-                    className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                  >
-                    {muted ? <VolumeX size={18} strokeWidth={2.4} /> : <Volume2 size={18} strokeWidth={2.4} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    aria-label="Close Kriminal Bank"
-                    className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                  >
-                    <X size={19} strokeWidth={2.5} />
-                  </button>
-                </div>
+            {/* Full-screen Header */}
+            <div className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] flex items-center justify-between shrink-0 shadow-md">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B] text-white text-[10px] font-extrabold uppercase tracking-wider">
+                  Mission 01
+                </span>
+                <h2 id="kriminal-bank-title" className="text-lg sm:text-xl font-extrabold tracking-tight">
+                  Kriminal Bank
+                </h2>
               </div>
 
-              {/* Body */}
-              <div className="p-4 sm:p-5">
-                {stage === 'briefing' && (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      {WAVES.map((w) => (
-                        <div
-                          key={w.wave}
-                          className="rounded-xl bg-white/[0.06] border border-white/10 p-3 text-center"
-                        >
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#FFB458]">
-                            {w.code}
-                          </p>
-                          <p className="text-xs font-bold text-white mt-0.5">
-                            {w.summary}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
+                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  {muted ? <VolumeX size={18} strokeWidth={2.4} /> : <Volume2 size={18} strokeWidth={2.4} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close Kriminal Bank"
+                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <X size={19} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
 
-                    <div className="rounded-2xl p-3.5 bg-gradient-to-r from-[#3B146B] via-[#7B208F] to-[#C9349B] border border-white/15 flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-white/15 text-[#FFB458] flex items-center justify-center shrink-0">
-                        <Zap size={18} strokeWidth={2.4} />
-                      </div>
-                      <div className="text-xs sm:text-sm">
-                        <span className="font-extrabold text-[#FFB458]">20% OFF</span>{' '}
-                        <span className="font-semibold text-white">Usage Limit (1 Jam)</span>
-                      </div>
-                    </div>
-
-                    {completed ? (
-                      <div className="w-full min-h-[50px] rounded-2xl bg-white/10 border border-white/15 text-white/80 font-bold text-sm flex items-center justify-center gap-2">
-                        <Check size={18} className="text-[#FFB458]" />
-                        <span>Misi Selesai (Sekali Main)</span>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handlePlay}
-                        className="w-full min-h-[50px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+            {/* Full-screen Body */}
+            <div className="flex-1 flex flex-col justify-center overflow-y-auto p-3 sm:p-6">
+              {stage === 'briefing' && (
+                <div className="w-full max-w-2xl mx-auto space-y-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {WAVES.map((w) => (
+                      <div
+                        key={w.wave}
+                        className="rounded-2xl bg-white/[0.06] border border-white/10 p-4 text-center"
                       >
-                        <Play size={18} fill="currentColor" strokeWidth={2.2} />
-                        <span>PLAY</span>
-                      </button>
+                        <p className="text-[11px] font-bold uppercase tracking-wider text-[#FFB458]">
+                          {w.code}
+                        </p>
+                        <p className="text-sm font-bold text-white mt-1">
+                          {w.summary}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-2xl p-4 bg-gradient-to-r from-[#3B146B] via-[#7B208F] to-[#C9349B] border border-white/15 flex items-center gap-3.5">
+                    <div className="w-10 h-10 rounded-xl bg-white/15 text-[#FFB458] flex items-center justify-center shrink-0">
+                      <Zap size={20} strokeWidth={2.4} />
+                    </div>
+                    <div className="text-sm">
+                      <span className="font-extrabold text-[#FFB458]">20% OFF</span>{' '}
+                      <span className="font-semibold text-white">Usage Limit (1 Jam)</span>
+                    </div>
+                  </div>
+
+                  {completed ? (
+                    <div className="w-full min-h-[54px] rounded-2xl bg-white/10 border border-white/15 text-white/80 font-bold text-sm flex items-center justify-center gap-2">
+                      <Check size={18} className="text-[#FFB458]" />
+                      <span>Misi Selesai (Sekali Main)</span>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handlePlay}
+                      className="w-full min-h-[54px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                    >
+                      <Play size={18} fill="currentColor" strokeWidth={2.2} />
+                      <span>PLAY</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {(stage === 'intro' || stage === 'playing') && (
+                <div className="w-full max-w-5xl mx-auto flex-1 flex flex-col justify-center gap-3 min-h-0">
+                  {/* Compact HUD */}
+                  <div className="flex items-center justify-between gap-2 text-xs font-bold flex-wrap shrink-0">
+                    <span className="px-3 py-1 rounded-lg bg-[#3B146B] border border-white/15 text-[#FFB458] uppercase tracking-wider">
+                      {stage === 'intro' ? 'Heist Escape' : `${WAVES[waveIdx].code} · ${WAVES[waveIdx].title}`}
+                    </span>
+                    {stage === 'playing' && (
+                      <div className="flex items-center gap-2 font-mono text-xs text-white/90">
+                        <span className="px-2.5 py-1 rounded bg-white/10">Mobil: {counts.cars}</span>
+                        <span className="px-2.5 py-1 rounded bg-white/10">Polisi: {counts.officers}</span>
+                        {counts.helis > 0 && (
+                          <span className="px-2.5 py-1 rounded bg-[#C9349B]/60">Heli: {counts.helis}</span>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
 
-                {(stage === 'intro' || stage === 'playing') && (
-                  <div className="space-y-3">
-                    {/* Compact HUD */}
-                    <div className="flex items-center justify-between gap-2 text-xs font-bold flex-wrap">
-                      <span className="px-2.5 py-1 rounded-lg bg-[#3B146B] border border-white/15 text-[#FFB458] uppercase tracking-wider">
-                        {stage === 'intro' ? 'Heist Escape' : `${WAVES[waveIdx].code} · ${WAVES[waveIdx].title}`}
-                      </span>
-                      {stage === 'playing' && (
-                        <div className="flex items-center gap-2 font-mono text-[11px] text-white/90">
-                          <span className="px-2 py-0.5 rounded bg-white/10">Mobil: {counts.cars}</span>
-                          <span className="px-2 py-0.5 rounded bg-white/10">Polisi: {counts.officers}</span>
-                          {counts.helis > 0 && (
-                            <span className="px-2 py-0.5 rounded bg-[#C9349B]/60">Heli: {counts.helis}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Interactive 2D Bank World Canvas */}
-                    <div className="relative w-full aspect-[800/420] rounded-2xl overflow-hidden border border-white/15 bg-[#1A1626] touch-none select-none">
+                  {/* Interactive 2D Bank World Canvas (Full-Screen Responsive) */}
+                  <div className="relative w-full flex-1 min-h-[240px] max-h-[calc(100dvh-135px)] flex items-center justify-center">
+                    <div className="relative w-full h-full max-w-full aspect-[800/420] max-h-full rounded-2xl overflow-hidden border border-white/15 bg-[#1A1626] touch-none select-none shadow-2xl">
                       <canvas
                         ref={canvasRef}
                         width={LOGICAL_W}
@@ -995,9 +989,9 @@ export function KriminalBankModal({
                       </AnimatePresence>
                     </div>
                   </div>
-                )}
-              </div>
-            </motion.div>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
