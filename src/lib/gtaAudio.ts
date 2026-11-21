@@ -318,6 +318,167 @@ class GtaAudioEngine {
       osc.stop(t + 1.15);
     });
   }
+
+  public startPrisonBgm(phase: 'night' | 'day') {
+    this.stopHeistBgm();
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain) return;
+
+    this.step = 0;
+    const nightNotes = [110, 130.81, 146.83, 130.81];
+    const dayNotes = [196, 196, 220, 174.61];
+
+    const tick = () => {
+      if (!this.ctx || !this.masterGain || this.muted) return;
+      const now = this.ctx.currentTime;
+      const seq = phase === 'night' ? nightNotes : dayNotes;
+      const freq = seq[this.step % seq.length];
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = phase === 'night' ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+
+      gain.gain.setValueAtTime(phase === 'night' ? 0.11 : 0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.36);
+
+      if (phase === 'day' && this.step % 2 === 0) {
+        // Subtle guard boot tick
+        const boot = this.ctx.createOscillator();
+        const bGain = this.ctx.createGain();
+        boot.type = 'sine';
+        boot.frequency.setValueAtTime(95, now);
+        boot.frequency.exponentialRampToValueAtTime(42, now + 0.08);
+        bGain.gain.setValueAtTime(0.14, now);
+        bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+        boot.connect(bGain);
+        bGain.connect(this.masterGain);
+        boot.start(now);
+        boot.stop(now + 0.1);
+      }
+
+      this.step += 1;
+    };
+
+    tick();
+    this.bgmTimer = setInterval(tick, phase === 'night' ? 420 : 520);
+  }
+
+  public playDigPickaxeSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+
+    // Metallic pickaxe clink
+    const clink = this.ctx.createOscillator();
+    const cGain = this.ctx.createGain();
+    clink.type = 'triangle';
+    clink.frequency.setValueAtTime(1180, now);
+    clink.frequency.exponentialRampToValueAtTime(340, now + 0.09);
+    cGain.gain.setValueAtTime(0.22, now);
+    cGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    clink.connect(cGain);
+    cGain.connect(this.masterGain);
+    clink.start(now);
+    clink.stop(now + 0.11);
+
+    // Earth crunch
+    const thud = this.ctx.createOscillator();
+    const tGain = this.ctx.createGain();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(140, now + 0.02);
+    thud.frequency.exponentialRampToValueAtTime(48, now + 0.14);
+    tGain.gain.setValueAtTime(0.24, now + 0.02);
+    tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    thud.connect(tGain);
+    tGain.connect(this.masterGain);
+    thud.start(now + 0.02);
+    thud.stop(now + 0.16);
+  }
+
+  public playRugToggleSfx(covered: boolean) {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(covered ? 240 : 180, now);
+    osc.frequency.linearRampToValueAtTime(covered ? 160 : 280, now + 0.14);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  public playHoleToggleSfx(inside: boolean) {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(inside ? 260 : 150, now);
+    osc.frequency.exponentialRampToValueAtTime(inside ? 120 : 320, now + 0.16);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.19);
+  }
+
+  public playPhaseShiftSfx(isNight: boolean) {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+
+    const freqs = isNight ? [392, 293.66] : [293.66, 440, 587.33];
+    freqs.forEach((f, idx) => {
+      if (!this.ctx || !this.masterGain) return;
+      const t = now + idx * 0.08;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, t);
+      gain.gain.setValueAtTime(0.15, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t);
+      osc.stop(t + 0.42);
+    });
+  }
+
+  public playBustedSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+
+    [220, 165, 110].forEach((f, idx) => {
+      if (!this.ctx || !this.masterGain) return;
+      const t = now + idx * 0.13;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, t);
+      gain.gain.setValueAtTime(0.28, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t);
+      osc.stop(t + 0.26);
+    });
+  }
 }
 
 export const gtaAudio = new GtaAudioEngine();

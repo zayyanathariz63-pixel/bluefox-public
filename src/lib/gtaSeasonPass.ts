@@ -1,9 +1,12 @@
 export type SeasonMissionId = 'kriminal-bank' | 'escape-prison' | 'cheater';
+export type SeasonRewardItemId = 'topi-gtb-6';
 
 export interface GtaSeasonPassState {
   completedMissions: SeasonMissionId[];
   gtaBuffExpiresAt: number | null;
   bestClearTimeSec: number | null;
+  unlockedItems: SeasonRewardItemId[];
+  equippedHat: boolean;
   lastUpdatedAt: number;
 }
 
@@ -16,6 +19,8 @@ const DEFAULT_STATE: GtaSeasonPassState = {
   completedMissions: [],
   gtaBuffExpiresAt: null,
   bestClearTimeSec: null,
+  unlockedItems: [],
+  equippedHat: false,
   lastUpdatedAt: 0,
 };
 
@@ -33,6 +38,10 @@ export function getSeasonPassState(): GtaSeasonPassState {
         typeof parsed.gtaBuffExpiresAt === 'number' ? parsed.gtaBuffExpiresAt : null,
       bestClearTimeSec:
         typeof parsed.bestClearTimeSec === 'number' ? parsed.bestClearTimeSec : null,
+      unlockedItems: Array.isArray(parsed.unlockedItems)
+        ? parsed.unlockedItems
+        : [],
+      equippedHat: Boolean(parsed.equippedHat),
       lastUpdatedAt: typeof parsed.lastUpdatedAt === 'number' ? parsed.lastUpdatedAt : 0,
     };
   } catch {
@@ -95,6 +104,29 @@ export function formatGtaBuffRemaining(state?: GtaSeasonPassState): string {
   return `${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
 }
 
+export function hasTopiGtb6Unlocked(state?: GtaSeasonPassState): boolean {
+  const current = state || getSeasonPassState();
+  return (
+    current.unlockedItems.includes('topi-gtb-6') ||
+    current.completedMissions.includes('escape-prison')
+  );
+}
+
+export function isTopiGtb6Equipped(state?: GtaSeasonPassState): boolean {
+  const current = state || getSeasonPassState();
+  return hasTopiGtb6Unlocked(current) && current.equippedHat;
+}
+
+export function toggleTopiGtb6Equipped(): GtaSeasonPassState {
+  const current = getSeasonPassState();
+  if (!hasTopiGtb6Unlocked(current)) return current;
+  return saveSeasonPassState({
+    ...current,
+    equippedHat: !current.equippedHat,
+    lastUpdatedAt: Date.now(),
+  });
+}
+
 export function completeKriminalBankMission(clearTimeSec?: number): GtaSeasonPassState {
   const current = getSeasonPassState();
   const completed = current.completedMissions.includes('kriminal-bank')
@@ -109,9 +141,28 @@ export function completeKriminalBankMission(clearTimeSec?: number): GtaSeasonPas
       : current.bestClearTimeSec;
 
   return saveSeasonPassState({
+    ...current,
     completedMissions: completed,
     gtaBuffExpiresAt: Date.now() + GTA_BUFF_DURATION_MS,
     bestClearTimeSec: nextBest,
+    lastUpdatedAt: Date.now(),
+  });
+}
+
+export function completeEscapePrisonMission(): GtaSeasonPassState {
+  const current = getSeasonPassState();
+  const completed = current.completedMissions.includes('escape-prison')
+    ? current.completedMissions
+    : [...current.completedMissions, 'escape-prison' as SeasonMissionId];
+  const unlocked = current.unlockedItems.includes('topi-gtb-6')
+    ? current.unlockedItems
+    : [...current.unlockedItems, 'topi-gtb-6' as SeasonRewardItemId];
+
+  return saveSeasonPassState({
+    ...current,
+    completedMissions: completed,
+    unlockedItems: unlocked,
+    equippedHat: true,
     lastUpdatedAt: Date.now(),
   });
 }

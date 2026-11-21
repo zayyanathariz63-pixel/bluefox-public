@@ -6,13 +6,18 @@ import {
   getSeasonPassState,
   GTA_SEASON_PASS_EVENT,
   GtaSeasonPassState,
+  hasTopiGtb6Unlocked,
   isGtaBuffActive,
   isMissionCompleted,
   isMissionUnlocked,
+  isTopiGtb6Equipped,
   resetSeasonPassProgress,
   SeasonMissionId,
+  toggleTopiGtb6Equipped,
 } from '../lib/gtaSeasonPass';
 import { KriminalBankModal } from './KriminalBankModal';
+import { EscapePrisonModal } from './EscapePrisonModal';
+import { TopiGtb6Svg } from './TopiGtb6Svg';
 
 interface GtaSeasonPassBannerProps {
   isOpen: boolean;
@@ -85,6 +90,7 @@ export function GtaSeasonPassBanner({
     getSeasonPassState()
   );
   const [isKriminalBankOpen, setIsKriminalBankOpen] = useState(false);
+  const [isEscapePrisonOpen, setIsEscapePrisonOpen] = useState(false);
   const [buffRemaining, setBuffRemaining] = useState<string>(() =>
     formatGtaBuffRemaining()
   );
@@ -132,19 +138,28 @@ export function GtaSeasonPassBanner({
 
     const unlocked = isMissionUnlocked(mission.id, seasonState);
     if (mission.id === 'escape-prison') {
-      triggerNotice(
-        unlocked
-          ? 'Escape from prison segera hadir.'
-          : 'Selesaikan Kriminal bank terlebih dahulu.'
-      );
+      if (!unlocked) {
+        triggerNotice('Selesaikan Kriminal bank terlebih dahulu.');
+        return;
+      }
+      setIsEscapePrisonOpen(true);
       return;
     }
 
-    triggerNotice('Selesaikan Escape from prison terlebih dahulu.');
+    if (mission.id === 'cheater') {
+      triggerNotice(
+        unlocked
+          ? 'Cheater (Mission 3) telah terbuka.'
+          : 'Selesaikan Escape from prison terlebih dahulu.'
+      );
+    }
   };
 
   const mission1Done = isMissionCompleted('kriminal-bank', seasonState);
+  const mission2Done = isMissionCompleted('escape-prison', seasonState);
   const buffActive = isGtaBuffActive(seasonState);
+  const hatUnlocked = hasTopiGtb6Unlocked(seasonState);
+  const hatEquipped = isTopiGtb6Equipped(seasonState);
 
   return (
     <>
@@ -174,17 +189,17 @@ export function GtaSeasonPassBanner({
             />
 
             {/* Minimal Top Navigation Bar */}
-            <header className="relative z-10 flex items-center justify-between px-4 sm:px-6 pt-4 pb-2">
+            <header className="relative z-10 flex items-center justify-between px-4 sm:px-6 pt-4 pb-2 gap-2">
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Kembali ke Settings"
-                className="w-11 h-11 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center transition-colors cursor-pointer"
+                className="w-11 h-11 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center transition-colors cursor-pointer shrink-0"
               >
                 <ArrowLeft size={22} strokeWidth={2.4} />
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap justify-center">
                 <span className="px-3 py-1 rounded-full bg-[#3B146B] text-white text-[11px] font-extrabold tracking-widest uppercase border border-white/20 shadow-xs">
                   SEASON PASS
                 </span>
@@ -195,13 +210,30 @@ export function GtaSeasonPassBanner({
                     <span>20% OFF · {buffRemaining}</span>
                   </span>
                 )}
+
+                {hatUnlocked && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = toggleTopiGtb6Equipped();
+                      setSeasonState(next);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#3B146B] text-white text-[11px] font-bold border border-[#FFB458]/50 shadow-xs cursor-pointer"
+                    title="Toggle Topi GTB 6 pada Avatar"
+                  >
+                    <TopiGtb6Svg className="w-5 h-3.5" />
+                    <span className="text-[#FFB458]">
+                      Topi GTB 6 {hatEquipped ? 'Dipakai' : 'Nonaktif'}
+                    </span>
+                  </button>
+                )}
               </div>
 
               {/* Admin-Only Riset Button */}
               <button
                 type="button"
                 onClick={handleRiset}
-                className="h-10 px-3.5 rounded-full bg-[#3B146B] hover:bg-[#7B208F] active:scale-95 text-white text-xs font-extrabold tracking-wide inline-flex items-center gap-1.5 border border-white/20 shadow-sm transition-all cursor-pointer"
+                className="h-10 px-3.5 rounded-full bg-[#3B146B] hover:bg-[#7B208F] active:scale-95 text-white text-xs font-extrabold tracking-wide inline-flex items-center gap-1.5 border border-white/20 shadow-sm transition-all cursor-pointer shrink-0"
               >
                 <RotateCcw size={13} strokeWidth={2.5} />
                 <span>Riset</span>
@@ -223,8 +255,11 @@ export function GtaSeasonPassBanner({
                     const completed = isMissionCompleted(mission.id, seasonState);
                     const isPrimaryActive = mission.id === 'kriminal-bank' || unlocked;
 
-                    const nextSegmentCompleted = idx === 0 ? mission1Done : false;
-                    const nextSegmentActiveGlow = idx === 0 && !mission1Done;
+                    const segmentCompleted =
+                      (idx === 0 && mission1Done) || (idx === 1 && mission2Done);
+                    const segmentActiveGlow =
+                      (idx === 0 && !mission1Done) ||
+                      (idx === 1 && mission1Done && !mission2Done);
 
                     return (
                       <div key={mission.id} className="flex items-start snap-start">
@@ -301,16 +336,16 @@ export function GtaSeasonPassBanner({
                             className="flex items-center h-[80px] w-[86px] sm:w-[116px] -mx-4 shrink-0"
                           >
                             <div className="relative w-full h-[7px] rounded-full bg-[#64748B]/35 overflow-hidden">
-                              {nextSegmentCompleted && (
+                              {segmentCompleted && (
                                 <div
-                                  className="h-full w-full rounded-full"
+                                  className="h-full w-full rounded-full transition-all duration-500"
                                   style={{
                                     background:
                                       'linear-gradient(90deg, #7B208F 0%, #C9349B 100%)',
                                   }}
                                 />
                               )}
-                              {nextSegmentActiveGlow && (
+                              {segmentActiveGlow && (
                                 <div
                                   className="h-full w-[40%] rounded-full"
                                   style={{
@@ -348,6 +383,15 @@ export function GtaSeasonPassBanner({
           setSeasonState(nextState);
           setBuffRemaining(formatGtaBuffRemaining(nextState));
           onNotify?.('Kriminal Bank selesai! Usage Limit 20% OFF aktif 1 jam.');
+        }}
+      />
+
+      <EscapePrisonModal
+        isOpen={isEscapePrisonOpen}
+        onClose={() => setIsEscapePrisonOpen(false)}
+        onMissionSuccess={(nextState) => {
+          setSeasonState(nextState);
+          onNotify?.('Escape from Prison selesai! Topi GTB 6 terpasang di avatar Bluefox.');
         }}
       />
     </>
