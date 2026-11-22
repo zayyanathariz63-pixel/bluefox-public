@@ -1,19 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  X,
   Play,
   Sun,
   Moon,
   Layers,
   Check,
-  Volume2,
-  VolumeX,
   AlertTriangle,
   ArrowDown,
   ArrowUp,
   Gauge,
   Video,
+  BedDouble,
+  Gem,
 } from 'lucide-react';
 import {
   completeEscapePrisonMission,
@@ -24,6 +23,7 @@ import {
 import { gtaAudio } from '../lib/gtaAudio';
 import { TopiGtb6Svg } from './TopiGtb6Svg';
 import { EscapePrisonVictorySequence } from './EscapePrisonVictorySequence';
+import { ViceCityGameFrame } from './ViceCityGameFrame';
 
 interface EscapePrisonModalProps {
   isOpen: boolean;
@@ -33,7 +33,13 @@ interface EscapePrisonModalProps {
 
 type ModalStage = 'briefing' | 'playing' | 'escape_cutscene' | 'victory_anim';
 type CyclePhase = 'night' | 'day';
-type FoxWalkState = 'at_rest' | 'walking_to_hole' | 'inside_hole' | 'walking_to_rest';
+type FoxWalkState =
+  | 'at_rest'
+  | 'walking_to_hole'
+  | 'climbing_down'
+  | 'inside_hole'
+  | 'climbing_up'
+  | 'walking_to_rest';
 
 interface DirtParticle {
   x: number;
@@ -46,6 +52,13 @@ interface DirtParticle {
   size: number;
 }
 
+interface UndergroundArtifact {
+  pct: number;
+  label: string;
+  xOffset: number;
+  color: string;
+}
+
 const LOGICAL_W = 960;
 const LOGICAL_H = 540;
 const WORLD_W = 1520;
@@ -56,8 +69,24 @@ const HOLE_X = 340;
 const EXIT_X = 1090;
 const TUNNEL_Y = 485;
 const PHASE_DURATION_SEC = 120; // 2 minutes Night / 2 minutes Day
+const DIG_COOLDOWN_MS = 1000; // Strict 1.0s cooldown per swing (anti-auto-clicker)
 
-// Deterministic underground rocks & stars so nothing flickers between frames
+const ARTIFACTS: UndergroundArtifact[] = [
+  { pct: 12, label: 'Sendok Besi Tua', xOffset: 0.05, color: '#CBD5E1' },
+  { pct: 28, label: 'Koin Vice City', xOffset: 0.25, color: '#FFB458' },
+  { pct: 48, label: 'Kunci Sipir Lama', xOffset: 0.5, color: '#FDE047' },
+  { pct: 68, label: 'Peta Terowongan', xOffset: 0.75, color: '#67E8F9' },
+  { pct: 85, label: 'Berlian Terpendam', xOffset: 0.94, color: '#F36A78' },
+];
+
+function getTunnelZoneLabel(pct: number): string {
+  if (pct < 8) return 'Lantai Sel';
+  if (pct < 30) return 'Fondasi Penjara';
+  if (pct < 60) return 'Bawah Pagar Kawat';
+  if (pct < 88) return 'Halaman Luar';
+  return 'Menuju Kebebasan';
+}
+
 const SOIL_ROCKS = Array.from({ length: 42 }, (_, i) => ({
   x: 40 + ((i * 197 + 53) % 1440),
   y: 375 + ((i * 89 + 17) % 315),
@@ -103,6 +132,7 @@ function drawBluefoxCharacter(
     facing?: 1 | -1;
     walkPhase?: number;
     isWalking?: boolean;
+    isClimbing?: boolean;
     pickaxeSwing?: number;
     armsUp?: boolean;
     scale?: number;
@@ -112,6 +142,7 @@ function drawBluefoxCharacter(
     facing = 1,
     walkPhase = 0,
     isWalking = false,
+    isClimbing = false,
     pickaxeSwing = 0,
     armsUp = false,
     scale = 1,
@@ -121,14 +152,15 @@ function drawBluefoxCharacter(
   ctx.translate(x, y);
   ctx.scale(facing * scale, scale);
 
-  const stride = isWalking ? Math.sin(walkPhase) * 8 : 0;
+  const stride = isWalking ? Math.sin(walkPhase) * 8 : isClimbing ? Math.sin(walkPhase) * 5 : 0;
   const bob = isWalking ? Math.abs(Math.cos(walkPhase)) * 2.5 : 0;
 
-  // Shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.34)';
-  ctx.beginPath();
-  ctx.ellipse(0, 34, 17, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  if (!isClimbing) {
+    ctx.fillStyle = 'rgba(0,0,0,0.34)';
+    ctx.beginPath();
+    ctx.ellipse(0, 34, 17, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.translate(0, -bob);
 
@@ -137,10 +169,17 @@ function drawBluefoxCharacter(
   ctx.lineWidth = 6.5;
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(-4, 14);
-  ctx.lineTo(-4 - stride, 32);
-  ctx.moveTo(4, 14);
-  ctx.lineTo(4 + stride, 32);
+  if (isClimbing) {
+    ctx.moveTo(-4, 14);
+    ctx.lineTo(-9, 28 + stride * 0.8);
+    ctx.moveTo(4, 14);
+    ctx.lineTo(9, 28 - stride * 0.8);
+  } else {
+    ctx.moveTo(-4, 14);
+    ctx.lineTo(-4 - stride, 32);
+    ctx.moveTo(4, 14);
+    ctx.lineTo(4 + stride, 32);
+  }
   ctx.stroke();
 
   // Back arm
@@ -150,6 +189,9 @@ function drawBluefoxCharacter(
   if (armsUp) {
     ctx.moveTo(-8, -8);
     ctx.lineTo(-18, -28);
+  } else if (isClimbing) {
+    ctx.moveTo(-8, -8);
+    ctx.lineTo(-16, -18 - stride * 0.7);
   } else {
     ctx.moveTo(-8, -8);
     ctx.lineTo(-12 + stride * 0.65, 9);
@@ -196,6 +238,9 @@ function drawBluefoxCharacter(
   if (armsUp) {
     ctx.moveTo(8, -8);
     ctx.lineTo(18, -28);
+  } else if (isClimbing) {
+    ctx.moveTo(8, -8);
+    ctx.lineTo(16, -18 + stride * 0.7);
   } else {
     ctx.moveTo(8, -8);
     ctx.lineTo(13 - stride * 0.65, 8);
@@ -245,27 +290,32 @@ export function EscapePrisonModal({
   const [bustedReason, setBustedReason] = useState<string | null>(null);
   const [actionHint, setActionHint] = useState<string | null>(null);
   const [muted, setMuted] = useState<boolean>(() => gtaAudio.isMuted());
+  const [cooldownLeftMs, setCooldownLeftMs] = useState<number>(0);
+  const [foundCount, setFoundCount] = useState<number>(0);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<DirtParticle[]>([]);
   const swingAnimRef = useRef<number>(0);
-  const rugSlideRef = useRef<number>(1); // 1 = covered, 0 = uncovered
+  const shakeRef = useRef<number>(0);
+  const rugSlideRef = useRef<number>(1);
   const guardXRef = useRef<number>(760);
   const cctvAngleRef = useRef<number>(0);
   const camStateRef = useRef({ x: 345, y: 215, zoom: 1.48 });
 
-  // Walking & cutscene state refs
+  // Walking & climbing animation state refs
   const foxWalkStateRef = useRef<FoxWalkState>('at_rest');
   const foxXRef = useRef<number>(REST_X);
+  const climbProgressRef = useRef<number>(0); // 0 = surface, 1 = bottom of pit
   const walkCycleRef = useRef<number>(0);
   const cutsceneTimeRef = useRef<number>(0);
   const cutsceneDoneRef = useRef<boolean>(false);
   const zoomedOutAnnouncedRef = useRef<boolean>(false);
 
+  // Strict 1.0s dig anti-spam ref
+  const lastDigHitAtRef = useRef<number>(0);
+
   const rafRef = useRef<number | null>(null);
-  const digHoldIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastDigSfxMsRef = useRef<number>(0);
 
   // Synced refs for animation loop & timers
   const stageRef = useRef<ModalStage>('briefing');
@@ -303,14 +353,7 @@ export function EscapePrisonModal({
     if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
     hintTimeoutRef.current = setTimeout(() => {
       setActionHint(null);
-    }, 2400);
-  }, []);
-
-  const stopHoldDig = useCallback(() => {
-    if (digHoldIntervalRef.current) {
-      clearInterval(digHoldIntervalRef.current);
-      digHoldIntervalRef.current = null;
-    }
+    }, 2600);
   }, []);
 
   useEffect(() => {
@@ -331,50 +374,60 @@ export function EscapePrisonModal({
       setBustedReason(null);
       bustedRef.current = false;
       setActionHint(null);
+      setCooldownLeftMs(0);
+      setFoundCount(0);
+      lastDigHitAtRef.current = 0;
       particlesRef.current = [];
       rugSlideRef.current = 1;
       foxWalkStateRef.current = 'at_rest';
       foxXRef.current = REST_X;
+      climbProgressRef.current = 0;
       camStateRef.current = { x: 345, y: 215, zoom: 1.48 };
       cutsceneTimeRef.current = 0;
       cutsceneDoneRef.current = false;
       zoomedOutAnnouncedRef.current = false;
     } else {
-      stopHoldDig();
       gtaAudio.stopHeistBgm();
     }
     return () => {
-      stopHoldDig();
       gtaAudio.stopHeistBgm();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
     };
-  }, [isOpen, stopHoldDig]);
+  }, [isOpen]);
 
-  const triggerBusted = useCallback(
-    (reason: string) => {
-      if (bustedRef.current || stageRef.current !== 'playing') return;
-      stopHoldDig();
-      bustedRef.current = true;
-      gtaAudio.playBustedSfx();
-      setBustedReason(reason);
-      setDigProgress((prev) => {
-        const penalized = Math.max(0, Number((prev - 25).toFixed(1)));
-        progressRef.current = penalized;
-        if (penalized < 10) zoomedOutAnnouncedRef.current = false;
-        return penalized;
-      });
-      setInHole(false);
-      inHoleRef.current = false;
-      setRugCovered(true);
-      rugCoveredRef.current = true;
-      foxWalkStateRef.current = 'at_rest';
-      foxXRef.current = REST_X;
-    },
-    [stopHoldDig]
-  );
+  // Smooth 1.0s Dig Cooldown UI updater
+  useEffect(() => {
+    if (cooldownLeftMs <= 0) return;
+    const iv = setInterval(() => {
+      const rem = Math.max(0, DIG_COOLDOWN_MS - (Date.now() - lastDigHitAtRef.current));
+      setCooldownLeftMs(rem);
+    }, 50);
+    return () => clearInterval(iv);
+  }, [cooldownLeftMs]);
 
-  // Day/Night cycle countdown loop (active only during 'playing')
+  const triggerBusted = useCallback((reason: string) => {
+    if (bustedRef.current || stageRef.current !== 'playing') return;
+    bustedRef.current = true;
+    gtaAudio.playBustedSfx();
+    setBustedReason(reason);
+    setDigProgress((prev) => {
+      const penalized = Math.max(0, Number((prev - 25).toFixed(1)));
+      progressRef.current = penalized;
+      if (penalized < 8) zoomedOutAnnouncedRef.current = false;
+      setFoundCount(ARTIFACTS.filter((a) => penalized >= a.pct).length);
+      return penalized;
+    });
+    setInHole(false);
+    inHoleRef.current = false;
+    setRugCovered(true);
+    rugCoveredRef.current = true;
+    foxWalkStateRef.current = 'at_rest';
+    foxXRef.current = REST_X;
+    climbProgressRef.current = 0;
+  }, []);
+
+  // Day/Night cycle countdown loop
   useEffect(() => {
     if (!isOpen || stage !== 'playing') return;
 
@@ -391,10 +444,15 @@ export function EscapePrisonModal({
           gtaAudio.startPrisonBgm(nextPhase);
 
           if (nextPhase === 'day') {
-            if (inHoleRef.current || foxWalkStateRef.current === 'walking_to_hole') {
-              triggerBusted('CCTV Sel dan Sipir mendeteksi kamu masih berada di lubang saat Siang tiba!');
+            const unsafe =
+              inHoleRef.current ||
+              foxWalkStateRef.current === 'walking_to_hole' ||
+              foxWalkStateRef.current === 'climbing_down' ||
+              foxWalkStateRef.current === 'climbing_up';
+            if (unsafe) {
+              triggerBusted('CCTV Sel & Sipir mendeteksi kamu berada di lubang saat Siang tiba!');
             } else if (!rugCoveredRef.current) {
-              triggerBusted('CCTV Sel melihat lubang galian karena Karpet belum ditutup saat Siang!');
+              triggerBusted('CCTV Sel melihat lubang terowongan karena Karpet belum ditutup saat Siang!');
             }
           }
           return PHASE_DURATION_SEC;
@@ -406,26 +464,25 @@ export function EscapePrisonModal({
     return () => clearInterval(tickInterval);
   }, [isOpen, stage, triggerBusted]);
 
-  // Helper to spawn dirt or confetti particles
   const spawnParticles = useCallback((x: number, y: number, count: number, celebration = false) => {
     const colors = celebration
       ? ['#FFB458', '#F36A78', '#C9349B', '#67E8F9']
       : ['#D97706', '#92400E', '#F59E0B'];
     for (let i = 0; i < count; i++) {
       particlesRef.current.push({
-        x: x + (Math.random() - 0.5) * 24,
+        x: x + (Math.random() - 0.5) * 22,
         y,
-        vx: (Math.random() - 0.5) * (celebration ? 240 : 150),
-        vy: -90 - Math.random() * (celebration ? 150 : 90),
+        vx: (Math.random() - 0.5) * (celebration ? 240 : 155),
+        vy: -90 - Math.random() * (celebration ? 150 : 95),
         age: 0,
-        maxAge: celebration ? 0.85 : 0.45,
+        maxAge: celebration ? 0.85 : 0.48,
         color: colors[i % colors.length],
         size: celebration ? 4.5 : 3.8,
       });
     }
   }, []);
 
-  // Main 2D Cutaway World Renderer (Prison Cell + Outside Landscape + Soil Tunnel + Walk + Cutscene)
+  // Main 2D Cutaway World Renderer
   useEffect(() => {
     if (!isOpen || (stage !== 'playing' && stage !== 'escape_cutscene')) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -443,40 +500,69 @@ export function EscapePrisonModal({
       const isNight = phaseRef.current === 'night';
       const pct = Math.max(0, Math.min(100, progressRef.current));
 
-      // Smooth Rug slide
+      // Excavated geometry using 8% zoom threshold
+      const shaftDepth =
+        pct <= 0 ? 18 : Math.max(24, (Math.min(8, pct) / 8) * (TUNNEL_Y - GROUND_Y));
+      const horizRatio = Math.max(0, Math.min(1, (pct - 8) / 80));
+      const tunnelEndX = HOLE_X + horizRatio * (EXIT_X - HOLE_X);
+      const exitRatio = Math.max(0, Math.min(1, (pct - 88) / 12));
+      const exitTopY = TUNNEL_Y - exitRatio * (TUNNEL_Y - GROUND_Y);
+
       const targetRug = rugCoveredRef.current ? 1 : 0;
       rugSlideRef.current += (targetRug - rugSlideRef.current) * Math.min(1, dt * 10);
 
       if (swingAnimRef.current > 0) {
-        swingAnimRef.current = Math.max(0, swingAnimRef.current - dt * 5.2);
+        swingAnimRef.current = Math.max(0, swingAnimRef.current - dt * 4.2);
+      }
+      if (shakeRef.current > 0) {
+        shakeRef.current = Math.max(0, shakeRef.current - dt * 14);
       }
 
-      // Guard patrol sweep during Day ONLY (walks along corridor & outside doorway bounds; clipped inside corridor!)
+      // Guard patrol during Day ONLY (strictly clipped inside cell door opening!)
       if (!isNight && curStage === 'playing') {
         guardXRef.current = 520 + Math.sin(tSec * 1.1) * 145;
       } else {
-        guardXRef.current = 900; // Completely absent at Night or Cutscene
+        guardXRef.current = 900;
       }
 
-      // CCTV pan angle inside cell
       cctvAngleRef.current = Math.sin(tSec * 1.05);
-      const cctvTargetX = 330 + cctvAngleRef.current * 140; // Sweeps from x=190 to x=470 on cell floor
+      const cctvTargetX = 330 + cctvAngleRef.current * 140;
 
-      // Character walking state machine (when entering/exiting hole)
+      // Walking & Climbing State Machine
       if (curStage === 'playing') {
-        if (foxWalkStateRef.current === 'walking_to_hole') {
+        const wState = foxWalkStateRef.current;
+        if (wState === 'walking_to_hole') {
           walkCycleRef.current += dt * 16;
-          foxXRef.current = Math.min(HOLE_X, foxXRef.current + dt * 210);
+          foxXRef.current = Math.min(HOLE_X, foxXRef.current + dt * 215);
           if (foxXRef.current >= HOLE_X - 1) {
             foxXRef.current = HOLE_X;
+            climbProgressRef.current = 0;
+            foxWalkStateRef.current = 'climbing_down';
+            gtaAudio.playHoleToggleSfx(true);
+          }
+        } else if (wState === 'climbing_down') {
+          walkCycleRef.current += dt * 14;
+          climbProgressRef.current = Math.min(1, climbProgressRef.current + dt / 0.58);
+          if (Math.random() < 0.25) {
+            spawnParticles(HOLE_X, GROUND_Y + 6, 1, false);
+          }
+          if (climbProgressRef.current >= 1) {
+            climbProgressRef.current = 1;
             foxWalkStateRef.current = 'inside_hole';
             inHoleRef.current = true;
             setInHole(true);
-            gtaAudio.playHoleToggleSfx(true);
           }
-        } else if (foxWalkStateRef.current === 'walking_to_rest') {
+        } else if (wState === 'climbing_up') {
+          walkCycleRef.current += dt * 14;
+          climbProgressRef.current = Math.max(0, climbProgressRef.current - dt / 0.48);
+          if (climbProgressRef.current <= 0) {
+            climbProgressRef.current = 0;
+            foxXRef.current = HOLE_X;
+            foxWalkStateRef.current = 'walking_to_rest';
+          }
+        } else if (wState === 'walking_to_rest') {
           walkCycleRef.current += dt * 16;
-          foxXRef.current = Math.max(REST_X, foxXRef.current - dt * 210);
+          foxXRef.current = Math.max(REST_X, foxXRef.current - dt * 215);
           if (foxXRef.current <= REST_X + 1) {
             foxXRef.current = REST_X;
             foxWalkStateRef.current = 'at_rest';
@@ -484,7 +570,7 @@ export function EscapePrisonModal({
         }
       }
 
-      // Cutscene progress at 100.0%
+      // 100.0% Escape Cutscene timeline
       if (curStage === 'escape_cutscene') {
         cutsceneTimeRef.current += dt;
         const ct = cutsceneTimeRef.current;
@@ -502,11 +588,11 @@ export function EscapePrisonModal({
         }
       }
 
-      // Camera target: < 10% zoomed closely inside cell; >= 10% (or cutscene) zooms out to reveal exterior, sky, sun/moon & underground soil tunnel
-      const shouldZoomOut = pct >= 10 || curStage === 'escape_cutscene';
+      // Camera Zoom-Out Threshold at 8.0%!
+      const shouldZoomOut = pct >= 8 || curStage === 'escape_cutscene';
       let targetCamX = 345;
-      let targetCamY = 215;
-      let targetCamZoom = 1.48;
+      let targetCamY = 218;
+      let targetCamZoom = 1.46;
 
       if (curStage === 'escape_cutscene') {
         const panRatio = Math.min(1, cutsceneTimeRef.current / 3.1);
@@ -524,16 +610,18 @@ export function EscapePrisonModal({
       camStateRef.current.zoom +=
         (targetCamZoom - camStateRef.current.zoom) * Math.min(1, dt * 3.4);
 
+      const shakeX = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current * 4 : 0;
+      const shakeY = shakeRef.current > 0 ? (Math.random() - 0.5) * shakeRef.current * 4 : 0;
+
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          // Backdrop fill behind world camera
           ctx.fillStyle = isNight ? '#0B0419' : '#2C1838';
           ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
           ctx.save();
-          ctx.translate(LOGICAL_W / 2, LOGICAL_H / 2);
+          ctx.translate(LOGICAL_W / 2 + shakeX, LOGICAL_H / 2 + shakeY);
           ctx.scale(camStateRef.current.zoom, camStateRef.current.zoom);
           ctx.translate(-camStateRef.current.x, -camStateRef.current.y);
 
@@ -554,7 +642,6 @@ export function EscapePrisonModal({
           ctx.fillRect(-160, -220, WORLD_W + 320, GROUND_Y + 220);
 
           if (isNight) {
-            // Twinkling stars in outdoor sky
             for (const s of NIGHT_STARS) {
               const alpha = 0.45 + Math.sin(tSec * 2.2 + s.phase) * 0.4;
               ctx.fillStyle = `rgba(255, 245, 220, ${alpha.toFixed(2)})`;
@@ -563,7 +650,7 @@ export function EscapePrisonModal({
               ctx.fill();
             }
 
-            // Crescent Moon (Bulan) in outdoor sky
+            // Moon (Bulan)
             ctx.save();
             ctx.translate(1190, 96);
             const moonHalo = ctx.createRadialGradient(0, 0, 12, 0, 0, 92);
@@ -584,7 +671,7 @@ export function EscapePrisonModal({
             ctx.fill();
             ctx.restore();
           } else {
-            // Radiant Sun (Matahari) in outdoor sky
+            // Sun (Matahari)
             ctx.save();
             ctx.translate(1190, 96);
             const sunHalo = ctx.createRadialGradient(0, 0, 18, 0, 0, 135);
@@ -603,7 +690,7 @@ export function EscapePrisonModal({
             ctx.restore();
           }
 
-          // Distant Vice City skyline silhouettes outside prison
+          // Distant Vice City skyline silhouettes
           ctx.fillStyle = isNight ? '#16092E' : 'rgba(59, 20, 107, 0.42)';
           const cityBuildings = [
             { x: 690, w: 55, h: 120 },
@@ -620,7 +707,7 @@ export function EscapePrisonModal({
             ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
           }
 
-          // Perimeter Prison Yard Fence (x = 810)
+          // Perimeter Prison Yard Fence
           ctx.strokeStyle = '#334155';
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -635,7 +722,6 @@ export function EscapePrisonModal({
             ctx.lineTo(820, fy + 10);
             ctx.stroke();
           }
-          // Barbed wire rings atop fence
           ctx.strokeStyle = '#94A3B8';
           ctx.lineWidth = 1.6;
           for (let wx = 798; wx <= 822; wx += 8) {
@@ -644,7 +730,7 @@ export function EscapePrisonModal({
             ctx.stroke();
           }
 
-          // Palm trees outside yard (Vice City flavor)
+          // Palm trees outside yard
           const drawPalm = (px: number, py: number, scale: number) => {
             ctx.save();
             ctx.translate(px, py);
@@ -673,31 +759,29 @@ export function EscapePrisonModal({
           drawPalm(955, GROUND_Y, 0.95);
           drawPalm(1340, GROUND_Y, 1.15);
 
-          // Outdoor Freedom Road / Curb & Exit Flag at x = 1090
+          // Grass yard & road
           ctx.fillStyle = isNight ? '#1D1433' : '#475569';
           ctx.fillRect(1240, GROUND_Y - 6, 360, 10);
           ctx.fillStyle = isNight ? '#22C55E' : '#16A34A';
           ctx.fillRect(620, GROUND_Y - 6, 620, 10);
 
-          // Subtle "BEBAS" marker post beyond exit hole
+          // KELUAR marker sign
           ctx.fillStyle = '#334155';
           ctx.fillRect(1152, GROUND_Y - 56, 4, 56);
           ctx.fillStyle = '#FFB458';
           ctx.beginPath();
-          ctx.roundRect(1156, GROUND_Y - 54, 42, 18, 4);
+          ctx.roundRect(1156, GROUND_Y - 54, 46, 18, 4);
           ctx.fill();
           ctx.fillStyle = '#111827';
           ctx.font = 'bold 9px sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText('KELUAR', 1177, GROUND_Y - 42);
+          ctx.fillText('KELUAR', 1179, GROUND_Y - 42);
 
           // =========================================================
-          // 2. PRISON BUILDING & INTERIOR CELL (x = 30 .. 622)
+          // 2. PRISON BUILDING & INTERIOR CELL
           // =========================================================
-          // Exterior concrete roof & right exterior brick wall
           ctx.fillStyle = '#1E293B';
           ctx.fillRect(26, 38, 600, 16);
-          // Barbed wire on prison roof
           ctx.strokeStyle = '#94A3B8';
           ctx.lineWidth = 1.6;
           for (let rx = 40; rx <= 610; rx += 18) {
@@ -706,7 +790,6 @@ export function EscapePrisonModal({
             ctx.stroke();
           }
 
-          // Interior cell back wall
           const wallGrad = ctx.createLinearGradient(0, 54, 0, GROUND_Y);
           if (isNight) {
             wallGrad.addColorStop(0, '#1D0B38');
@@ -718,7 +801,6 @@ export function EscapePrisonModal({
           ctx.fillStyle = wallGrad;
           ctx.fillRect(40, 54, 562, GROUND_Y - 54);
 
-          // Brick masonry lines inside cell
           ctx.strokeStyle = isNight ? 'rgba(123,32,143,0.28)' : 'rgba(17,24,39,0.18)';
           ctx.lineWidth = 2;
           for (let row = 0; row < 6; row++) {
@@ -736,7 +818,6 @@ export function EscapePrisonModal({
             }
           }
 
-          // Thick Left & Right Prison Concrete Walls
           ctx.fillStyle = '#334155';
           ctx.fillRect(16, 48, 28, GROUND_Y - 48);
           ctx.fillRect(600, 48, 30, GROUND_Y - 48);
@@ -744,7 +825,7 @@ export function EscapePrisonModal({
           ctx.lineWidth = 2;
           ctx.strokeRect(600, 48, 30, GROUND_Y - 48);
 
-          // High Barred Cell Window (Left-Center) showing true sky outside
+          // High Barred Cell Window
           ctx.fillStyle = isNight ? '#120726' : '#FFB458';
           ctx.fillRect(138, 92, 136, 82);
           if (isNight) {
@@ -787,7 +868,7 @@ export function EscapePrisonModal({
           ctx.roundRect(96, 266, 86, 14, 4);
           ctx.fill();
 
-          // Cell Door Corridor Opening (x = 435..585, y = 115..340)
+          // Cell Door Corridor Opening (Guard strictly clipped inside!)
           const corrX = 435;
           const corrY = 115;
           const corrW = 150;
@@ -795,19 +876,22 @@ export function EscapePrisonModal({
           ctx.fillStyle = isNight ? '#10071F' : '#261D30';
           ctx.fillRect(corrX, corrY, corrW, corrH);
 
-          // STRICTLY CLIPPED GUARD (Sipir) — NEVER bleeds onto prison walls outside steel bars!
           ctx.save();
           ctx.beginPath();
           ctx.rect(corrX, corrY, corrW, corrH);
           ctx.clip();
 
-          if (!isNight && curStage === 'playing' && guardXRef.current >= corrX - 35 && guardXRef.current <= corrX + corrW + 35) {
+          if (
+            !isNight &&
+            curStage === 'playing' &&
+            guardXRef.current >= corrX - 35 &&
+            guardXRef.current <= corrX + corrW + 35
+          ) {
             const gx = guardXRef.current;
             const gy = 236;
             ctx.save();
             ctx.translate(gx, gy);
 
-            // Guard flashlight cone clipped within corridor doorway
             const guardBeam = ctx.createLinearGradient(0, 0, -140, 90);
             guardBeam.addColorStop(0, 'rgba(255, 180, 88, 0.35)');
             guardBeam.addColorStop(1, 'rgba(255, 180, 88, 0)');
@@ -819,7 +903,6 @@ export function EscapePrisonModal({
             ctx.closePath();
             ctx.fill();
 
-            // Sipir body & peaked cap
             ctx.fillStyle = '#1E293B';
             ctx.beginPath();
             ctx.roundRect(-16, -12, 32, 74, 7);
@@ -835,9 +918,8 @@ export function EscapePrisonModal({
             ctx.fillRect(-20, -33, 24, 4);
             ctx.restore();
           }
-          ctx.restore(); // End Guard corridor clip
+          ctx.restore();
 
-          // Vertical steel cell bars over doorway
           ctx.strokeStyle = '#0F172A';
           ctx.lineWidth = 7;
           ctx.strokeRect(corrX, corrY, corrW, corrH);
@@ -849,9 +931,8 @@ export function EscapePrisonModal({
           }
 
           // =========================================================
-          // 3. CELL CCTV CAMERA (Penglihatan Extra) at (566, 76)
+          // 3. CELL CCTV CAMERA (Penglihatan Extra)
           // =========================================================
-          // Surveillance vision beam across cell floor
           const camOriginX = 552;
           const camOriginY = 88;
           ctx.save();
@@ -871,7 +952,6 @@ export function EscapePrisonModal({
           ctx.closePath();
           ctx.fill();
 
-          // Subtle scan edge line during Day
           if (!isNight) {
             ctx.strokeStyle = 'rgba(243, 106, 120, 0.48)';
             ctx.lineWidth = 1.6;
@@ -879,7 +959,6 @@ export function EscapePrisonModal({
           }
           ctx.restore();
 
-          // CCTV Ceiling Bracket & Rotating Camera Body
           ctx.save();
           ctx.translate(566, 76);
           ctx.strokeStyle = '#475569';
@@ -898,7 +977,6 @@ export function EscapePrisonModal({
           ctx.fillStyle = '#0F172A';
           ctx.fillRect(-28, -6, 6, 12);
 
-          // Blinking Red REC LED
           if (Math.sin(tSec * 5.5) > -0.2) {
             ctx.fillStyle = '#EF4444';
             ctx.beginPath();
@@ -907,7 +985,6 @@ export function EscapePrisonModal({
           }
           ctx.restore();
 
-          // Cell Wall CAM-01 Tag
           ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
           ctx.beginPath();
           ctx.roundRect(518, 59, 64, 16, 4);
@@ -918,7 +995,7 @@ export function EscapePrisonModal({
           ctx.fillText('CAM-01 REC', 550, 70);
 
           // =========================================================
-          // 4. UNDERGROUND SOIL STRATA & EXCAVATED ESCAPE TUNNEL
+          // 4. UNDERGROUND SOIL STRATA & EXCAVATED TUNNEL
           // =========================================================
           const soilGrad = ctx.createLinearGradient(0, GROUND_Y, 0, WORLD_H);
           soilGrad.addColorStop(0, '#59341D');
@@ -928,13 +1005,11 @@ export function EscapePrisonModal({
           ctx.fillStyle = soilGrad;
           ctx.fillRect(-160, GROUND_Y, WORLD_W + 320, WORLD_H - GROUND_Y + 120);
 
-          // Stone cell floor slab top strip (x = 16..630)
           ctx.fillStyle = isNight ? '#2B1947' : '#6B6070';
           ctx.fillRect(16, GROUND_Y - 5, 614, 15);
           ctx.fillStyle = isNight ? '#4C1D95' : '#8A7D91';
           ctx.fillRect(16, GROUND_Y - 5, 614, 4);
 
-          // Embedded soil rocks
           ctx.fillStyle = 'rgba(15, 10, 18, 0.38)';
           for (const rk of SOIL_ROCKS) {
             ctx.beginPath();
@@ -942,47 +1017,49 @@ export function EscapePrisonModal({
             ctx.fill();
           }
 
-          // Excavated Escape Tunnel Geometry based on digProgress (0.0% .. 100.0%)
-          const shaftDepth = pct <= 0 ? 0 : Math.max(24, (Math.min(10, pct) / 10) * (TUNNEL_Y - GROUND_Y));
-          const horizRatio = Math.max(0, Math.min(1, (pct - 10) / 78));
-          const tunnelEndX = HOLE_X + horizRatio * (EXIT_X - HOLE_X);
-          const exitRatio = Math.max(0, Math.min(1, (pct - 88) / 12));
-          const exitTopY = TUNNEL_Y - exitRatio * (TUNNEL_Y - GROUND_Y);
+          // Subtle buried treasure glints ahead in soil
+          for (const art of ARTIFACTS) {
+            if (pct < art.pct) {
+              const ax = HOLE_X + art.xOffset * (EXIT_X - HOLE_X);
+              const glint = 0.35 + Math.abs(Math.sin(tSec * 3 + art.pct)) * 0.55;
+              ctx.fillStyle = art.color;
+              ctx.globalAlpha = glint;
+              ctx.beginPath();
+              ctx.arc(ax, TUNNEL_Y, 5, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 1;
+            }
+          }
 
-          if (pct > 0) {
-            // Dirt outline rim around tunnel cavity
+          if (pct > 0 || foxWalkStateRef.current === 'climbing_down' || foxWalkStateRef.current === 'climbing_up') {
             ctx.fillStyle = '#1B0D0A';
-            // Vertical shaft under cell hole
             ctx.beginPath();
             ctx.roundRect(HOLE_X - 30, GROUND_Y - 2, 60, shaftDepth + 28, 18);
             ctx.fill();
 
-            // Horizontal tunnel advancing rightward under prison walls toward outside
-            if (pct >= 10) {
+            if (pct >= 8) {
               ctx.beginPath();
               ctx.roundRect(HOLE_X - 28, TUNNEL_Y - 30, tunnelEndX - HOLE_X + 58, 60, 22);
               ctx.fill();
             }
 
-            // Upward exit shaft breaking surface outside prison
             if (pct > 88) {
               ctx.beginPath();
               ctx.roundRect(EXIT_X - 28, exitTopY - 4, 56, TUNNEL_Y - exitTopY + 32, 18);
               ctx.fill();
             }
 
-            // Inner dark tunnel cavity
             ctx.fillStyle = '#09040F';
             ctx.beginPath();
             ctx.roundRect(HOLE_X - 22, GROUND_Y, 44, shaftDepth + 20, 14);
             ctx.fill();
 
-            if (pct >= 10) {
+            if (pct >= 8) {
               ctx.beginPath();
               ctx.roundRect(HOLE_X - 22, TUNNEL_Y - 22, tunnelEndX - HOLE_X + 44, 44, 16);
               ctx.fill();
 
-              // Wooden tunnel support beams every 145px
+              // Wooden support beams
               ctx.fillStyle = '#78350F';
               for (let bx = HOLE_X + 85; bx < tunnelEndX - 20; bx += 145) {
                 ctx.fillRect(bx, TUNNEL_Y - 22, 6, 44);
@@ -997,7 +1074,6 @@ export function EscapePrisonModal({
               ctx.fill();
             }
 
-            // Cell floor opening ellipse & dirt mound
             const holeRx = 32 + (pct / 100) * 14;
             ctx.fillStyle = '#78350F';
             ctx.beginPath();
@@ -1008,7 +1084,6 @@ export function EscapePrisonModal({
             ctx.ellipse(HOLE_X, GROUND_Y + 1, holeRx, 7, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Outside surface breach mound once >= 94%
             if (pct >= 94) {
               ctx.fillStyle = '#78350F';
               ctx.beginPath();
@@ -1022,7 +1097,6 @@ export function EscapePrisonModal({
               }
             }
           } else {
-            // Un-dug slight floor mark under rug
             ctx.fillStyle = '#09040F';
             ctx.beginPath();
             ctx.ellipse(HOLE_X, GROUND_Y + 1, 24, 5, 0, 0, Math.PI * 2);
@@ -1030,12 +1104,11 @@ export function EscapePrisonModal({
           }
 
           // =========================================================
-          // 5. BLUEFOX CHARACTER (Walking, Inside Tunnel, or Cutscene)
+          // 5. BLUEFOX CHARACTER (Walk + Climb Down/Up + Dig + Cutscene)
           // =========================================================
           if (curStage === 'escape_cutscene') {
             const ct = cutsceneTimeRef.current;
             if (ct < 2.25) {
-              // Phase 1: Walking briskly through excavated underground tunnel!
               const p = ct / 2.25;
               const cx = HOLE_X + p * (EXIT_X - HOLE_X);
               drawBluefoxCharacter(ctx, cx, TUNNEL_Y - 12, {
@@ -1045,45 +1118,71 @@ export function EscapePrisonModal({
                 scale: 0.85,
               });
             } else if (ct < 2.9) {
-              // Phase 2: Climbing up the outside exit shaft to surface freedom!
               const p = (ct - 2.25) / 0.65;
               const cy = TUNNEL_Y - 12 - p * (TUNNEL_Y - 12 - (GROUND_Y - 34));
               drawBluefoxCharacter(ctx, EXIT_X, cy, {
                 facing: 1,
                 walkPhase: ct * 18,
-                isWalking: true,
+                isClimbing: true,
                 scale: 0.9,
               });
             } else {
-              // Phase 3: Jumping repeatedly outside ("animation lompat-lompat pas keluar")!
               const jt = ct - 2.9;
               const jumpX = EXIT_X + Math.min(115, jt * 68);
               const jumpArc = Math.abs(Math.sin(jt * Math.PI * 3.1)) * 48;
               drawBluefoxCharacter(ctx, jumpX, GROUND_Y - 34 - jumpArc, {
                 facing: 1,
-                walkPhase: 0,
-                isWalking: false,
                 armsUp: true,
                 scale: 1,
               });
             }
           } else {
             const wState = foxWalkStateRef.current;
-            if (wState === 'inside_hole') {
-              // Position Bluefox dynamically at the active tunnel digging tip!
+            const targetPitY =
+              pct < 8
+                ? GROUND_Y + Math.max(12, shaftDepth - 22)
+                : TUNNEL_Y - 12;
+
+            if (wState === 'climbing_down' || wState === 'climbing_up') {
+              const cp = climbProgressRef.current;
+              const cy = (GROUND_Y - 34) + cp * (targetPitY - (GROUND_Y - 34));
+
+              // Clip cleanly inside cell + shaft opening so Bluefox visibly sinks into ground!
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(HOLE_X - 45, 50, 90, GROUND_Y - 50 + shaftDepth + 45);
+              ctx.clip();
+              drawBluefoxCharacter(ctx, HOLE_X, cy, {
+                facing: 1,
+                walkPhase: walkCycleRef.current,
+                isClimbing: true,
+                scale: 0.92,
+              });
+              ctx.restore();
+            } else if (wState === 'inside_hole') {
               let digCharX = HOLE_X;
               let digCharY = GROUND_Y + Math.max(12, shaftDepth - 22);
-              if (pct >= 10 && pct < 88) {
+              if (pct >= 8 && pct < 88) {
                 digCharX = Math.max(HOLE_X + 12, tunnelEndX - 16);
                 digCharY = TUNNEL_Y - 12;
               } else if (pct >= 88) {
                 digCharX = EXIT_X;
                 digCharY = Math.max(GROUND_Y - 24, exitTopY + 10);
               }
+
+              // Warm mining lantern aura inside tunnel
+              const lanternGlow = ctx.createRadialGradient(digCharX + 10, digCharY - 10, 6, digCharX + 10, digCharY - 10, 82);
+              lanternGlow.addColorStop(0, 'rgba(255, 180, 88, 0.34)');
+              lanternGlow.addColorStop(1, 'rgba(255, 180, 88, 0)');
+              ctx.fillStyle = lanternGlow;
+              ctx.beginPath();
+              ctx.arc(digCharX + 10, digCharY - 10, 82, 0, Math.PI * 2);
+              ctx.fill();
+
               drawBluefoxCharacter(ctx, digCharX, digCharY, {
                 facing: 1,
                 pickaxeSwing: swingAnimRef.current,
-                scale: pct >= 10 ? 0.85 : 0.92,
+                scale: pct >= 8 ? 0.85 : 0.92,
               });
             } else {
               const isMoving = wState === 'walking_to_hole' || wState === 'walking_to_rest';
@@ -1098,7 +1197,7 @@ export function EscapePrisonModal({
           }
 
           // =========================================================
-          // 6. MOVABLE RUG ("Karpet") over Cell Dig Spot
+          // 6. MOVABLE RUG ("Karpet")
           // =========================================================
           const rugX = HOLE_X - (1 - rugSlideRef.current) * 112;
           const rugY = GROUND_Y - 4;
@@ -1142,9 +1241,9 @@ export function EscapePrisonModal({
             return true;
           });
 
-          ctx.restore(); // End Camera Transform
+          ctx.restore();
 
-          // Smooth Vice City sunset crossfade into Mission 2->3 bar sequence at end of jump cutscene
+          // Smooth Vice City sunset crossfade into Mission 2->3 bar sequence
           if (curStage === 'escape_cutscene' && cutsceneTimeRef.current >= 4.15) {
             const fadeRatio = Math.min(1, (cutsceneTimeRef.current - 4.15) / 0.5);
             ctx.save();
@@ -1170,57 +1269,70 @@ export function EscapePrisonModal({
     };
   }, [isOpen, stage, onMissionSuccess, spawnParticles]);
 
-  const performDigTick = useCallback(() => {
+  // Single-hit Gali handler with strict 1.0-second delay (anti-auto-clicker!)
+  const handleDigAction = () => {
     if (bustedRef.current || stageRef.current !== 'playing' || progressRef.current >= 100) return;
 
     if (phaseRef.current !== 'night') {
-      stopHoldDig();
       showHint('Hanya bisa menggali saat fase Malam!');
       return;
     }
     if (rugCoveredRef.current) {
-      stopHoldDig();
       showHint('Tekan "Buka Karpet" dulu sebelum menggali.');
       return;
     }
 
-    // If still standing/walking outside hole, trigger smooth walk animation into the hole first
-    if (!inHoleRef.current) {
-      if (foxWalkStateRef.current !== 'walking_to_hole') {
-        foxWalkStateRef.current = 'walking_to_hole';
-      }
+    const wState = foxWalkStateRef.current;
+    if (wState === 'at_rest' || wState === 'walking_to_rest') {
+      foxWalkStateRef.current = 'walking_to_hole';
+      showHint('Berjalan menuju lubang galian...');
+      return;
+    }
+    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
       return;
     }
 
-    swingAnimRef.current = 1;
-    const nowMs = performance.now();
-    if (nowMs - lastDigSfxMsRef.current >= 180) {
-      lastDigSfxMsRef.current = nowMs;
-      gtaAudio.playDigPickaxeSfx();
+    // Strict 1.0s anti-spam cooldown check
+    const now = Date.now();
+    if (now - lastDigHitAtRef.current < DIG_COOLDOWN_MS) {
+      return;
     }
+    lastDigHitAtRef.current = now;
+    setCooldownLeftMs(DIG_COOLDOWN_MS);
+
+    swingAnimRef.current = 1;
+    shakeRef.current = 1;
+    gtaAudio.playDigPickaxeSfx();
 
     const curPct = progressRef.current;
     const tipX =
-      curPct < 10
+      curPct < 8
         ? HOLE_X
         : curPct < 88
-        ? HOLE_X + ((curPct - 10) / 78) * (EXIT_X - HOLE_X)
+        ? HOLE_X + ((curPct - 8) / 80) * (EXIT_X - HOLE_X)
         : EXIT_X;
-    const tipY = curPct < 10 ? GROUND_Y + 25 : curPct < 88 ? TUNNEL_Y : GROUND_Y + 25;
-    spawnParticles(tipX, tipY, 3, false);
+    const tipY = curPct < 8 ? GROUND_Y + 25 : curPct < 88 ? TUNNEL_Y : GROUND_Y + 25;
+    spawnParticles(tipX, tipY, 7, false);
 
     setDigProgress((prev) => {
-      // Strictly +0.1% per dig action!
+      // Strictly +0.1% per 1-second hit!
       const next = Math.min(100, Number((prev + 0.1).toFixed(1)));
       progressRef.current = next;
 
-      if (prev < 10 && next >= 10 && !zoomedOutAnnouncedRef.current) {
+      if (prev < 8 && next >= 8 && !zoomedOutAnnouncedRef.current) {
         zoomedOutAnnouncedRef.current = true;
-        showHint('10% tercapai! Kamera menjauh melihat area luar & jalur galian tanah.');
+        showHint('8,0% tercapai! Kamera menjauh melihat pemandangan luar & jalur galian.');
+      }
+
+      const unlockedArtifact = ARTIFACTS.find((a) => prev < a.pct && next >= a.pct);
+      if (unlockedArtifact) {
+        gtaAudio.playNodeUnlockSfx();
+        spawnParticles(tipX, tipY, 12, true);
+        setFoundCount(ARTIFACTS.filter((a) => next >= a.pct).length);
+        showHint(`Temuan Bawah Tanah: ${unlockedArtifact.label}!`);
       }
 
       if (next >= 100) {
-        stopHoldDig();
         gtaAudio.stopHeistBgm();
         gtaAudio.playNodeUnlockSfx();
         cutsceneTimeRef.current = 0;
@@ -1230,20 +1342,17 @@ export function EscapePrisonModal({
       }
       return next;
     });
-  }, [showHint, spawnParticles, stopHoldDig]);
-
-  const handleDigPointerDown = () => {
-    performDigTick();
-    stopHoldDig();
-    digHoldIntervalRef.current = setInterval(() => {
-      performDigTick();
-    }, 55);
   };
 
   const handleToggleHole = () => {
     if (bustedReason || stage !== 'playing') return;
+    const wState = foxWalkStateRef.current;
+    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
+      return;
+    }
+
     if (!inHole && rugCovered) {
-      showHint('Tekan "Buka Karpet" dulu sebelum masuk lubang.');
+      showHint('Tekan "Buka Karpet" dulu sebelum turun ke lubang.');
       return;
     }
     if (!inHole && phase === 'day') {
@@ -1252,29 +1361,31 @@ export function EscapePrisonModal({
     }
 
     if (!inHole) {
-      // Animate Bluefox walking from rest spot across floor to dig spot, then climb down!
-      if (foxWalkStateRef.current === 'walking_to_hole') return;
       foxWalkStateRef.current = 'walking_to_hole';
-      showHint('Berjalan menuju titik galian...');
+      showHint('Berjalan & turun ke lubang galian...');
     } else {
-      // Climb out and walk back to rest spot
       inHoleRef.current = false;
       setInHole(false);
-      foxXRef.current = HOLE_X;
-      foxWalkStateRef.current = 'walking_to_rest';
+      climbProgressRef.current = 1;
+      foxWalkStateRef.current = 'climbing_up';
       gtaAudio.playHoleToggleSfx(false);
     }
   };
 
   const handleToggleRug = () => {
     if (bustedReason || stage !== 'playing') return;
+    const wState = foxWalkStateRef.current;
+    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
+      showHint('Tunggu karakter selesai bergerak terlebih dahulu!');
+      return;
+    }
     if (rugCovered && phase === 'day') {
       setRugCovered(false);
       rugCoveredRef.current = false;
       triggerBusted('CCTV Sel melihat lubang terowongan saat Karpet dibuka di Siang hari!');
       return;
     }
-    if (!rugCovered && (inHole || foxWalkStateRef.current === 'walking_to_hole')) {
+    if (!rugCovered && inHole) {
       showHint('Tekan "Keluar Lubang" dulu sebelum menutup Karpet!');
       return;
     }
@@ -1282,6 +1393,21 @@ export function EscapePrisonModal({
     setRugCovered(next);
     rugCoveredRef.current = next;
     gtaAudio.playRugToggleSfx(next);
+  };
+
+  // Optional rest action during Day when safely hidden at bunk with rug covered
+  const handleSleepThroughDay = () => {
+    if (bustedReason || stage !== 'playing' || phase !== 'day') return;
+    if (inHole || !rugCovered || foxWalkStateRef.current !== 'at_rest') {
+      showHint('Pastikan Keluar Lubang & Tutup Karpet sebelum beristirahat.');
+      return;
+    }
+    phaseRef.current = 'night';
+    setPhase('night');
+    setPhaseSecondsLeft(PHASE_DURATION_SEC);
+    gtaAudio.playPhaseShiftSfx(true);
+    gtaAudio.startPrisonBgm('night');
+    showHint('Malam tiba! Aman untuk melanjutkan galian.');
   };
 
   const handleStartMission = () => {
@@ -1299,9 +1425,13 @@ export function EscapePrisonModal({
     setBustedReason(null);
     bustedRef.current = false;
     setActionHint(null);
+    setCooldownLeftMs(0);
+    setFoundCount(0);
+    lastDigHitAtRef.current = 0;
     rugSlideRef.current = 1;
     foxWalkStateRef.current = 'at_rest';
     foxXRef.current = REST_X;
+    climbProgressRef.current = 0;
     camStateRef.current = { x: 345, y: 215, zoom: 1.48 };
     zoomedOutAnnouncedRef.current = false;
     gtaAudio.startPrisonBgm('night');
@@ -1319,56 +1449,156 @@ export function EscapePrisonModal({
   const lowNightWarning =
     isNight &&
     phaseSecondsLeft <= 12 &&
-    (inHole || foxWalkStateRef.current === 'walking_to_hole' || !rugCovered);
+    (inHole || foxWalkStateRef.current !== 'at_rest' || !rugCovered);
+  const cooldownRatio = cooldownLeftMs / DIG_COOLDOWN_MS;
+  const isCoolingDown = cooldownLeftMs > 0;
+  const zoneLabel = getTunnelZoneLabel(digProgress);
 
   return (
     <>
       <AnimatePresence>
         {isOpen && stage !== 'victory_anim' && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-[80] w-screen h-[100dvh] bg-[#140A26] text-white flex flex-col overflow-hidden"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="escape-prison-title"
-          >
-            {/* Full-screen Header */}
-            <div className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] flex items-center justify-between shrink-0 shadow-md">
-              <div className="flex items-center gap-2.5">
-                <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B] text-white text-[10px] font-extrabold uppercase tracking-wider">
-                  Mission 02
+          <ViceCityGameFrame
+            title="Escape from Prison"
+            titleId="escape-prison-title"
+            muted={muted}
+            onToggleMute={handleToggleMute}
+            onClose={onClose}
+            closeLabel="Close Escape from Prison"
+            topRightStatus={
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 border border-[#111827]/15 shadow-xs">
+                <div className="w-16 sm:w-24 h-2.5 rounded-full bg-[#3B146B]/20 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-150"
+                    style={{
+                      width: `${digProgress}%`,
+                      background: 'linear-gradient(90deg, #7B208F 0%, #C9349B 60%, #F36A78 100%)',
+                    }}
+                  />
+                </div>
+                <span className="font-mono tabular-nums font-extrabold text-xs text-[#111827]">
+                  {digProgress.toFixed(1)}%
                 </span>
-                <h2 id="escape-prison-title" className="text-base sm:text-xl font-extrabold tracking-tight">
-                  Escape from Prison
-                </h2>
               </div>
+            }
+            subStatus={
+              (stage === 'playing' || stage === 'escape_cutscene') ? (
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                      isNight
+                        ? 'bg-[#3B146B] text-[#FFB458]'
+                        : 'bg-[#111827] text-[#FFB458]'
+                    }`}
+                  >
+                    {isNight ? <Moon size={11} /> : <Sun size={11} />}
+                    <span className="font-mono tabular-nums">{formatClock(phaseSecondsLeft)}</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B]/85 text-white text-[10px] font-bold">
+                    {zoneLabel}
+                  </span>
+                  {stage === 'playing' && (
+                    <button
+                      type="button"
+                      onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#111827]/80 text-[#FFB458] font-mono text-[10px] font-bold cursor-pointer"
+                      title="Test Timer Speed"
+                    >
+                      <Gauge size={10} />
+                      <span>{timerSpeed}x</span>
+                    </button>
+                  )}
+                </div>
+              ) : null
+            }
+            controller={
+              stage === 'playing' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-white/90 px-1">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Video size={13} className={isNight ? 'text-[#FFB458]' : 'text-[#F36A78]'} />
+                      <span>{isNight ? 'CCTV Standby · Aman Menggali' : 'CCTV Aktif + Sipir Patroli'}</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-mono tabular-nums text-[#FFB458]">
+                      <Gem size={12} />
+                      <span>Temuan {foundCount}/{ARTIFACTS.length}</span>
+                    </span>
+                  </div>
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleToggleMute}
-                  aria-label={muted ? 'Unmute Audio' : 'Mute Audio'}
-                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  {muted ? <VolumeX size={18} strokeWidth={2.4} /> : <Volume2 size={18} strokeWidth={2.4} />}
-                </button>
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label="Close Escape from Prison"
-                  className="w-10 h-10 rounded-full bg-[#3B146B]/15 hover:bg-[#3B146B]/25 text-[#111827] flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  <X size={19} strokeWidth={2.5} />
-                </button>
-              </div>
-            </div>
+                  <div className={`grid gap-2 ${!isNight && !inHole && rugCovered ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+                    {/* Dig Button with strictly 1s anti-spam delay indicator */}
+                    <button
+                      type="button"
+                      onPointerDown={handleDigAction}
+                      disabled={!isNight || Boolean(bustedReason) || isCoolingDown}
+                      className={`relative overflow-hidden min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all select-none ${
+                        isNight && !bustedReason && !isCoolingDown
+                          ? 'bg-[#C9349B] hover:brightness-110 active:scale-95 text-white border-white/25 cursor-pointer shadow-md'
+                          : 'bg-[#3B146B]/85 text-white/60 border-white/10 cursor-not-allowed'
+                      }`}
+                    >
+                      {isCoolingDown && (
+                        <div
+                          className="absolute inset-y-0 left-0 bg-[#C9349B]/45 pointer-events-none"
+                          style={{ width: `${(1 - cooldownRatio) * 100}%` }}
+                        />
+                      )}
+                      <PickaxeSvg className="w-5 h-5 relative z-10" />
+                      <span className="relative z-10 font-mono tabular-nums">
+                        {isCoolingDown
+                          ? `Delay ${(cooldownLeftMs / 1000).toFixed(1)}s`
+                          : 'Gali (+0,1%)'}
+                      </span>
+                    </button>
 
-            {/* Full-screen Body */}
-            <div className="flex-1 flex flex-col justify-center overflow-y-auto p-3 sm:p-5">
-              {stage === 'briefing' && (
+                    {/* Enter / Exit Hole with walk + climb-down animation */}
+                    <button
+                      type="button"
+                      onClick={handleToggleHole}
+                      disabled={Boolean(bustedReason)}
+                      className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        inHole
+                          ? 'bg-[#C9349B] text-white border-[#FFB458]/60 shadow-md'
+                          : 'bg-[#3B146B] text-white border-white/25 hover:bg-[#3B146B]/80'
+                      }`}
+                    >
+                      {inHole ? <ArrowUp size={18} strokeWidth={2.5} /> : <ArrowDown size={18} strokeWidth={2.5} />}
+                      <span>{inHole ? 'Keluar Lubang' : 'Masuk Lubang'}</span>
+                    </button>
+
+                    {/* Open / Close Rug */}
+                    <button
+                      type="button"
+                      onClick={handleToggleRug}
+                      disabled={Boolean(bustedReason)}
+                      className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                        rugCovered
+                          ? 'bg-[#3B146B] text-[#FFB458] border-[#FFB458]/40 shadow-md'
+                          : 'bg-[#C9349B] text-white border-white/30 shadow-md'
+                      }`}
+                    >
+                      <Layers size={18} strokeWidth={2.4} />
+                      <span>{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
+                    </button>
+
+                    {/* Safe Day Skip when tucked away so player stays engaged */}
+                    {!isNight && !inHole && rugCovered && (
+                      <button
+                        type="button"
+                        onClick={handleSleepThroughDay}
+                        className="min-h-[54px] px-2 rounded-2xl bg-[#3B146B] hover:bg-[#C9349B] text-white border border-white/25 font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md"
+                      >
+                        <BedDouble size={18} strokeWidth={2.4} />
+                        <span>Tidur (Malam)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : undefined
+            }
+          >
+            {stage === 'briefing' && (
+              <div className="w-full h-full overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
                 <div className="w-full max-w-2xl mx-auto space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-[#3B146B]/55 border border-[#7B208F]/60 p-4">
@@ -1377,7 +1607,7 @@ export function EscapePrisonModal({
                         <span>Fase Malam (2:00)</span>
                       </div>
                       <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                        Buka Karpet, masuk lubang, lalu tap (+0,1%) atau tahan Gali hingga terowongan menembus luar penjara (100%).
+                        Buka Karpet, masuk &amp; turun ke lubang galian. Setiap 1 pukulan menambah +0,1% dengan jeda 1 detik agar stabil hingga 100%.
                       </p>
                     </div>
 
@@ -1387,7 +1617,7 @@ export function EscapePrisonModal({
                         <span>Fase Siang · Sipir &amp; CCTV (2:00)</span>
                       </div>
                       <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                        Sipir berpatroli di balik jeruji &amp; CCTV sel menyapu lantai. Pastikan Keluar Lubang dan Tutup Karpet sebelum Siang!
+                        Sipir berpatroli di balik jeruji &amp; CCTV sel menyapu lantai. Keluar lubang dan tutup karpet sebelum Siang!
                       </p>
                     </div>
                   </div>
@@ -1408,7 +1638,7 @@ export function EscapePrisonModal({
                   </div>
 
                   {completed ? (
-                    <div className="w-full min-h-[54px] rounded-2xl bg-white/10 border border-white/15 text-white/85 font-bold text-sm flex items-center justify-center gap-2">
+                    <div className="w-full min-h-[52px] rounded-2xl bg-white/10 border border-white/15 text-white/85 font-bold text-sm flex items-center justify-center gap-2">
                       <Check size={18} className="text-[#FFB458]" />
                       <span>Misi Selesai · Topi GTB 6 Terpasang</span>
                     </div>
@@ -1416,202 +1646,82 @@ export function EscapePrisonModal({
                     <button
                       type="button"
                       onClick={handleStartMission}
-                      className="w-full min-h-[54px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                      className="w-full min-h-[52px] rounded-2xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
                     >
                       <Play size={18} fill="currentColor" strokeWidth={2.2} />
                       <span>PLAY ESCAPE FROM PRISON</span>
                     </button>
                   )}
                 </div>
-              )}
+              </div>
+            )}
 
-              {(stage === 'playing' || stage === 'escape_cutscene') && (
-                <div className="w-full max-w-5xl mx-auto flex-1 flex flex-col justify-center gap-2.5 min-h-0">
-                  {/* Top Cycle & CCTV HUD */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border ${
-                          isNight
-                            ? 'bg-[#3B146B] text-[#FFB458] border-[#C9349B]/50'
-                            : 'bg-[#FFB458] text-[#111827] border-[#FF9B55]'
-                        }`}
-                      >
-                        {isNight ? <Moon size={13} strokeWidth={2.5} /> : <Sun size={13} strokeWidth={2.5} />}
-                        <span>{isNight ? 'Malam' : 'Siang'}</span>
-                        <span className="font-mono">{formatClock(phaseSecondsLeft)}</span>
-                      </span>
+            {(stage === 'playing' || stage === 'escape_cutscene') && (
+              <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-3">
+                <div className="relative w-full h-full max-w-5xl aspect-[960/540] max-h-full rounded-xl overflow-hidden bg-[#120726] select-none shadow-2xl border border-white/10">
+                  <canvas
+                    ref={canvasRef}
+                    width={LOGICAL_W}
+                    height={LOGICAL_H}
+                    className="w-full h-full block"
+                  />
 
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-                          isNight
-                            ? 'bg-white/5 text-white/75 border-white/15'
-                            : 'bg-rose-500/20 text-rose-300 border-rose-400/40'
-                        }`}
-                      >
-                        <Video size={12} />
-                        <span>{isNight ? 'CCTV Standby' : 'CCTV Aktif + Sipir'}</span>
-                      </span>
+                  {stage === 'escape_cutscene' && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#7B208F] via-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold uppercase tracking-widest shadow-lg whitespace-nowrap"
+                    >
+                      Bluefox Berhasil Kabur dari Penjara!
+                    </motion.div>
+                  )}
+
+                  {stage === 'playing' && lowNightWarning && !bustedReason && (
+                    <div className="absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wide shadow-md whitespace-nowrap">
+                      Siang segera tiba! Keluar Lubang &amp; Tutup Karpet
                     </div>
+                  )}
 
-                    {stage === 'playing' && (
-                      <button
-                        type="button"
-                        onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 border border-white/15 text-[11px] font-mono font-bold text-[#FFB458] cursor-pointer"
-                        title="Test Timer Speed"
-                      >
-                        <Gauge size={12} />
-                        <span>Speed {timerSpeed}x</span>
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Dig Progress Bar (+0.1% precision) */}
-                  <div className="shrink-0">
-                    <div className="flex items-center justify-between text-xs font-bold mb-1">
-                      <span className="text-white/80">
-                        {stage === 'escape_cutscene'
-                          ? 'Kabur Menembus Terowongan!'
-                          : digProgress >= 10
-                          ? 'Progres Terowongan (Area Luar Terlihat)'
-                          : 'Progres Terowongan (1 Galian = +0,1%)'}
-                      </span>
-                      <span className="font-mono text-[#FFB458]">{digProgress.toFixed(1)}%</span>
+                  {stage === 'playing' && actionHint && !bustedReason && (
+                    <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#3B146B]/95 border border-[#FFB458]/50 text-[#FFB458] text-xs font-bold whitespace-nowrap shadow-lg">
+                      {actionHint}
                     </div>
-                    <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden border border-white/10">
-                      <div
-                        className="h-full rounded-full transition-all duration-150"
-                        style={{
-                          width: `${digProgress}%`,
-                          background: 'linear-gradient(90deg, #7B208F 0%, #C9349B 55%, #FFB458 100%)',
-                        }}
-                      />
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Full-Screen Responsive 2D Cutaway World Canvas */}
-                  <div className="relative w-full flex-1 min-h-[210px] max-h-[calc(100dvh-230px)] flex items-center justify-center">
-                    <div className="relative w-full h-full max-w-full aspect-[960/540] max-h-full rounded-2xl overflow-hidden border border-white/15 bg-[#120726] select-none shadow-2xl">
-                      <canvas
-                        ref={canvasRef}
-                        width={LOGICAL_W}
-                        height={LOGICAL_H}
-                        className="w-full h-full block"
-                      />
-
-                      {/* Escape Cutscene Banner */}
-                      {stage === 'escape_cutscene' && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#7B208F] via-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold uppercase tracking-widest shadow-lg whitespace-nowrap"
+                  {stage === 'playing' && bustedReason && (
+                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="max-w-xs w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-4 text-center space-y-3 shadow-2xl">
+                        <div className="w-11 h-11 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
+                          <AlertTriangle size={22} strokeWidth={2.5} />
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black uppercase tracking-wide text-[#F36A78]">
+                            BUSTED!
+                          </h3>
+                          <p className="text-xs text-white/85 mt-1 leading-relaxed">
+                            {bustedReason}
+                          </p>
+                          <p className="text-[11px] font-mono font-bold text-[#FFB458] mt-1.5">
+                            Penalti: -25.0% progres galian
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            bustedRef.current = false;
+                            setBustedReason(null);
+                          }}
+                          className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer"
                         >
-                          Bluefox Berhasil Kabur dari Penjara!
-                        </motion.div>
-                      )}
-
-                      {/* Low-time danger warning */}
-                      {stage === 'playing' && lowNightWarning && !bustedReason && (
-                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wide shadow-md whitespace-nowrap animate-pulse">
-                          Siang segera tiba! Keluar Lubang &amp; Tutup Karpet
-                        </div>
-                      )}
-
-                      {/* Status hint */}
-                      {stage === 'playing' && actionHint && !bustedReason && (
-                        <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#3B146B]/95 border border-[#FFB458]/50 text-[#FFB458] text-xs font-bold whitespace-nowrap shadow-lg">
-                          {actionHint}
-                        </div>
-                      )}
-
-                      {/* Busted Alert Overlay */}
-                      {stage === 'playing' && bustedReason && (
-                        <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
-                          <div className="max-w-xs w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-4 text-center space-y-3 shadow-2xl">
-                            <div className="w-11 h-11 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
-                              <AlertTriangle size={22} strokeWidth={2.5} />
-                            </div>
-                            <div>
-                              <h3 className="text-lg font-black uppercase tracking-wide text-[#F36A78]">
-                                BUSTED!
-                              </h3>
-                              <p className="text-xs text-white/85 mt-1 leading-relaxed">
-                                {bustedReason}
-                              </p>
-                              <p className="text-[11px] font-mono font-bold text-[#FFB458] mt-1.5">
-                                Penalti: -25.0% progres galian
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                bustedRef.current = false;
-                                setBustedReason(null);
-                              }}
-                              className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer"
-                            >
-                              Lanjutkan
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Mobile-First Action Controls */}
-                  {stage === 'playing' && (
-                    <div className="grid grid-cols-3 gap-2 pt-0.5 shrink-0">
-                      <button
-                        type="button"
-                        onPointerDown={handleDigPointerDown}
-                        onPointerUp={stopHoldDig}
-                        onPointerLeave={stopHoldDig}
-                        onPointerCancel={stopHoldDig}
-                        disabled={!isNight || Boolean(bustedReason)}
-                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all cursor-pointer select-none ${
-                          isNight && !bustedReason
-                            ? 'bg-gradient-to-br from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] active:scale-95 shadow-md'
-                            : 'bg-white/10 text-white/40 cursor-not-allowed'
-                        }`}
-                      >
-                        <PickaxeSvg className="w-5 h-5" />
-                        <span>Gali (+0,1%)</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleToggleHole}
-                        disabled={Boolean(bustedReason)}
-                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
-                          inHole
-                            ? 'bg-[#C9349B] text-white border-[#FFB458]/60 shadow-md'
-                            : 'bg-[#3B146B] text-white border-white/20 hover:bg-[#7B208F]'
-                        }`}
-                      >
-                        {inHole ? <ArrowUp size={18} strokeWidth={2.5} /> : <ArrowDown size={18} strokeWidth={2.5} />}
-                        <span>{inHole ? 'Keluar Lubang' : 'Masuk Lubang'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleToggleRug}
-                        disabled={Boolean(bustedReason)}
-                        className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
-                          rugCovered
-                            ? 'bg-emerald-600 text-white border-emerald-300/50 shadow-md'
-                            : 'bg-amber-600 text-white border-amber-300/60 shadow-md'
-                        }`}
-                      >
-                        <Layers size={18} strokeWidth={2.4} />
-                        <span>{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
-                      </button>
+                          Lanjutkan
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          </motion.div>
+              </div>
+            )}
+          </ViceCityGameFrame>
         )}
       </AnimatePresence>
 
