@@ -576,6 +576,8 @@ export function KriminalBankModal({
   const rafRef = useRef<number | null>(null);
   const isOpenRef = useRef<boolean>(isOpen);
   const introTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const waveTransitioningRef = useRef<boolean>(false);
+  const waveTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     isOpenRef.current = isOpen;
@@ -612,12 +614,18 @@ export function KriminalBankModal({
       setWaveSlam(null);
       unitsRef.current = [];
       burstsRef.current = [];
+      waveTimersRef.current.forEach((id) => clearTimeout(id));
+      waveTimersRef.current = [];
+      waveTransitioningRef.current = false;
     } else {
       gtaAudio.stopHeistBgm();
       if (introTimerRef.current) {
         clearTimeout(introTimerRef.current);
         introTimerRef.current = null;
       }
+      waveTimersRef.current.forEach((id) => clearTimeout(id));
+      waveTimersRef.current = [];
+      waveTransitioningRef.current = false;
     }
     return () => {
       gtaAudio.stopHeistBgm();
@@ -626,12 +634,15 @@ export function KriminalBankModal({
         clearTimeout(introTimerRef.current);
         introTimerRef.current = null;
       }
+      waveTimersRef.current.forEach((id) => clearTimeout(id));
+      waveTimersRef.current = [];
     };
   }, [isOpen]);
 
   const startWave = useCallback(
     (idx: number) => {
       const info = WAVES[idx];
+      waveTransitioningRef.current = true;
       setWaveIdx(idx);
       waveIdxRef.current = idx;
       setWaveSlam(info);
@@ -645,9 +656,13 @@ export function KriminalBankModal({
       unitsRef.current = nextUnits;
       syncRemainingCounts();
 
-      setTimeout(() => {
+      const tSlam = setTimeout(() => {
         setWaveSlam((curr) => (curr?.wave === info.wave ? null : curr));
       }, 1350);
+      const tUnlock = setTimeout(() => {
+        waveTransitioningRef.current = false;
+      }, 1680);
+      waveTimersRef.current.push(tSlam, tUnlock);
     },
     [syncRemainingCounts]
   );
@@ -768,7 +783,7 @@ export function KriminalBankModal({
   }, [isOpen, stage]);
 
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (stageRef.current !== 'playing') return;
+    if (stageRef.current !== 'playing' || waveTransitioningRef.current) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
@@ -821,11 +836,13 @@ export function KriminalBankModal({
     const left = syncRemainingCounts();
 
     if (left === 0) {
+      waveTransitioningRef.current = true;
       const nextIdx = waveIdxRef.current + 1;
       if (nextIdx < WAVES.length) {
-        setTimeout(() => {
+        const tNext = setTimeout(() => {
           if (isOpenRef.current) startWave(nextIdx);
         }, 420);
+        waveTimersRef.current.push(tNext);
       } else {
         gtaAudio.stopHeistBgm();
         const clearSec = Math.max(1, Math.round((Date.now() - missionStartRef.current) / 1000));
@@ -940,7 +957,7 @@ export function KriminalBankModal({
                     width={LOGICAL_W}
                     height={LOGICAL_H}
                     onPointerDown={handleCanvasPointerDown}
-                    className="w-full h-full block cursor-crosshair"
+                    className={`w-full h-full block ${waveSlam ? 'cursor-wait' : 'cursor-crosshair'}`}
                   />
 
                   {/* Dramatic Per-Wave Transition Slam */}

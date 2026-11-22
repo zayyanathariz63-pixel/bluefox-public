@@ -9,10 +9,13 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  Gauge,
   Video,
   BedDouble,
   Gem,
+  Clock,
+  Coins,
+  X,
+  Eye,
 } from 'lucide-react';
 import {
   completeEscapePrisonMission,
@@ -39,7 +42,9 @@ type FoxWalkState =
   | 'climbing_down'
   | 'inside_hole'
   | 'climbing_up'
-  | 'walking_to_rest';
+  | 'walking_to_rest'
+  | 'walking_to_bed'
+  | 'sleeping';
 
 interface DirtParticle {
   x: number;
@@ -50,6 +55,7 @@ interface DirtParticle {
   maxAge: number;
   color: string;
   size: number;
+  text?: string;
 }
 
 interface UndergroundArtifact {
@@ -64,12 +70,18 @@ const LOGICAL_H = 540;
 const WORLD_W = 1520;
 const WORLD_H = 720;
 const GROUND_Y = 340;
-const REST_X = 190;
+const BED_X = 122;
+const REST_X = 198;
 const HOLE_X = 340;
 const EXIT_X = 1090;
 const TUNNEL_Y = 485;
-const PHASE_DURATION_SEC = 120; // 2 minutes Night / 2 minutes Day
+const BASE_PHASE_SEC = 120; // 2 minutes Night / 2 minutes Day
 const DIG_COOLDOWN_MS = 1000; // Strict 1.0s cooldown per swing (anti-auto-clicker)
+const MAX_UPGRADE_LV = 5;
+
+const RED_EYES_X = 510;
+const RED_EYES_Y = 198;
+const CORRIDOR_RECT = { x: 435, y: 115, w: 150, h: GROUND_Y - 115 };
 
 const ARTIFACTS: UndergroundArtifact[] = [
   { pct: 12, label: 'Sendok Besi Tua', xOffset: 0.05, color: '#CBD5E1' },
@@ -270,6 +282,52 @@ function drawBluefoxCharacter(
   ctx.restore();
 }
 
+function drawBluefoxSleepingOnBunk(ctx: CanvasRenderingContext2D, tSec: number) {
+  // Bunk mattress top is at y=266, pillow around x=62..96, blanket x=96..182
+  ctx.save();
+  // Head resting on pillow
+  ctx.fillStyle = '#2563EB';
+  ctx.beginPath();
+  ctx.arc(84, 260, 12, 0, Math.PI * 2);
+  ctx.fill();
+  // Ears tucked back
+  ctx.beginPath();
+  ctx.moveTo(74, 254);
+  ctx.lineTo(66, 245);
+  ctx.lineTo(80, 249);
+  ctx.closePath();
+  ctx.fill();
+  // Dimmed closed visor line
+  ctx.strokeStyle = '#67E8F9';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(82, 260);
+  ctx.lineTo(92, 260);
+  ctx.stroke();
+
+  // Body under blanket (gentle breathing rise)
+  const breath = Math.sin(tSec * 2.4) * 1.4;
+  ctx.fillStyle = '#7B208F';
+  ctx.beginPath();
+  ctx.roundRect(96, 256 - breath * 0.5, 86, 22 + breath * 0.5, 6);
+  ctx.fill();
+  ctx.fillStyle = '#C9349B';
+  ctx.fillRect(96, 256 - breath * 0.5, 10, 22 + breath * 0.5);
+
+  // Floating "Zzz" indicator
+  const zCycle = tSec % 2.4;
+  for (let i = 0; i < 3; i++) {
+    const p = (zCycle + i * 0.8) % 2.4;
+    const ratio = p / 2.4;
+    ctx.fillStyle = '#FFB458';
+    ctx.globalAlpha = Math.max(0, 1 - ratio);
+    ctx.font = `bold ${10 + i * 2}px sans-serif`;
+    ctx.fillText('Z', 88 + ratio * 18 + i * 6, 242 - ratio * 26);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 export function EscapePrisonModal({
   isOpen,
   onClose,
@@ -282,16 +340,24 @@ export function EscapePrisonModal({
 
   const [stage, setStage] = useState<ModalStage>('briefing');
   const [phase, setPhase] = useState<CyclePhase>('night');
-  const [phaseSecondsLeft, setPhaseSecondsLeft] = useState<number>(PHASE_DURATION_SEC);
-  const [timerSpeed, setTimerSpeed] = useState<1 | 10>(1);
+  const [phaseSecondsLeft, setPhaseSecondsLeft] = useState<number>(BASE_PHASE_SEC);
   const [digProgress, setDigProgress] = useState<number>(0);
   const [inHole, setInHole] = useState<boolean>(false);
   const [rugCovered, setRugCovered] = useState<boolean>(true);
+  const [isSleeping, setIsSleeping] = useState<boolean>(false);
   const [bustedReason, setBustedReason] = useState<string | null>(null);
   const [actionHint, setActionHint] = useState<string | null>(null);
   const [muted, setMuted] = useState<boolean>(() => gtaAudio.isMuted());
   const [cooldownLeftMs, setCooldownLeftMs] = useState<number>(0);
   const [foundCount, setFoundCount] = useState<number>(0);
+
+  // Coins & Red-Eye Black Market Upgrades
+  const [coins, setCoins] = useState<number>(0);
+  const [pickaxeLv, setPickaxeLv] = useState<number>(0);
+  const [timeLv, setTimeLv] = useState<number>(0);
+  const [moneyLv, setMoneyLv] = useState<number>(0);
+  const [shopOpen, setShopOpen] = useState<boolean>(false);
+  const [hoverRedEyes, setHoverRedEyes] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const particlesRef = useRef<DirtParticle[]>([]);
@@ -302,18 +368,18 @@ export function EscapePrisonModal({
   const cctvAngleRef = useRef<number>(0);
   const camStateRef = useRef({ x: 345, y: 215, zoom: 1.48 });
 
-  // Walking & climbing animation state refs
+  // Walking, climbing & sleeping state refs
   const foxWalkStateRef = useRef<FoxWalkState>('at_rest');
   const foxXRef = useRef<number>(REST_X);
-  const climbProgressRef = useRef<number>(0); // 0 = surface, 1 = bottom of pit
+  const climbProgressRef = useRef<number>(0);
   const walkCycleRef = useRef<number>(0);
   const cutsceneTimeRef = useRef<number>(0);
   const cutsceneDoneRef = useRef<boolean>(false);
   const zoomedOutAnnouncedRef = useRef<boolean>(false);
+  const coinFractionRef = useRef<number>(0);
 
   // Strict 1.0s dig anti-spam ref
   const lastDigHitAtRef = useRef<number>(0);
-
   const rafRef = useRef<number | null>(null);
   const hintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -323,8 +389,9 @@ export function EscapePrisonModal({
   const progressRef = useRef<number>(0);
   const inHoleRef = useRef<boolean>(false);
   const rugCoveredRef = useRef<boolean>(true);
+  const sleepingRef = useRef<boolean>(false);
   const bustedRef = useRef<boolean>(false);
-  const speedRef = useRef<1 | 10>(1);
+  const timeLvRef = useRef<number>(0);
 
   useEffect(() => {
     stageRef.current = stage;
@@ -342,11 +409,14 @@ export function EscapePrisonModal({
     rugCoveredRef.current = rugCovered;
   }, [rugCovered]);
   useEffect(() => {
+    sleepingRef.current = isSleeping;
+  }, [isSleeping]);
+  useEffect(() => {
     bustedRef.current = Boolean(bustedReason);
   }, [bustedReason]);
   useEffect(() => {
-    speedRef.current = timerSpeed;
-  }, [timerSpeed]);
+    timeLvRef.current = timeLv;
+  }, [timeLv]);
 
   const showHint = useCallback((msg: string) => {
     setActionHint(msg);
@@ -363,19 +433,27 @@ export function EscapePrisonModal({
       stageRef.current = 'briefing';
       setPhase('night');
       phaseRef.current = 'night';
-      setPhaseSecondsLeft(PHASE_DURATION_SEC);
-      setTimerSpeed(1);
+      setPhaseSecondsLeft(BASE_PHASE_SEC);
       setDigProgress(0);
       progressRef.current = 0;
       setInHole(false);
       inHoleRef.current = false;
       setRugCovered(true);
       rugCoveredRef.current = true;
+      setIsSleeping(false);
+      sleepingRef.current = false;
       setBustedReason(null);
       bustedRef.current = false;
       setActionHint(null);
       setCooldownLeftMs(0);
       setFoundCount(0);
+      setCoins(0);
+      setPickaxeLv(0);
+      setTimeLv(0);
+      setMoneyLv(0);
+      setShopOpen(false);
+      setHoverRedEyes(false);
+      coinFractionRef.current = 0;
       lastDigHitAtRef.current = 0;
       particlesRef.current = [];
       rugSlideRef.current = 1;
@@ -410,6 +488,7 @@ export function EscapePrisonModal({
     if (bustedRef.current || stageRef.current !== 'playing') return;
     bustedRef.current = true;
     gtaAudio.playBustedSfx();
+    setShopOpen(false);
     setBustedReason(reason);
     setDigProgress((prev) => {
       const penalized = Math.max(0, Number((prev - 25).toFixed(1)));
@@ -420,6 +499,8 @@ export function EscapePrisonModal({
     });
     setInHole(false);
     inHoleRef.current = false;
+    setIsSleeping(false);
+    sleepingRef.current = false;
     setRugCovered(true);
     rugCoveredRef.current = true;
     foxWalkStateRef.current = 'at_rest';
@@ -427,15 +508,17 @@ export function EscapePrisonModal({
     climbProgressRef.current = 0;
   }, []);
 
-  // Day/Night cycle countdown loop
+  // Day/Night cycle countdown loop: normal 1x, sleeping on bunk strictly 2x!
   useEffect(() => {
     if (!isOpen || stage !== 'playing') return;
 
     const tickInterval = setInterval(() => {
       if (bustedRef.current) return;
 
+      const tickMultiplier = sleepingRef.current ? 2 : 1;
+
       setPhaseSecondsLeft((prev) => {
-        const next = prev - 0.25 * speedRef.current;
+        const next = prev - 0.25 * tickMultiplier;
         if (next <= 0) {
           const nextPhase: CyclePhase = phaseRef.current === 'night' ? 'day' : 'night';
           phaseRef.current = nextPhase;
@@ -444,6 +527,7 @@ export function EscapePrisonModal({
           gtaAudio.startPrisonBgm(nextPhase);
 
           if (nextPhase === 'day') {
+            setShopOpen(false);
             const unsafe =
               inHoleRef.current ||
               foxWalkStateRef.current === 'walking_to_hole' ||
@@ -454,33 +538,59 @@ export function EscapePrisonModal({
             } else if (!rugCoveredRef.current) {
               triggerBusted('CCTV Sel melihat lubang terowongan karena Karpet belum ditutup saat Siang!');
             }
+          } else {
+            // Waking up automatically when Night begins!
+            if (sleepingRef.current || foxWalkStateRef.current === 'walking_to_bed' || foxWalkStateRef.current === 'sleeping') {
+              sleepingRef.current = false;
+              setIsSleeping(false);
+              foxWalkStateRef.current = 'at_rest';
+              foxXRef.current = REST_X;
+              showHint('Malam tiba! Bangun dari kasur dan lanjutkan menggali.');
+            }
           }
-          return PHASE_DURATION_SEC;
+
+          return nextPhase === 'night' ? BASE_PHASE_SEC + timeLvRef.current * 10 : BASE_PHASE_SEC;
         }
         return next;
       });
     }, 250);
 
     return () => clearInterval(tickInterval);
-  }, [isOpen, stage, triggerBusted]);
+  }, [isOpen, stage, triggerBusted, showHint]);
 
-  const spawnParticles = useCallback((x: number, y: number, count: number, celebration = false) => {
-    const colors = celebration
-      ? ['#FFB458', '#F36A78', '#C9349B', '#67E8F9']
-      : ['#D97706', '#92400E', '#F59E0B'];
-    for (let i = 0; i < count; i++) {
-      particlesRef.current.push({
-        x: x + (Math.random() - 0.5) * 22,
-        y,
-        vx: (Math.random() - 0.5) * (celebration ? 240 : 155),
-        vy: -90 - Math.random() * (celebration ? 150 : 95),
-        age: 0,
-        maxAge: celebration ? 0.85 : 0.48,
-        color: colors[i % colors.length],
-        size: celebration ? 4.5 : 3.8,
-      });
-    }
-  }, []);
+  const spawnParticles = useCallback(
+    (x: number, y: number, count: number, celebration = false, floatingText?: string) => {
+      const colors = celebration
+        ? ['#FFB458', '#F36A78', '#C9349B', '#67E8F9']
+        : ['#D97706', '#92400E', '#F59E0B'];
+      for (let i = 0; i < count; i++) {
+        particlesRef.current.push({
+          x: x + (Math.random() - 0.5) * 22,
+          y,
+          vx: (Math.random() - 0.5) * (celebration ? 240 : 155),
+          vy: -90 - Math.random() * (celebration ? 150 : 95),
+          age: 0,
+          maxAge: celebration ? 0.85 : 0.48,
+          color: colors[i % colors.length],
+          size: celebration ? 4.5 : 3.8,
+        });
+      }
+      if (floatingText) {
+        particlesRef.current.push({
+          x,
+          y: y - 16,
+          vx: 0,
+          vy: -48,
+          age: 0,
+          maxAge: 0.78,
+          color: '#FFB458',
+          size: 12,
+          text: floatingText,
+        });
+      }
+    },
+    []
+  );
 
   // Main 2D Cutaway World Renderer
   useEffect(() => {
@@ -500,7 +610,6 @@ export function EscapePrisonModal({
       const isNight = phaseRef.current === 'night';
       const pct = Math.max(0, Math.min(100, progressRef.current));
 
-      // Excavated geometry using 8% zoom threshold
       const shaftDepth =
         pct <= 0 ? 18 : Math.max(24, (Math.min(8, pct) / 8) * (TUNNEL_Y - GROUND_Y));
       const horizRatio = Math.max(0, Math.min(1, (pct - 8) / 80));
@@ -518,7 +627,6 @@ export function EscapePrisonModal({
         shakeRef.current = Math.max(0, shakeRef.current - dt * 14);
       }
 
-      // Guard patrol during Day ONLY (strictly clipped inside cell door opening!)
       if (!isNight && curStage === 'playing') {
         guardXRef.current = 520 + Math.sin(tSec * 1.1) * 145;
       } else {
@@ -528,7 +636,7 @@ export function EscapePrisonModal({
       cctvAngleRef.current = Math.sin(tSec * 1.05);
       const cctvTargetX = 330 + cctvAngleRef.current * 140;
 
-      // Walking & Climbing State Machine
+      // Walking, Climbing & Sleeping State Machine
       if (curStage === 'playing') {
         const wState = foxWalkStateRef.current;
         if (wState === 'walking_to_hole') {
@@ -562,15 +670,27 @@ export function EscapePrisonModal({
           }
         } else if (wState === 'walking_to_rest') {
           walkCycleRef.current += dt * 16;
-          foxXRef.current = Math.max(REST_X, foxXRef.current - dt * 215);
-          if (foxXRef.current <= REST_X + 1) {
+          if (foxXRef.current > REST_X) {
+            foxXRef.current = Math.max(REST_X, foxXRef.current - dt * 215);
+          } else {
+            foxXRef.current = Math.min(REST_X, foxXRef.current + dt * 215);
+          }
+          if (Math.abs(foxXRef.current - REST_X) <= 2) {
             foxXRef.current = REST_X;
             foxWalkStateRef.current = 'at_rest';
+          }
+        } else if (wState === 'walking_to_bed') {
+          walkCycleRef.current += dt * 15;
+          foxXRef.current = Math.max(BED_X, foxXRef.current - dt * 200);
+          if (foxXRef.current <= BED_X + 1) {
+            foxXRef.current = BED_X;
+            foxWalkStateRef.current = 'sleeping';
+            sleepingRef.current = true;
+            setIsSleeping(true);
           }
         }
       }
 
-      // 100.0% Escape Cutscene timeline
       if (curStage === 'escape_cutscene') {
         cutsceneTimeRef.current += dt;
         const ct = cutsceneTimeRef.current;
@@ -588,7 +708,7 @@ export function EscapePrisonModal({
         }
       }
 
-      // Camera Zoom-Out Threshold at 8.0%!
+      // Camera Zoom-Out Threshold at 8.0%
       const shouldZoomOut = pct >= 8 || curStage === 'escape_cutscene';
       let targetCamX = 345;
       let targetCamY = 218;
@@ -626,7 +746,7 @@ export function EscapePrisonModal({
           ctx.translate(-camStateRef.current.x, -camStateRef.current.y);
 
           // =========================================================
-          // 1. SKY, SUN / MOON & OUTSIDE VICE CITY LANDSCAPE
+          // 1. SKY, SUN / MOON & OUTSIDE LANDSCAPE
           // =========================================================
           const skyGrad = ctx.createLinearGradient(0, -140, 0, GROUND_Y);
           if (isNight) {
@@ -650,7 +770,6 @@ export function EscapePrisonModal({
               ctx.fill();
             }
 
-            // Moon (Bulan)
             ctx.save();
             ctx.translate(1190, 96);
             const moonHalo = ctx.createRadialGradient(0, 0, 12, 0, 0, 92);
@@ -671,7 +790,6 @@ export function EscapePrisonModal({
             ctx.fill();
             ctx.restore();
           } else {
-            // Sun (Matahari)
             ctx.save();
             ctx.translate(1190, 96);
             const sunHalo = ctx.createRadialGradient(0, 0, 18, 0, 0, 135);
@@ -690,7 +808,6 @@ export function EscapePrisonModal({
             ctx.restore();
           }
 
-          // Distant Vice City skyline silhouettes
           ctx.fillStyle = isNight ? '#16092E' : 'rgba(59, 20, 107, 0.42)';
           const cityBuildings = [
             { x: 690, w: 55, h: 120 },
@@ -707,7 +824,6 @@ export function EscapePrisonModal({
             ctx.fillRect(b.x, GROUND_Y - b.h, b.w, b.h);
           }
 
-          // Perimeter Prison Yard Fence
           ctx.strokeStyle = '#334155';
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -730,7 +846,6 @@ export function EscapePrisonModal({
             ctx.stroke();
           }
 
-          // Palm trees outside yard
           const drawPalm = (px: number, py: number, scale: number) => {
             ctx.save();
             ctx.translate(px, py);
@@ -759,13 +874,11 @@ export function EscapePrisonModal({
           drawPalm(955, GROUND_Y, 0.95);
           drawPalm(1340, GROUND_Y, 1.15);
 
-          // Grass yard & road
           ctx.fillStyle = isNight ? '#1D1433' : '#475569';
           ctx.fillRect(1240, GROUND_Y - 6, 360, 10);
           ctx.fillStyle = isNight ? '#22C55E' : '#16A34A';
           ctx.fillRect(620, GROUND_Y - 6, 620, 10);
 
-          // KELUAR marker sign
           ctx.fillStyle = '#334155';
           ctx.fillRect(1152, GROUND_Y - 56, 4, 56);
           ctx.fillStyle = '#FFB458';
@@ -854,7 +967,7 @@ export function EscapePrisonModal({
             ctx.stroke();
           });
 
-          // Prison Bunk on Left
+          // Prison Bunk on Left (x = 54..186)
           ctx.fillStyle = '#334155';
           ctx.fillRect(54, 278, 132, 15);
           ctx.fillRect(60, 293, 9, 47);
@@ -868,12 +981,9 @@ export function EscapePrisonModal({
           ctx.roundRect(96, 266, 86, 14, 4);
           ctx.fill();
 
-          // Cell Door Corridor Opening (Guard strictly clipped inside!)
-          const corrX = 435;
-          const corrY = 115;
-          const corrW = 150;
-          const corrH = GROUND_Y - corrY;
-          ctx.fillStyle = isNight ? '#10071F' : '#261D30';
+          // Cell Door Corridor Opening (Guard OR Night Red Eyes strictly clipped inside!)
+          const { x: corrX, y: corrY, w: corrW, h: corrH } = CORRIDOR_RECT;
+          ctx.fillStyle = isNight ? '#0B0417' : '#261D30';
           ctx.fillRect(corrX, corrY, corrW, corrH);
 
           ctx.save();
@@ -881,6 +991,7 @@ export function EscapePrisonModal({
           ctx.rect(corrX, corrY, corrW, corrH);
           ctx.clip();
 
+          // DAY: Clipped Patrol Guard (Sipir)
           if (
             !isNight &&
             curStage === 'playing' &&
@@ -918,8 +1029,57 @@ export function EscapePrisonModal({
             ctx.fillRect(-20, -33, 24, 4);
             ctx.restore();
           }
-          ctx.restore();
 
+          // NIGHT: Glowing Clickable Red Eyes ("Mata Merah") peeking between steel bars!
+          if (isNight && curStage === 'playing') {
+            const eyePulse = 0.72 + Math.sin(tSec * 4.2) * 0.28;
+            const blink = Math.sin(tSec * 0.9) > 0.96 ? 0.15 : 1;
+
+            // Shadowy silhouette behind bars
+            ctx.fillStyle = 'rgba(20, 6, 36, 0.9)';
+            ctx.beginPath();
+            ctx.arc(RED_EYES_X, RED_EYES_Y + 2, 24, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.roundRect(RED_EYES_X - 28, RED_EYES_Y + 18, 56, 75, 14);
+            ctx.fill();
+
+            // Red eye ambient glow halo
+            const eyeGlow = ctx.createRadialGradient(
+              RED_EYES_X,
+              RED_EYES_Y,
+              4,
+              RED_EYES_X,
+              RED_EYES_Y,
+              34
+            );
+            eyeGlow.addColorStop(0, `rgba(239, 68, 68, ${(0.55 * eyePulse).toFixed(2)})`);
+            eyeGlow.addColorStop(1, 'rgba(239, 68, 68, 0)');
+            ctx.fillStyle = eyeGlow;
+            ctx.beginPath();
+            ctx.arc(RED_EYES_X, RED_EYES_Y, 34, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Two sharp glowing crimson eyes between bar x=495 and bar x=525
+            ctx.save();
+            ctx.translate(RED_EYES_X, RED_EYES_Y);
+            ctx.scale(1, blink);
+            ctx.fillStyle = '#EF4444';
+            ctx.beginPath();
+            ctx.ellipse(-7, 0, 4.2, 2.8, -0.18, 0, Math.PI * 2);
+            ctx.ellipse(7, 0, 4.2, 2.8, 0.18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#FCA5A5';
+            ctx.beginPath();
+            ctx.arc(-6.5, 0, 1.4, 0, Math.PI * 2);
+            ctx.arc(6.5, 0, 1.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          ctx.restore(); // End Corridor clip
+
+          // Steel bars over doorway
           ctx.strokeStyle = '#0F172A';
           ctx.lineWidth = 7;
           ctx.strokeRect(corrX, corrY, corrW, corrH);
@@ -930,8 +1090,25 @@ export function EscapePrisonModal({
             ctx.stroke();
           }
 
+          // Clickable prompt badge above Mata Merah during Night
+          if (isNight && curStage === 'playing') {
+            ctx.save();
+            ctx.fillStyle = 'rgba(127, 29, 29, 0.9)';
+            ctx.strokeStyle = '#F87171';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.roundRect(RED_EYES_X - 48, corrY + 12, 96, 20, 6);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#FEF2F2';
+            ctx.font = 'bold 9.5px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('KLIK MATA MERAH', RED_EYES_X, corrY + 25.5);
+            ctx.restore();
+          }
+
           // =========================================================
-          // 3. CELL CCTV CAMERA (Penglihatan Extra)
+          // 3. CELL CCTV CAMERA
           // =========================================================
           const camOriginX = 552;
           const camOriginY = 88;
@@ -1017,7 +1194,6 @@ export function EscapePrisonModal({
             ctx.fill();
           }
 
-          // Subtle buried treasure glints ahead in soil
           for (const art of ARTIFACTS) {
             if (pct < art.pct) {
               const ax = HOLE_X + art.xOffset * (EXIT_X - HOLE_X);
@@ -1059,7 +1235,6 @@ export function EscapePrisonModal({
               ctx.roundRect(HOLE_X - 22, TUNNEL_Y - 22, tunnelEndX - HOLE_X + 44, 44, 16);
               ctx.fill();
 
-              // Wooden support beams
               ctx.fillStyle = '#78350F';
               for (let bx = HOLE_X + 85; bx < tunnelEndX - 20; bx += 145) {
                 ctx.fillRect(bx, TUNNEL_Y - 22, 6, 44);
@@ -1104,7 +1279,7 @@ export function EscapePrisonModal({
           }
 
           // =========================================================
-          // 5. BLUEFOX CHARACTER (Walk + Climb Down/Up + Dig + Cutscene)
+          // 5. BLUEFOX CHARACTER (Sleep on Bunk + Walk + Climb + Dig + Cutscene)
           // =========================================================
           if (curStage === 'escape_cutscene') {
             const ct = cutsceneTimeRef.current;
@@ -1143,11 +1318,12 @@ export function EscapePrisonModal({
                 ? GROUND_Y + Math.max(12, shaftDepth - 22)
                 : TUNNEL_Y - 12;
 
-            if (wState === 'climbing_down' || wState === 'climbing_up') {
+            if (wState === 'sleeping') {
+              drawBluefoxSleepingOnBunk(ctx, tSec);
+            } else if (wState === 'climbing_down' || wState === 'climbing_up') {
               const cp = climbProgressRef.current;
-              const cy = (GROUND_Y - 34) + cp * (targetPitY - (GROUND_Y - 34));
+              const cy = GROUND_Y - 34 + cp * (targetPitY - (GROUND_Y - 34));
 
-              // Clip cleanly inside cell + shaft opening so Bluefox visibly sinks into ground!
               ctx.save();
               ctx.beginPath();
               ctx.rect(HOLE_X - 45, 50, 90, GROUND_Y - 50 + shaftDepth + 45);
@@ -1170,8 +1346,14 @@ export function EscapePrisonModal({
                 digCharY = Math.max(GROUND_Y - 24, exitTopY + 10);
               }
 
-              // Warm mining lantern aura inside tunnel
-              const lanternGlow = ctx.createRadialGradient(digCharX + 10, digCharY - 10, 6, digCharX + 10, digCharY - 10, 82);
+              const lanternGlow = ctx.createRadialGradient(
+                digCharX + 10,
+                digCharY - 10,
+                6,
+                digCharX + 10,
+                digCharY - 10,
+                82
+              );
               lanternGlow.addColorStop(0, 'rgba(255, 180, 88, 0.34)');
               lanternGlow.addColorStop(1, 'rgba(255, 180, 88, 0)');
               ctx.fillStyle = lanternGlow;
@@ -1185,8 +1367,15 @@ export function EscapePrisonModal({
                 scale: pct >= 8 ? 0.85 : 0.92,
               });
             } else {
-              const isMoving = wState === 'walking_to_hole' || wState === 'walking_to_rest';
-              const facing: 1 | -1 = wState === 'walking_to_rest' ? -1 : 1;
+              const isMoving =
+                wState === 'walking_to_hole' ||
+                wState === 'walking_to_rest' ||
+                wState === 'walking_to_bed';
+              const facing: 1 | -1 =
+                wState === 'walking_to_bed' ||
+                (wState === 'walking_to_rest' && foxXRef.current > REST_X)
+                  ? -1
+                  : 1;
               drawBluefoxCharacter(ctx, foxXRef.current, GROUND_Y - 34, {
                 facing,
                 walkPhase: walkCycleRef.current,
@@ -1224,26 +1413,34 @@ export function EscapePrisonModal({
           ctx.restore();
 
           // =========================================================
-          // 7. DIRT & CELEBRATION PARTICLES
+          // 7. DIRT, COIN TEXT & CELEBRATION PARTICLES
           // =========================================================
           particlesRef.current = particlesRef.current.filter((p) => {
             p.age += dt;
             if (p.age >= p.maxAge) return false;
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            p.vy += 320 * dt;
-            ctx.fillStyle = p.color;
+            if (!p.text) {
+              p.vy += 320 * dt;
+            }
             ctx.globalAlpha = 1 - p.age / p.maxAge;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-            ctx.fill();
+            if (p.text) {
+              ctx.fillStyle = p.color;
+              ctx.font = 'bold 13px sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(p.text, p.x, p.y);
+            } else {
+              ctx.fillStyle = p.color;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+              ctx.fill();
+            }
             ctx.globalAlpha = 1;
             return true;
           });
 
           ctx.restore();
 
-          // Smooth Vice City sunset crossfade into Mission 2->3 bar sequence
           if (curStage === 'escape_cutscene' && cutsceneTimeRef.current >= 4.15) {
             const fadeRatio = Math.min(1, (cutsceneTimeRef.current - 4.15) / 0.5);
             ctx.save();
@@ -1269,7 +1466,50 @@ export function EscapePrisonModal({
     };
   }, [isOpen, stage, onMissionSuccess, spawnParticles]);
 
-  // Single-hit Gali handler with strict 1.0-second delay (anti-auto-clicker!)
+  // Convert screen pointer coordinates into world coordinates respecting dynamic camera zoom/pan
+  const clientToWorld = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const lx = ((clientX - rect.left) / rect.width) * LOGICAL_W;
+    const ly = ((clientY - rect.top) / rect.height) * LOGICAL_H;
+    const cam = camStateRef.current;
+    return {
+      wx: (lx - LOGICAL_W / 2) / cam.zoom + cam.x,
+      wy: (ly - LOGICAL_H / 2) / cam.zoom + cam.y,
+    };
+  };
+
+  const isInsideRedEyesHitbox = (wx: number, wy: number) =>
+    wx >= CORRIDOR_RECT.x - 10 &&
+    wx <= CORRIDOR_RECT.x + CORRIDOR_RECT.w + 10 &&
+    wy >= CORRIDOR_RECT.y - 10 &&
+    wy <= CORRIDOR_RECT.y + CORRIDOR_RECT.h + 10;
+
+  const handleCanvasPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (stageRef.current !== 'playing' || phaseRef.current !== 'night' || bustedRef.current) {
+      if (hoverRedEyes) setHoverRedEyes(false);
+      return;
+    }
+    const pt = clientToWorld(e.clientX, e.clientY);
+    if (!pt) return;
+    const hit = isInsideRedEyesHitbox(pt.wx, pt.wy);
+    if (hit !== hoverRedEyes) setHoverRedEyes(hit);
+  };
+
+  const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (stageRef.current !== 'playing' || bustedRef.current) return;
+    if (phaseRef.current !== 'night') return;
+    const pt = clientToWorld(e.clientX, e.clientY);
+    if (!pt) return;
+
+    if (isInsideRedEyesHitbox(pt.wx, pt.wy)) {
+      gtaAudio.playNodeUnlockSfx();
+      setShopOpen(true);
+    }
+  };
+
+  // Single-hit Gali handler with strict 1.0-second delay + 1 coin base (+ money upgrade)
   const handleDigAction = () => {
     if (bustedRef.current || stageRef.current !== 'playing' || progressRef.current >= 100) return;
 
@@ -1283,6 +1523,14 @@ export function EscapePrisonModal({
     }
 
     const wState = foxWalkStateRef.current;
+    if (wState === 'sleeping' || wState === 'walking_to_bed') {
+      sleepingRef.current = false;
+      setIsSleeping(false);
+      foxXRef.current = REST_X;
+      foxWalkStateRef.current = 'walking_to_hole';
+      showHint('Bangun & menuju lubang galian...');
+      return;
+    }
     if (wState === 'at_rest' || wState === 'walking_to_rest') {
       foxWalkStateRef.current = 'walking_to_hole';
       showHint('Berjalan menuju lubang galian...');
@@ -1292,7 +1540,6 @@ export function EscapePrisonModal({
       return;
     }
 
-    // Strict 1.0s anti-spam cooldown check
     const now = Date.now();
     if (now - lastDigHitAtRef.current < DIG_COOLDOWN_MS) {
       return;
@@ -1304,6 +1551,15 @@ export function EscapePrisonModal({
     shakeRef.current = 1;
     gtaAudio.playDigPickaxeSfx();
 
+    // Calculate coin earned: 1 base coin * (1 + moneyLv * 0.1)
+    const moneyMult = Number((1 + moneyLv * 0.1).toFixed(1));
+    coinFractionRef.current += 1 * moneyMult;
+    const earnedCoins = Math.floor(coinFractionRef.current);
+    coinFractionRef.current -= earnedCoins;
+    if (earnedCoins > 0) {
+      setCoins((c) => c + earnedCoins);
+    }
+
     const curPct = progressRef.current;
     const tipX =
       curPct < 8
@@ -1312,11 +1568,12 @@ export function EscapePrisonModal({
         ? HOLE_X + ((curPct - 8) / 80) * (EXIT_X - HOLE_X)
         : EXIT_X;
     const tipY = curPct < 8 ? GROUND_Y + 25 : curPct < 88 ? TUNNEL_Y : GROUND_Y + 25;
-    spawnParticles(tipX, tipY, 7, false);
+    spawnParticles(tipX, tipY, 7, false, `+${earnedCoins} Koin`);
+
+    const digStepPct = Number((0.1 + pickaxeLv * 0.1).toFixed(1));
 
     setDigProgress((prev) => {
-      // Strictly +0.1% per 1-second hit!
-      const next = Math.min(100, Number((prev + 0.1).toFixed(1)));
+      const next = Math.min(100, Number((prev + digStepPct).toFixed(1)));
       progressRef.current = next;
 
       if (prev < 8 && next >= 8 && !zoomedOutAnnouncedRef.current) {
@@ -1333,6 +1590,7 @@ export function EscapePrisonModal({
       }
 
       if (next >= 100) {
+        setShopOpen(false);
         gtaAudio.stopHeistBgm();
         gtaAudio.playNodeUnlockSfx();
         cutsceneTimeRef.current = 0;
@@ -1347,7 +1605,12 @@ export function EscapePrisonModal({
   const handleToggleHole = () => {
     if (bustedReason || stage !== 'playing') return;
     const wState = foxWalkStateRef.current;
-    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
+    if (
+      wState === 'walking_to_hole' ||
+      wState === 'climbing_down' ||
+      wState === 'climbing_up' ||
+      wState === 'walking_to_bed'
+    ) {
       return;
     }
 
@@ -1361,6 +1624,11 @@ export function EscapePrisonModal({
     }
 
     if (!inHole) {
+      if (wState === 'sleeping') {
+        sleepingRef.current = false;
+        setIsSleeping(false);
+        foxXRef.current = REST_X;
+      }
       foxWalkStateRef.current = 'walking_to_hole';
       showHint('Berjalan & turun ke lubang galian...');
     } else {
@@ -1375,7 +1643,12 @@ export function EscapePrisonModal({
   const handleToggleRug = () => {
     if (bustedReason || stage !== 'playing') return;
     const wState = foxWalkStateRef.current;
-    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
+    if (
+      wState === 'walking_to_hole' ||
+      wState === 'climbing_down' ||
+      wState === 'climbing_up' ||
+      wState === 'walking_to_bed'
+    ) {
       showHint('Tunggu karakter selesai bergerak terlebih dahulu!');
       return;
     }
@@ -1395,19 +1668,59 @@ export function EscapePrisonModal({
     gtaAudio.playRugToggleSfx(next);
   };
 
-  // Optional rest action during Day when safely hidden at bunk with rug covered
-  const handleSleepThroughDay = () => {
-    if (bustedReason || stage !== 'playing' || phase !== 'day') return;
-    if (inHole || !rugCovered || foxWalkStateRef.current !== 'at_rest') {
-      showHint('Pastikan Keluar Lubang & Tutup Karpet sebelum beristirahat.');
+  // Sleep on the bunk -> strictly 2x time speed!
+  const handleToggleSleep = () => {
+    if (bustedReason || stage !== 'playing') return;
+    const wState = foxWalkStateRef.current;
+    if (wState === 'walking_to_hole' || wState === 'climbing_down' || wState === 'climbing_up') {
+      showHint('Tunggu karakter selesai bergerak!');
       return;
     }
-    phaseRef.current = 'night';
-    setPhase('night');
-    setPhaseSecondsLeft(PHASE_DURATION_SEC);
-    gtaAudio.playPhaseShiftSfx(true);
-    gtaAudio.startPrisonBgm('night');
-    showHint('Malam tiba! Aman untuk melanjutkan galian.');
+
+    if (wState === 'sleeping' || wState === 'walking_to_bed') {
+      sleepingRef.current = false;
+      setIsSleeping(false);
+      foxXRef.current = BED_X;
+      foxWalkStateRef.current = 'walking_to_rest';
+      showHint('Bangun dari kasur (kecepatan waktu normal 1x).');
+      return;
+    }
+
+    if (inHole || !rugCovered) {
+      showHint('Keluar Lubang & Tutup Karpet dulu sebelum tidur di kasur!');
+      return;
+    }
+
+    foxWalkStateRef.current = 'walking_to_bed';
+    showHint('Berjalan ke kasur... Waktu dipercepat 2x saat tidur.');
+  };
+
+  // Red-Eye Black Market Upgrades
+  const pickaxeCost = 5 * Math.pow(2, pickaxeLv);
+  const timeCost = 10 * Math.pow(2, timeLv);
+  const moneyCost = 20 * Math.pow(2, moneyLv);
+
+  const handleBuyUpgrade = (kind: 'pickaxe' | 'time' | 'money') => {
+    if (kind === 'pickaxe') {
+      if (pickaxeLv >= MAX_UPGRADE_LV || coins < pickaxeCost) return;
+      setCoins((c) => c - pickaxeCost);
+      setPickaxeLv((lv) => lv + 1);
+      gtaAudio.playNodeUnlockSfx();
+      showHint(`Pickaxe Lv.${pickaxeLv + 1}: +${(0.1 + (pickaxeLv + 1) * 0.1).toFixed(1)}% per galian!`);
+    } else if (kind === 'time') {
+      if (timeLv >= MAX_UPGRADE_LV || coins < timeCost) return;
+      setCoins((c) => c - timeCost);
+      setTimeLv((lv) => lv + 1);
+      setPhaseSecondsLeft((s) => s + 10);
+      gtaAudio.playNodeUnlockSfx();
+      showHint(`Waktu Malam bertambah +10 detik (Lv.${timeLv + 1}/5)!`);
+    } else {
+      if (moneyLv >= MAX_UPGRADE_LV || coins < moneyCost) return;
+      setCoins((c) => c - moneyCost);
+      setMoneyLv((lv) => lv + 1);
+      gtaAudio.playNodeUnlockSfx();
+      showHint(`Money Multiplier menjadi ${(1 + (moneyLv + 1) * 0.1).toFixed(1)}x!`);
+    }
   };
 
   const handleStartMission = () => {
@@ -1415,18 +1728,26 @@ export function EscapePrisonModal({
     gtaAudio.unlock();
     setPhase('night');
     phaseRef.current = 'night';
-    setPhaseSecondsLeft(PHASE_DURATION_SEC);
+    setPhaseSecondsLeft(BASE_PHASE_SEC);
     setDigProgress(0);
     progressRef.current = 0;
     setInHole(false);
     inHoleRef.current = false;
     setRugCovered(true);
     rugCoveredRef.current = true;
+    setIsSleeping(false);
+    sleepingRef.current = false;
     setBustedReason(null);
     bustedRef.current = false;
     setActionHint(null);
     setCooldownLeftMs(0);
     setFoundCount(0);
+    setCoins(0);
+    setPickaxeLv(0);
+    setTimeLv(0);
+    setMoneyLv(0);
+    setShopOpen(false);
+    coinFractionRef.current = 0;
     lastDigHitAtRef.current = 0;
     rugSlideRef.current = 1;
     foxWalkStateRef.current = 'at_rest';
@@ -1449,10 +1770,15 @@ export function EscapePrisonModal({
   const lowNightWarning =
     isNight &&
     phaseSecondsLeft <= 12 &&
-    (inHole || foxWalkStateRef.current !== 'at_rest' || !rugCovered);
+    (inHole ||
+      foxWalkStateRef.current === 'walking_to_hole' ||
+      foxWalkStateRef.current === 'climbing_down' ||
+      !rugCovered);
   const cooldownRatio = cooldownLeftMs / DIG_COOLDOWN_MS;
   const isCoolingDown = cooldownLeftMs > 0;
   const zoneLabel = getTunnelZoneLabel(digProgress);
+  const currentDigGain = (0.1 + pickaxeLv * 0.1).toFixed(1);
+  const currentMoneyMult = (1 + moneyLv * 0.1).toFixed(1);
 
   return (
     <>
@@ -1482,7 +1808,7 @@ export function EscapePrisonModal({
               </div>
             }
             subStatus={
-              (stage === 'playing' || stage === 'escape_cutscene') ? (
+              stage === 'playing' || stage === 'escape_cutscene' ? (
                 <>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span
@@ -1494,6 +1820,9 @@ export function EscapePrisonModal({
                     >
                       {isNight ? <Moon size={11} /> : <Sun size={11} />}
                       <span className="font-mono tabular-nums">{formatClock(phaseSecondsLeft)}</span>
+                      {isSleeping && (
+                        <span className="ml-0.5 text-[10px] text-[#F36A78]">2x</span>
+                      )}
                     </span>
                     <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B]/85 text-white text-[10px] font-bold">
                       {zoneLabel}
@@ -1501,21 +1830,14 @@ export function EscapePrisonModal({
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3B146B]/85 font-mono tabular-nums text-[10px] font-bold text-[#FFB458]">
-                      <Gem size={10} />
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#111827]/85 font-mono tabular-nums text-[10px] font-extrabold text-[#FFB458]">
+                      <Coins size={11} />
+                      <span>{coins} Koin</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3B146B]/85 font-mono tabular-nums text-[10px] font-bold text-white">
+                      <Gem size={10} className="text-[#FFB458]" />
                       <span>{foundCount}/{ARTIFACTS.length}</span>
                     </span>
-                    {stage === 'playing' && (
-                      <button
-                        type="button"
-                        onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#111827]/80 text-[#FFB458] font-mono text-[10px] font-bold cursor-pointer"
-                        title="Test Timer Speed"
-                      >
-                        <Gauge size={10} />
-                        <span>{timerSpeed}x</span>
-                      </button>
-                    )}
                   </div>
                 </>
               ) : null
@@ -1526,17 +1848,19 @@ export function EscapePrisonModal({
                   <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white/90 px-0.5">
                     <span className="inline-flex items-center gap-1.5 truncate">
                       <Video size={12} className={isNight ? 'text-[#FFB458]' : 'text-[#F36A78]'} />
-                      <span className="truncate">{isNight ? 'CCTV Standby' : 'CCTV Aktif + Sipir'}</span>
+                      <span className="truncate">
+                        {isNight ? 'CCTV Standby · Klik Mata Merah' : 'CCTV Aktif + Sipir Patroli'}
+                      </span>
                     </span>
                   </div>
 
-                  <div className={`grid gap-2 ${!isNight && !inHole && rugCovered ? 'grid-cols-2 sm:grid-cols-1' : 'grid-cols-3 sm:grid-cols-1'}`}>
-                    {/* Dig Button with strictly 1s anti-spam delay indicator */}
+                  <div className="grid grid-cols-2 sm:grid-cols-1 gap-2">
+                    {/* Dig Button (+0.1% base + pickaxe upgrade, strict 1s anti-spam cooldown) */}
                     <button
                       type="button"
                       onPointerDown={handleDigAction}
                       disabled={!isNight || Boolean(bustedReason) || isCoolingDown}
-                      className={`relative overflow-hidden min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all select-none ${
+                      className={`relative overflow-hidden min-h-[46px] sm:min-h-[48px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all select-none ${
                         isNight && !bustedReason && !isCoolingDown
                           ? 'bg-[#C9349B] hover:brightness-110 active:scale-95 text-white border-white/25 cursor-pointer shadow-md'
                           : 'bg-[#3B146B]/85 text-white/60 border-white/10 cursor-not-allowed'
@@ -1552,23 +1876,29 @@ export function EscapePrisonModal({
                       <span className="relative z-10 font-mono tabular-nums whitespace-nowrap">
                         {isCoolingDown
                           ? `Delay ${(cooldownLeftMs / 1000).toFixed(1)}s`
-                          : 'Gali (+0,1%)'}
+                          : `Gali (+${currentDigGain}%)`}
                       </span>
                     </button>
 
-                    {/* Enter / Exit Hole with walk + climb-down animation */}
+                    {/* Enter / Exit Hole */}
                     <button
                       type="button"
                       onClick={handleToggleHole}
                       disabled={Boolean(bustedReason)}
-                      className={`min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
+                      className={`min-h-[46px] sm:min-h-[48px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
                         inHole
                           ? 'bg-[#C9349B] text-white border-[#FFB458]/60 shadow-md'
                           : 'bg-[#3B146B] text-white border-white/25 hover:bg-[#3B146B]/80'
                       }`}
                     >
-                      {inHole ? <ArrowUp size={17} strokeWidth={2.5} className="shrink-0" /> : <ArrowDown size={17} strokeWidth={2.5} className="shrink-0" />}
-                      <span className="whitespace-nowrap">{inHole ? 'Keluar Lubang' : 'Masuk Lubang'}</span>
+                      {inHole ? (
+                        <ArrowUp size={17} strokeWidth={2.5} className="shrink-0" />
+                      ) : (
+                        <ArrowDown size={17} strokeWidth={2.5} className="shrink-0" />
+                      )}
+                      <span className="whitespace-nowrap">
+                        {inHole ? 'Keluar Lubang' : 'Masuk Lubang'}
+                      </span>
                     </button>
 
                     {/* Open / Close Rug */}
@@ -1576,27 +1906,34 @@ export function EscapePrisonModal({
                       type="button"
                       onClick={handleToggleRug}
                       disabled={Boolean(bustedReason)}
-                      className={`min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
+                      className={`min-h-[46px] sm:min-h-[48px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
                         rugCovered
                           ? 'bg-[#3B146B] text-[#FFB458] border-[#FFB458]/40 shadow-md'
                           : 'bg-[#C9349B] text-white border-white/30 shadow-md'
                       }`}
                     >
                       <Layers size={17} strokeWidth={2.4} className="shrink-0" />
-                      <span className="whitespace-nowrap">{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
+                      <span className="whitespace-nowrap">
+                        {rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}
+                      </span>
                     </button>
 
-                    {/* Safe Day Skip when tucked away so player stays engaged */}
-                    {!isNight && !inHole && rugCovered && (
-                      <button
-                        type="button"
-                        onClick={handleSleepThroughDay}
-                        className="min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl bg-[#3B146B] hover:bg-[#C9349B] text-white border border-white/25 font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 transition-all active:scale-95 cursor-pointer shadow-md"
-                      >
-                        <BedDouble size={17} strokeWidth={2.4} className="shrink-0" />
-                        <span className="whitespace-nowrap">Tidur (Malam)</span>
-                      </button>
-                    )}
+                    {/* Sleep on Bunk (strictly 2x time speed) */}
+                    <button
+                      type="button"
+                      onClick={handleToggleSleep}
+                      disabled={Boolean(bustedReason)}
+                      className={`min-h-[46px] sm:min-h-[48px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
+                        isSleeping
+                          ? 'bg-[#C9349B] text-white border-[#FFB458] shadow-md'
+                          : 'bg-[#3B146B] hover:bg-[#C9349B]/80 text-white border-white/25 shadow-md'
+                      }`}
+                    >
+                      <BedDouble size={17} strokeWidth={2.4} className="shrink-0" />
+                      <span className="whitespace-nowrap">
+                        {isSleeping ? 'Bangun (2x)' : 'Tidur Kasur (2x)'}
+                      </span>
+                    </button>
                   </div>
                 </div>
               ) : undefined
@@ -1612,17 +1949,17 @@ export function EscapePrisonModal({
                         <span>Fase Malam (2:00)</span>
                       </div>
                       <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                        Buka Karpet, masuk &amp; turun ke lubang galian. Setiap 1 pukulan menambah +0,1% dengan jeda 1 detik agar stabil hingga 100%.
+                        Buka Karpet, turun ke lubang, lalu gali (+0,1% &amp; +1 Koin, delay 1s). Klik Mata Merah di jeruji sel untuk upgrade Pickaxe, Waktu &amp; Money!
                       </p>
                     </div>
 
                     <div className="rounded-2xl bg-[#FF9B55]/15 border border-[#FFB458]/40 p-4">
                       <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
                         <Sun size={14} strokeWidth={2.4} />
-                        <span>Fase Siang · Sipir &amp; CCTV (2:00)</span>
+                        <span>Fase Siang · Tidur 2x (2:00)</span>
                       </div>
                       <p className="text-xs text-white/80 mt-1.5 leading-relaxed">
-                        Sipir berpatroli di balik jeruji &amp; CCTV sel menyapu lantai. Keluar lubang dan tutup karpet sebelum Siang!
+                        Sipir &amp; CCTV aktif saat Siang. Tutup karpet dan tidur di kasur untuk mempercepat waktu 2x menunggu Malam tiba.
                       </p>
                     </div>
                   </div>
@@ -1668,7 +2005,9 @@ export function EscapePrisonModal({
                     ref={canvasRef}
                     width={LOGICAL_W}
                     height={LOGICAL_H}
-                    className="w-full h-full block"
+                    onPointerMove={handleCanvasPointerMove}
+                    onPointerDown={handleCanvasPointerDown}
+                    className={`w-full h-full block ${hoverRedEyes ? 'cursor-pointer' : 'cursor-default'}`}
                   />
 
                   {stage === 'escape_cutscene' && (
@@ -1693,8 +2032,148 @@ export function EscapePrisonModal({
                     </div>
                   )}
 
+                  {/* Night Red-Eyes Black Market Upgrade Shop */}
+                  {stage === 'playing' && shopOpen && isNight && !bustedReason && (
+                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 z-20">
+                      <div className="w-full max-w-md rounded-2xl bg-[#250D47] border-2 border-[#C9349B] p-4 shadow-2xl space-y-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-500/50 text-rose-400 flex items-center justify-center">
+                              <Eye size={16} strokeWidth={2.5} />
+                            </div>
+                            <div>
+                              <h3 className="text-sm font-extrabold text-white">
+                                Pasar Gelap Mata Merah
+                              </h3>
+                              <p className="text-[11px] text-white/70">
+                                Biaya naik 2x per level (Maks 5 upgrade)
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#3B146B] border border-[#FFB458]/40 text-[#FFB458] font-mono tabular-nums text-xs font-extrabold">
+                              <Coins size={12} />
+                              <span>{coins}</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setShopOpen(false)}
+                              aria-label="Tutup Pasar Gelap"
+                              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          {/* 1. Upgrade Pickaxe */}
+                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-[#C9349B]/30 text-[#FFB458] flex items-center justify-center shrink-0">
+                                <PickaxeSvg className="w-5 h-5" />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-white truncate">
+                                  Upgrade Pickaxe ({pickaxeLv}/{MAX_UPGRADE_LV})
+                                </p>
+                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                                  Galian: +{currentDigGain}%{' '}
+                                  {pickaxeLv < MAX_UPGRADE_LV
+                                    ? `-> +${(0.1 + (pickaxeLv + 1) * 0.1).toFixed(1)}%`
+                                    : '(Maks)'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleBuyUpgrade('pickaxe')}
+                              disabled={pickaxeLv >= MAX_UPGRADE_LV || coins < pickaxeCost}
+                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                                pickaxeLv >= MAX_UPGRADE_LV
+                                  ? 'bg-white/10 text-white/50 cursor-default'
+                                  : coins >= pickaxeCost
+                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
+                              }`}
+                            >
+                              {pickaxeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${pickaxeCost} Koin`}
+                            </button>
+                          </div>
+
+                          {/* 2. Upgrade Waktu */}
+                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-[#7B208F]/50 text-[#FFB458] flex items-center justify-center shrink-0">
+                                <Clock size={18} strokeWidth={2.3} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-white truncate">
+                                  Upgrade Waktu ({timeLv}/{MAX_UPGRADE_LV})
+                                </p>
+                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                                  Malam: +{timeLv * 10}s{' '}
+                                  {timeLv < MAX_UPGRADE_LV ? `-> +${(timeLv + 1) * 10}s` : '(Maks)'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleBuyUpgrade('time')}
+                              disabled={timeLv >= MAX_UPGRADE_LV || coins < timeCost}
+                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                                timeLv >= MAX_UPGRADE_LV
+                                  ? 'bg-white/10 text-white/50 cursor-default'
+                                  : coins >= timeCost
+                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
+                              }`}
+                            >
+                              {timeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${timeCost} Koin`}
+                            </button>
+                          </div>
+
+                          {/* 3. Upgrade Money */}
+                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-lg bg-amber-500/25 text-[#FFB458] flex items-center justify-center shrink-0">
+                                <Coins size={18} strokeWidth={2.3} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-white truncate">
+                                  Upgrade Money ({moneyLv}/{MAX_UPGRADE_LV})
+                                </p>
+                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                                  Koin: {currentMoneyMult}x{' '}
+                                  {moneyLv < MAX_UPGRADE_LV
+                                    ? `-> ${(1 + (moneyLv + 1) * 0.1).toFixed(1)}x`
+                                    : '(Maks)'}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleBuyUpgrade('money')}
+                              disabled={moneyLv >= MAX_UPGRADE_LV || coins < moneyCost}
+                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                                moneyLv >= MAX_UPGRADE_LV
+                                  ? 'bg-white/10 text-white/50 cursor-default'
+                                  : coins >= moneyCost
+                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
+                              }`}
+                            >
+                              {moneyLv >= MAX_UPGRADE_LV ? 'MAKS' : `${moneyCost} Koin`}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {stage === 'playing' && bustedReason && (
-                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4 z-30">
                       <div className="max-w-xs w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-4 text-center space-y-3 shadow-2xl">
                         <div className="w-11 h-11 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
                           <AlertTriangle size={22} strokeWidth={2.5} />
