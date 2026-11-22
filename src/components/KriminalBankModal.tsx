@@ -885,7 +885,7 @@ export function KriminalBankModal({
             }
           >
             {stage === 'briefing' && (
-              <div className="w-full h-full overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
+              <div className="w-full max-h-[68dvh] overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
                 <div className="w-full max-w-2xl mx-auto space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                     {WAVES.map((w) => (
@@ -933,8 +933,8 @@ export function KriminalBankModal({
             )}
 
             {(stage === 'intro' || stage === 'playing') && (
-              <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-4">
-                <div className="relative w-full h-full max-w-5xl aspect-[800/420] max-h-full rounded-xl overflow-hidden bg-[#1A1626] touch-none select-none shadow-2xl border border-white/10">
+              <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-3">
+                <div className="relative w-full aspect-[800/420] max-h-[68dvh] rounded-xl overflow-hidden bg-[#1A1626] touch-none select-none shadow-2xl border border-white/10">
                   <canvas
                     ref={canvasRef}
                     width={LOGICAL_W}

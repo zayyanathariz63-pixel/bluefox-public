@@ -1466,8 +1466,8 @@ export function EscapePrisonModal({
             onClose={onClose}
             closeLabel="Close Escape from Prison"
             topRightStatus={
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 border border-[#111827]/15 shadow-xs">
-                <div className="w-16 sm:w-24 h-2.5 rounded-full bg-[#3B146B]/20 overflow-hidden">
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1 rounded-full bg-white/90 border border-[#111827]/15 shadow-xs">
+                <div className="w-10 sm:w-20 h-2 rounded-full bg-[#3B146B]/20 overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-150"
                     style={{
@@ -1476,62 +1476,67 @@ export function EscapePrisonModal({
                     }}
                   />
                 </div>
-                <span className="font-mono tabular-nums font-extrabold text-xs text-[#111827]">
+                <span className="font-mono tabular-nums font-extrabold text-[11px] sm:text-xs text-[#111827]">
                   {digProgress.toFixed(1)}%
                 </span>
               </div>
             }
             subStatus={
               (stage === 'playing' || stage === 'escape_cutscene') ? (
-                <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                  <span
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
-                      isNight
-                        ? 'bg-[#3B146B] text-[#FFB458]'
-                        : 'bg-[#111827] text-[#FFB458]'
-                    }`}
-                  >
-                    {isNight ? <Moon size={11} /> : <Sun size={11} />}
-                    <span className="font-mono tabular-nums">{formatClock(phaseSecondsLeft)}</span>
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B]/85 text-white text-[10px] font-bold">
-                    {zoneLabel}
-                  </span>
-                  {stage === 'playing' && (
-                    <button
-                      type="button"
-                      onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#111827]/80 text-[#FFB458] font-mono text-[10px] font-bold cursor-pointer"
-                      title="Test Timer Speed"
+                <>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                        isNight
+                          ? 'bg-[#3B146B] text-[#FFB458]'
+                          : 'bg-[#111827] text-[#FFB458]'
+                      }`}
                     >
-                      <Gauge size={10} />
-                      <span>{timerSpeed}x</span>
-                    </button>
-                  )}
-                </div>
+                      {isNight ? <Moon size={11} /> : <Sun size={11} />}
+                      <span className="font-mono tabular-nums">{formatClock(phaseSecondsLeft)}</span>
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#3B146B]/85 text-white text-[10px] font-bold">
+                      {zoneLabel}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#3B146B]/85 font-mono tabular-nums text-[10px] font-bold text-[#FFB458]">
+                      <Gem size={10} />
+                      <span>{foundCount}/{ARTIFACTS.length}</span>
+                    </span>
+                    {stage === 'playing' && (
+                      <button
+                        type="button"
+                        onClick={() => setTimerSpeed((s) => (s === 1 ? 10 : 1))}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#111827]/80 text-[#FFB458] font-mono text-[10px] font-bold cursor-pointer"
+                        title="Test Timer Speed"
+                      >
+                        <Gauge size={10} />
+                        <span>{timerSpeed}x</span>
+                      </button>
+                    )}
+                  </div>
+                </>
               ) : null
             }
             controller={
               stage === 'playing' ? (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between text-[11px] font-bold text-white/90 px-1">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Video size={13} className={isNight ? 'text-[#FFB458]' : 'text-[#F36A78]'} />
-                      <span>{isNight ? 'CCTV Standby · Aman Menggali' : 'CCTV Aktif + Sipir Patroli'}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1 font-mono tabular-nums text-[#FFB458]">
-                      <Gem size={12} />
-                      <span>Temuan {foundCount}/{ARTIFACTS.length}</span>
+                  <div className="flex items-center justify-between text-[10px] sm:text-[11px] font-bold text-white/90 px-0.5">
+                    <span className="inline-flex items-center gap-1.5 truncate">
+                      <Video size={12} className={isNight ? 'text-[#FFB458]' : 'text-[#F36A78]'} />
+                      <span className="truncate">{isNight ? 'CCTV Standby' : 'CCTV Aktif + Sipir'}</span>
                     </span>
                   </div>
 
-                  <div className={`grid gap-2 ${!isNight && !inHole && rugCovered ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+                  <div className={`grid gap-2 ${!isNight && !inHole && rugCovered ? 'grid-cols-2 sm:grid-cols-1' : 'grid-cols-3 sm:grid-cols-1'}`}>
                     {/* Dig Button with strictly 1s anti-spam delay indicator */}
                     <button
                       type="button"
                       onPointerDown={handleDigAction}
                       disabled={!isNight || Boolean(bustedReason) || isCoolingDown}
-                      className={`relative overflow-hidden min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all select-none ${
+                      className={`relative overflow-hidden min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all select-none ${
                         isNight && !bustedReason && !isCoolingDown
                           ? 'bg-[#C9349B] hover:brightness-110 active:scale-95 text-white border-white/25 cursor-pointer shadow-md'
                           : 'bg-[#3B146B]/85 text-white/60 border-white/10 cursor-not-allowed'
@@ -1543,8 +1548,8 @@ export function EscapePrisonModal({
                           style={{ width: `${(1 - cooldownRatio) * 100}%` }}
                         />
                       )}
-                      <PickaxeSvg className="w-5 h-5 relative z-10" />
-                      <span className="relative z-10 font-mono tabular-nums">
+                      <PickaxeSvg className="w-4 h-4 sm:w-5 sm:h-5 relative z-10 shrink-0" />
+                      <span className="relative z-10 font-mono tabular-nums whitespace-nowrap">
                         {isCoolingDown
                           ? `Delay ${(cooldownLeftMs / 1000).toFixed(1)}s`
                           : 'Gali (+0,1%)'}
@@ -1556,14 +1561,14 @@ export function EscapePrisonModal({
                       type="button"
                       onClick={handleToggleHole}
                       disabled={Boolean(bustedReason)}
-                      className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                      className={`min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
                         inHole
                           ? 'bg-[#C9349B] text-white border-[#FFB458]/60 shadow-md'
                           : 'bg-[#3B146B] text-white border-white/25 hover:bg-[#3B146B]/80'
                       }`}
                     >
-                      {inHole ? <ArrowUp size={18} strokeWidth={2.5} /> : <ArrowDown size={18} strokeWidth={2.5} />}
-                      <span>{inHole ? 'Keluar Lubang' : 'Masuk Lubang'}</span>
+                      {inHole ? <ArrowUp size={17} strokeWidth={2.5} className="shrink-0" /> : <ArrowDown size={17} strokeWidth={2.5} className="shrink-0" />}
+                      <span className="whitespace-nowrap">{inHole ? 'Keluar Lubang' : 'Masuk Lubang'}</span>
                     </button>
 
                     {/* Open / Close Rug */}
@@ -1571,14 +1576,14 @@ export function EscapePrisonModal({
                       type="button"
                       onClick={handleToggleRug}
                       disabled={Boolean(bustedReason)}
-                      className={`min-h-[54px] px-2 rounded-2xl font-extrabold text-xs flex flex-col items-center justify-center gap-1 border transition-all active:scale-95 cursor-pointer ${
+                      className={`min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 border transition-all active:scale-95 cursor-pointer ${
                         rugCovered
                           ? 'bg-[#3B146B] text-[#FFB458] border-[#FFB458]/40 shadow-md'
                           : 'bg-[#C9349B] text-white border-white/30 shadow-md'
                       }`}
                     >
-                      <Layers size={18} strokeWidth={2.4} />
-                      <span>{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
+                      <Layers size={17} strokeWidth={2.4} className="shrink-0" />
+                      <span className="whitespace-nowrap">{rugCovered ? 'Buka Karpet' : 'Tutup Karpet'}</span>
                     </button>
 
                     {/* Safe Day Skip when tucked away so player stays engaged */}
@@ -1586,10 +1591,10 @@ export function EscapePrisonModal({
                       <button
                         type="button"
                         onClick={handleSleepThroughDay}
-                        className="min-h-[54px] px-2 rounded-2xl bg-[#3B146B] hover:bg-[#C9349B] text-white border border-white/25 font-extrabold text-xs flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer shadow-md"
+                        className="min-h-[48px] sm:min-h-[54px] px-2.5 rounded-2xl bg-[#3B146B] hover:bg-[#C9349B] text-white border border-white/25 font-extrabold text-[11px] sm:text-xs flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-2.5 transition-all active:scale-95 cursor-pointer shadow-md"
                       >
-                        <BedDouble size={18} strokeWidth={2.4} />
-                        <span>Tidur (Malam)</span>
+                        <BedDouble size={17} strokeWidth={2.4} className="shrink-0" />
+                        <span className="whitespace-nowrap">Tidur (Malam)</span>
                       </button>
                     )}
                   </div>
@@ -1598,7 +1603,7 @@ export function EscapePrisonModal({
             }
           >
             {stage === 'briefing' && (
-              <div className="w-full h-full overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
+              <div className="w-full max-h-[65dvh] overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
                 <div className="w-full max-w-2xl mx-auto space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="rounded-2xl bg-[#3B146B]/55 border border-[#7B208F]/60 p-4">
@@ -1658,7 +1663,7 @@ export function EscapePrisonModal({
 
             {(stage === 'playing' || stage === 'escape_cutscene') && (
               <div className="relative w-full h-full flex items-center justify-center p-2 sm:p-3">
-                <div className="relative w-full h-full max-w-5xl aspect-[960/540] max-h-full rounded-xl overflow-hidden bg-[#120726] select-none shadow-2xl border border-white/10">
+                <div className="relative w-full aspect-[960/540] max-h-[62dvh] rounded-xl overflow-hidden bg-[#120726] select-none shadow-2xl border border-white/10">
                   <canvas
                     ref={canvasRef}
                     width={LOGICAL_W}
