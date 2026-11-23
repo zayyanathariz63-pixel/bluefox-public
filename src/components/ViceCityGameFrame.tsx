@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'motion/react';
 import { Volume2, VolumeX, X } from 'lucide-react';
 
@@ -68,13 +69,13 @@ export function ViceCityGameFrame({
   children,
   controller,
 }: ViceCityGameFrameProps) {
-  return (
+  const content = (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-2 sm:p-4 select-none"
+      className="fixed inset-0 z-[9000] flex items-center justify-center bg-slate-950/80 backdrop-blur-xs p-2 sm:p-4 select-none"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
@@ -180,4 +181,7 @@ export function ViceCityGameFrame({
       </motion.div>
     </motion.div>
   );
+
+  if (typeof document === 'undefined') return content;
+  return createPortal(content, document.body);
 }
