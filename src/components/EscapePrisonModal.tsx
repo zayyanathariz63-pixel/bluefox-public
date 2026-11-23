@@ -484,6 +484,18 @@ export function EscapePrisonModal({
     return () => clearInterval(iv);
   }, [cooldownLeftMs]);
 
+  // Allow closing Shop popup with Escape key
+  useEffect(() => {
+    if (!shopOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShopOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [shopOpen]);
+
   const triggerBusted = useCallback((reason: string) => {
     if (bustedRef.current || stageRef.current !== 'playing') return;
     bustedRef.current = true;
@@ -2014,198 +2026,248 @@ export function EscapePrisonModal({
                     <motion.div
                       initial={{ opacity: 0, y: -12 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#7B208F] via-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold uppercase tracking-widest shadow-lg whitespace-nowrap"
+                      className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-to-r from-[#7B208F] via-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold uppercase tracking-widest shadow-lg whitespace-nowrap"
                     >
                       Bluefox Berhasil Kabur dari Penjara!
                     </motion.div>
                   )}
 
                   {stage === 'playing' && lowNightWarning && !bustedReason && (
-                    <div className="absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wide shadow-md whitespace-nowrap">
+                    <div className="pointer-events-none absolute top-2.5 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold uppercase tracking-wide shadow-md whitespace-nowrap">
                       Siang segera tiba! Keluar Lubang &amp; Tutup Karpet
                     </div>
                   )}
 
                   {stage === 'playing' && actionHint && !bustedReason && (
-                    <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#3B146B]/95 border border-[#FFB458]/50 text-[#FFB458] text-xs font-bold whitespace-nowrap shadow-lg">
+                    <div className="pointer-events-none absolute bottom-2.5 left-1/2 -translate-x-1/2 px-3.5 py-1.5 rounded-full bg-[#3B146B]/95 border border-[#FFB458]/50 text-[#FFB458] text-xs font-bold whitespace-nowrap shadow-lg">
                       {actionHint}
-                    </div>
-                  )}
-
-                  {/* Night Red-Eyes Black Market Upgrade Shop */}
-                  {stage === 'playing' && shopOpen && isNight && !bustedReason && (
-                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-3 z-20">
-                      <div className="w-full max-w-md rounded-2xl bg-[#250D47] border-2 border-[#C9349B] p-4 shadow-2xl space-y-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-rose-500/20 border border-rose-500/50 text-rose-400 flex items-center justify-center">
-                              <Eye size={16} strokeWidth={2.5} />
-                            </div>
-                            <div>
-                              <h3 className="text-sm font-extrabold text-white">
-                                Pasar Gelap Mata Merah
-                              </h3>
-                              <p className="text-[11px] text-white/70">
-                                Biaya naik 2x per level (Maks 5 upgrade)
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#3B146B] border border-[#FFB458]/40 text-[#FFB458] font-mono tabular-nums text-xs font-extrabold">
-                              <Coins size={12} />
-                              <span>{coins}</span>
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setShopOpen(false)}
-                              aria-label="Tutup Pasar Gelap"
-                              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
-                            >
-                              <X size={16} />
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          {/* 1. Upgrade Pickaxe */}
-                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-[#C9349B]/30 text-[#FFB458] flex items-center justify-center shrink-0">
-                                <PickaxeSvg className="w-5 h-5" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-extrabold text-white truncate">
-                                  Upgrade Pickaxe ({pickaxeLv}/{MAX_UPGRADE_LV})
-                                </p>
-                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
-                                  Galian: +{currentDigGain}%{' '}
-                                  {pickaxeLv < MAX_UPGRADE_LV
-                                    ? `-> +${(0.1 + (pickaxeLv + 1) * 0.1).toFixed(1)}%`
-                                    : '(Maks)'}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleBuyUpgrade('pickaxe')}
-                              disabled={pickaxeLv >= MAX_UPGRADE_LV || coins < pickaxeCost}
-                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
-                                pickaxeLv >= MAX_UPGRADE_LV
-                                  ? 'bg-white/10 text-white/50 cursor-default'
-                                  : coins >= pickaxeCost
-                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
-                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
-                              }`}
-                            >
-                              {pickaxeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${pickaxeCost} Koin`}
-                            </button>
-                          </div>
-
-                          {/* 2. Upgrade Waktu */}
-                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-[#7B208F]/50 text-[#FFB458] flex items-center justify-center shrink-0">
-                                <Clock size={18} strokeWidth={2.3} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-extrabold text-white truncate">
-                                  Upgrade Waktu ({timeLv}/{MAX_UPGRADE_LV})
-                                </p>
-                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
-                                  Malam: +{timeLv * 10}s{' '}
-                                  {timeLv < MAX_UPGRADE_LV ? `-> +${(timeLv + 1) * 10}s` : '(Maks)'}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleBuyUpgrade('time')}
-                              disabled={timeLv >= MAX_UPGRADE_LV || coins < timeCost}
-                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
-                                timeLv >= MAX_UPGRADE_LV
-                                  ? 'bg-white/10 text-white/50 cursor-default'
-                                  : coins >= timeCost
-                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
-                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
-                              }`}
-                            >
-                              {timeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${timeCost} Koin`}
-                            </button>
-                          </div>
-
-                          {/* 3. Upgrade Money */}
-                          <div className="rounded-xl bg-white/[0.06] border border-white/10 p-2.5 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-amber-500/25 text-[#FFB458] flex items-center justify-center shrink-0">
-                                <Coins size={18} strokeWidth={2.3} />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="text-xs font-extrabold text-white truncate">
-                                  Upgrade Money ({moneyLv}/{MAX_UPGRADE_LV})
-                                </p>
-                                <p className="text-[11px] text-white/75 font-mono tabular-nums">
-                                  Koin: {currentMoneyMult}x{' '}
-                                  {moneyLv < MAX_UPGRADE_LV
-                                    ? `-> ${(1 + (moneyLv + 1) * 0.1).toFixed(1)}x`
-                                    : '(Maks)'}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleBuyUpgrade('money')}
-                              disabled={moneyLv >= MAX_UPGRADE_LV || coins < moneyCost}
-                              className={`min-h-[36px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
-                                moneyLv >= MAX_UPGRADE_LV
-                                  ? 'bg-white/10 text-white/50 cursor-default'
-                                  : coins >= moneyCost
-                                  ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
-                                  : 'bg-white/10 text-white/40 cursor-not-allowed'
-                              }`}
-                            >
-                              {moneyLv >= MAX_UPGRADE_LV ? 'MAKS' : `${moneyCost} Koin`}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {stage === 'playing' && bustedReason && (
-                    <div className="absolute inset-0 bg-slate-950/85 backdrop-blur-xs flex items-center justify-center p-4 z-30">
-                      <div className="max-w-xs w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-4 text-center space-y-3 shadow-2xl">
-                        <div className="w-11 h-11 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
-                          <AlertTriangle size={22} strokeWidth={2.5} />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-black uppercase tracking-wide text-[#F36A78]">
-                            BUSTED!
-                          </h3>
-                          <p className="text-xs text-white/85 mt-1 leading-relaxed">
-                            {bustedReason}
-                          </p>
-                          <p className="text-[11px] font-mono font-bold text-[#FFB458] mt-1.5">
-                            Penalti: -25.0% progres galian
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            bustedRef.current = false;
-                            setBustedReason(null);
-                          }}
-                          className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer"
-                        >
-                          Lanjutkan
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>
               </div>
             )}
           </ViceCityGameFrame>
+        )}
+      </AnimatePresence>
+
+      {/* External Full-Viewport Popup: Night Red-Eyes Black Market Upgrade Shop (outside game screen) */}
+      <AnimatePresence>
+        {isOpen && stage === 'playing' && shopOpen && isNight && !bustedReason && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            onClick={() => setShopOpen(false)}
+            className="fixed inset-0 z-[95] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Pasar Gelap Mata Merah"
+          >
+            <motion.div
+              initial={{ y: 14, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 10, opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-[#250D47] border-2 border-[#C9349B] p-4 sm:p-5 shadow-2xl space-y-3.5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-rose-500/20 border border-rose-500/50 text-rose-400 flex items-center justify-center shrink-0">
+                    <Eye size={17} strokeWidth={2.5} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
+                      Pasar Gelap Mata Merah
+                    </h3>
+                    <p className="text-[11px] text-white/75">
+                      Biaya naik 2x per level (Maks 5 upgrade)
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShopOpen(false)}
+                  aria-label="Tutup Pasar Gelap"
+                  className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                >
+                  <X size={18} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#3B146B]/85 border border-white/10">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#FFB458] font-mono tabular-nums">
+                  <Coins size={14} />
+                  <span>{coins} Koin</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white/85 font-mono tabular-nums">
+                  <Moon size={13} className="text-[#FFB458]" />
+                  <span>Sisa Malam {formatClock(phaseSecondsLeft)}</span>
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {/* 1. Upgrade Pickaxe */}
+                <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-[#C9349B]/30 text-[#FFB458] flex items-center justify-center shrink-0">
+                      <PickaxeSvg className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                        Upgrade Pickaxe ({pickaxeLv}/{MAX_UPGRADE_LV})
+                      </p>
+                      <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                        Galian: +{currentDigGain}%{' '}
+                        {pickaxeLv < MAX_UPGRADE_LV
+                          ? `-> +${(0.1 + (pickaxeLv + 1) * 0.1).toFixed(1)}%`
+                          : '(Maks)'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBuyUpgrade('pickaxe')}
+                    disabled={pickaxeLv >= MAX_UPGRADE_LV || coins < pickaxeCost}
+                    className={`min-h-[38px] px-3.5 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                      pickaxeLv >= MAX_UPGRADE_LV
+                        ? 'bg-white/10 text-white/50 cursor-default'
+                        : coins >= pickaxeCost
+                        ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                        : 'bg-white/10 text-white/40 cursor-not-allowed'
+                    }`}
+                  >
+                    {pickaxeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${pickaxeCost} Koin`}
+                  </button>
+                </div>
+
+                {/* 2. Upgrade Waktu */}
+                <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-[#7B208F]/50 text-[#FFB458] flex items-center justify-center shrink-0">
+                      <Clock size={18} strokeWidth={2.3} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                        Upgrade Waktu ({timeLv}/{MAX_UPGRADE_LV})
+                      </p>
+                      <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                        Malam: +{timeLv * 10}s{' '}
+                        {timeLv < MAX_UPGRADE_LV ? `-> +${(timeLv + 1) * 10}s` : '(Maks)'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBuyUpgrade('time')}
+                    disabled={timeLv >= MAX_UPGRADE_LV || coins < timeCost}
+                    className={`min-h-[38px] px-3.5 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                      timeLv >= MAX_UPGRADE_LV
+                        ? 'bg-white/10 text-white/50 cursor-default'
+                        : coins >= timeCost
+                        ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                        : 'bg-white/10 text-white/40 cursor-not-allowed'
+                    }`}
+                  >
+                    {timeLv >= MAX_UPGRADE_LV ? 'MAKS' : `${timeCost} Koin`}
+                  </button>
+                </div>
+
+                {/* 3. Upgrade Money */}
+                <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/25 text-[#FFB458] flex items-center justify-center shrink-0">
+                      <Coins size={18} strokeWidth={2.3} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                        Upgrade Money ({moneyLv}/{MAX_UPGRADE_LV})
+                      </p>
+                      <p className="text-[11px] text-white/75 font-mono tabular-nums">
+                        Koin: {currentMoneyMult}x{' '}
+                        {moneyLv < MAX_UPGRADE_LV
+                          ? `-> ${(1 + (moneyLv + 1) * 0.1).toFixed(1)}x`
+                          : '(Maks)'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleBuyUpgrade('money')}
+                    disabled={moneyLv >= MAX_UPGRADE_LV || coins < moneyCost}
+                    className={`min-h-[38px] px-3.5 rounded-lg font-mono tabular-nums font-extrabold text-xs shrink-0 transition-all ${
+                      moneyLv >= MAX_UPGRADE_LV
+                        ? 'bg-white/10 text-white/50 cursor-default'
+                        : coins >= moneyCost
+                        ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                        : 'bg-white/10 text-white/40 cursor-not-allowed'
+                    }`}
+                  >
+                    {moneyLv >= MAX_UPGRADE_LV ? 'MAKS' : `${moneyCost} Koin`}
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShopOpen(false)}
+                className="w-full min-h-[42px] rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Tutup Toko
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* External Full-Viewport Popup: BUSTED Alert (outside game screen) */}
+      <AnimatePresence>
+        {isOpen && stage === 'playing' && bustedReason && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-[95] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 select-none"
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="BUSTED"
+          >
+            <motion.div
+              initial={{ y: 14, opacity: 0, scale: 0.96 }}
+              animate={{ y: 0, opacity: 1, scale: 1 }}
+              exit={{ y: 10, opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.18 }}
+              className="max-w-sm w-full max-h-[90dvh] overflow-y-auto rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-5 text-center space-y-3.5 shadow-2xl"
+            >
+              <div className="w-12 h-12 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
+                <AlertTriangle size={24} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black uppercase tracking-wide text-[#F36A78]">
+                  BUSTED!
+                </h3>
+                <p className="text-xs sm:text-sm text-white/85 mt-1.5 leading-relaxed">
+                  {bustedReason}
+                </p>
+                <p className="text-xs font-mono font-bold text-[#FFB458] mt-2">
+                  Penalti: -25.0% progres galian
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  bustedRef.current = false;
+                  setBustedReason(null);
+                }}
+                className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer transition-all"
+              >
+                Lanjutkan
+              </button>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
 
