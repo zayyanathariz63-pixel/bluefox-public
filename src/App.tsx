@@ -5,7 +5,7 @@ import { ChatInput } from './components/ChatInput';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
 import { VerifyPage } from './components/VerifyPage';
-import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users, ShieldCheck, Maximize2, Minimize2 } from 'lucide-react';
+import { Bot, Sparkles, ChevronDown, ChevronUp, Cpu, Layers, Menu, Store, Globe, Settings, LogOut, Brain, Zap, Download, Search, ArrowDown, Loader2, Eye, EyeOff, Lock, Check, Pin, PinOff, Trash2, MoreVertical, X, RotateCcw, SlidersHorizontal, Sliders, Copy, Image as ImageIcon, SquarePen, Home, Share2, Film, Users, Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SplashScreen } from './components/SplashScreen';
@@ -23,6 +23,7 @@ import { MotionLoadingProgress } from './components/MotionLoadingProgress';
 import { ChooseAccountModal } from './components/ChooseAccountModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { HalloweenEasterEgg, EasterEggType } from './components/HalloweenEasterEgg';
+import { RoleBadgePill } from './components/RoleBadgePill';
 import { 
   SavedAccount, 
   recordCurrentSession, 
@@ -30,7 +31,10 @@ import {
   getOrCreateDeviceId,
   registerAccountDeviceSession,
   getSavedAccounts,
-  isUserAdmin
+  getUserRoleBadge,
+  isUserAdmin,
+  isUserCoAdmin,
+  hasUnlimitedQuotaAccess
 } from './lib/accountManager';
 import { BLUEFOX_MOTION_SYSTEM_PROMPT, processUserInput, parseAiResponse, invokeMotionGenerator } from './lib/motion';
 import { applyGtaBuffDiscount } from './lib/gtaSeasonPass';
@@ -487,20 +491,14 @@ export default function App() {
   };
 
   const usage = getUsage();
-  // Validasi limit: Sumber kebenaran utama adalah tabel public.user_limits di database Supabase.
-  // Pengguna HANYA diblokir jika data tabel used_5h >= 100 ATAU used_weekly >= 100.
-  // Jika Mode Development aktif (No Limit), limit tidak pernah memblokir user.
-  const isUsageLimitReached = isDevMode 
-    ? false 
-    : Boolean(dbLimits && (dbLimits.used5h >= 100 || dbLimits.usedWeekly >= 100));
 
   const updateUsage = (
     model: string, 
     isVision?: boolean, 
     searchMode?: 'standard' | 'advanced' | 'map_standard' | 'map_advanced'
   ) => {
-    // Abaikan dan jangan rekam pemotongan kuota jika Mode Development aktif secara lokal
-    if (isDevMode || (typeof window !== 'undefined' && localStorage.getItem('tmpa_dev_mode') === 'true')) {
+    // Abaikan dan jangan rekam pemotongan kuota jika Mode Development atau Co-admin No Limit aktif
+    if (isDevMode || hasUnlimitedQuotaAccess(user) || (typeof window !== 'undefined' && localStorage.getItem('tmpa_dev_mode') === 'true')) {
       return;
     }
 
@@ -645,6 +643,15 @@ export default function App() {
   });
   const [user, setUser] = useState<any>(null);
   const [userTier, setUserTier] = useState<string>('Loading...');
+  const roleBadge = getUserRoleBadge(user);
+  const isCoAdmin = isUserCoAdmin(user);
+  const hasNoLimit = isDevMode || hasUnlimitedQuotaAccess(user);
+  // Validasi limit: Sumber kebenaran utama adalah tabel public.user_limits di database Supabase.
+  // Pengguna HANYA diblokir jika data tabel used_5h >= 100 ATAU used_weekly >= 100.
+  // Jika Mode Development atau Co-admin No Limit aktif, limit tidak pernah memblokir user.
+  const isUsageLimitReached = hasNoLimit
+    ? false
+    : Boolean(dbLimits && (dbLimits.used5h >= 100 || dbLimits.usedWeekly >= 100));
   const [authChecking, setAuthChecking] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [isSyncingSSO, setIsSyncingSSO] = useState(false);
@@ -2050,13 +2057,21 @@ export default function App() {
       };
       const updatedMessages = [...baseMessages, userMessage];
 
-      // A. COMMAND @bluefox
+      // A. COMMAND @bluefox (Tersedia untuk semua pengguna, termasuk tanpa badge & Co-admin)
       if (isBluefoxCmd) {
         const subCmd = lowerText.replace(/^@bluefox\s*/, '').trim();
 
         if (subCmd.startsWith('profile')) {
-          const adminRowEn = isUserAdmin(user) ? '\n| **Role / Privilege** | `[ADMINISTRATOR]` |' : '';
-          const adminRowId = isUserAdmin(user) ? '\n| **Peran / Hak Akses** | `[ADMINISTRATOR]` |' : '';
+          const roleLabel =
+            roleBadge === 'admin'
+              ? '[ADMINISTRATOR]'
+              : roleBadge === 'co-admin'
+              ? '[CO-ADMIN]'
+              : roleBadge === 'taster'
+              ? '[TASTER]'
+              : '';
+          const adminRowEn = roleLabel ? `\n| **Role / Badge** | \`${roleLabel}\` |` : '';
+          const adminRowId = roleLabel ? `\n| **Peran / Badge** | \`${roleLabel}\` |` : '';
 
           systemReply = lang === 'en' ? `### User Profile (Bluefox System Controller)
 
@@ -2096,10 +2111,10 @@ ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned 
 **Daftar Sesi Terbaru:**
 ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned ? '[DISEMATKAN]' : ''}\n   - Model: \`${s.model || 'Standard'}\` • Pesan: ${s.messages?.length || 0}\n   - Terakhir diubah: ${new Date(s.updatedAt).toLocaleString('id-ID')}`).join('\n\n') || '_Belum ada riwayat sesi lain._'}`;
         } else if (subCmd.startsWith('kuota') || subCmd.startsWith('quota')) {
-          const devModeNotice = isDevMode ? (
+          const devModeNotice = hasNoLimit ? (
             lang === 'en' 
-              ? '\n| **Development Mode** | `[NO LIMIT - ACTIVE]` | Supabase quota limits are bypassed on this device |'
-              : '\n| **Mode Development** | `[NO LIMIT - AKTIF]` | Pengecekan & kuota Supabase dilewati di perangkat ini |'
+              ? `\n| **No Limit Status** | \`${isCoAdmin && !isDevMode ? '[CO-ADMIN NO LIMIT]' : '[NO LIMIT - ACTIVE]'}\` | Unlimited AI queries active (no usage cap) |`
+              : `\n| **Status No Limit** | \`${isCoAdmin && !isDevMode ? '[CO-ADMIN NO LIMIT]' : '[NO LIMIT - AKTIF]'}\` | Akses tanpa batas aktif tanpa pengurangan kuota |`
           ) : '';
 
           systemReply = lang === 'en' ? `### Quota & Usage Monitor (Bluefox Controller)
@@ -2108,7 +2123,7 @@ ${chatSessions.slice(0, 5).map((s, i) => `${i + 1}. **${s.title}** ${s.isPinned 
 | :--- | :--- | :--- |
 | **Rolling Limit (5 Hours)** | \`${dbLimits?.used5h ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
 | **Weekly Limit** | \`${dbLimits?.usedWeekly ?? 0}% used\` | Remaining: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |${devModeNotice}
-| **System Status** | \`${isDevMode ? '[NO LIMIT - DEV MODE]' : '[NORMAL OPERATIONAL]'}\` | ${isDevMode ? 'Unlimited AI queries enabled' : 'Auto quota reset window every 5 hours'} |
+| **System Status** | \`${hasNoLimit ? (isCoAdmin && !isDevMode ? '[NO LIMIT - CO-ADMIN]' : '[NO LIMIT - DEV MODE]') : '[NORMAL OPERATIONAL]'}\` | ${hasNoLimit ? 'Unlimited AI queries enabled' : 'Auto quota reset window every 5 hours'} |
 
 _Developer Tip: Type \`@bluefox reset\` to reset all AI model usage limits to 0%._`
           : `### Indikator Batas Penggunaan (Quota Monitor)
@@ -2117,7 +2132,7 @@ _Developer Tip: Type \`@bluefox reset\` to reset all AI model usage limits to 0%
 | :--- | :--- | :--- |
 | **Rolling Limit (5 Jam)** | \`${dbLimits?.used5h ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.used5h ?? 0))}%\` |
 | **Batas Mingguan (Weekly)** | \`${dbLimits?.usedWeekly ?? 0}% terpakai\` | Sisa: \`${Math.max(0, 100 - (dbLimits?.usedWeekly ?? 0))}%\` |${devModeNotice}
-| **Status Sistem** | \`${isDevMode ? '[NO LIMIT - DEV MODE]' : '[OPERASIONAL NORMAL]'}\` | ${isDevMode ? 'Akses tanpa batas aktif di perangkat ini' : 'Reset kuota otomatis tiap 5 jam'} |
+| **Status Sistem** | \`${hasNoLimit ? (isCoAdmin && !isDevMode ? '[NO LIMIT - CO-ADMIN]' : '[NO LIMIT - DEV MODE]') : '[OPERASIONAL NORMAL]'}\` | ${hasNoLimit ? 'Akses tanpa batas aktif' : 'Reset kuota otomatis tiap 5 jam'} |
 
 _Tip Pengujian: Ketik \`@bluefox reset\` untuk mereset seluruh batas penggunaan AI ke 0%._`;
         } else if (subCmd.startsWith('reset')) {
@@ -2441,11 +2456,12 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
       // =========================================================================
       // B. PENGECEKAN LIMIT KLIEN: CEK LANGSUNG KE TABEL public.user_limits DI SUPABASE
       // =========================================================================
-      // 1. Cek apakah mode dev aktif secara lokal di browser
+      // 1. Cek apakah mode dev atau Co-admin No Limit aktif
       const isDevModeLocal = typeof window !== 'undefined' && localStorage.getItem('tmpa_dev_mode') === 'true';
+      const isCoAdminQuotaBypass = isUserCoAdmin(user) || hasUnlimitedQuotaAccess(user);
 
-      if (isDevModeLocal || isDevMode) {
-        console.log('Mode Development aktif (No Limit). Melewati pengecekan kuota.');
+      if (isDevModeLocal || isDevMode || isCoAdminQuotaBypass) {
+        console.log('No Limit aktif (Dev Mode / Co-admin). Melewati pengecekan kuota.');
       } else {
         // 2. Ambil user UUID jika login
         let userUuid = user?.id;
@@ -3699,14 +3715,14 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
               );
             })()}
 
-            {isDevMode && (
+            {hasNoLimit && (
               <span
                 onClick={() => setIsSettingsOpen(true)}
                 className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800 text-[10px] font-bold font-mono tracking-tight cursor-pointer hover:bg-emerald-100 transition-colors shadow-2xs"
-                title="Mode Development (No Limit) Aktif di Browser Ini"
+                title={isCoAdmin && !isDevMode ? 'Badge Co-admin: Batas No Limit Tanpa Batas Aktif' : 'Mode Development (No Limit) Aktif di Browser Ini'}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                NO LIMIT
+                {isCoAdmin && !isDevMode ? 'CO-ADMIN NO LIMIT' : 'NO LIMIT'}
               </span>
             )}
           </div>
@@ -4278,11 +4294,8 @@ ${allMem.length > 0 ? `**Daftar Memori Aktif (${allMem.length}):**\n${allMem.map
                         <span className="text-[10px] uppercase font-bold tracking-wider text-blue-500">
                           {userTier}
                         </span>
-                        {isUserAdmin(user) && (
-                          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[9px] font-extrabold uppercase tracking-wider shadow-2xs">
-                            <ShieldCheck size={10} className="text-amber-500" />
-                            <span>Admin</span>
-                          </span>
+                        {roleBadge && (
+                          <RoleBadgePill role={roleBadge} size="xs" className="mt-0.5" />
                         )}
                       </div>
                     </div>

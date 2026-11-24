@@ -12,7 +12,13 @@ import { IntegrationsPage } from './IntegrationsPage';
 import { RemoteControlPage } from './RemoteControlPage';
 import { useLanguage, Language } from '../lib/i18n';
 import { supabase, getModelDisplayName, isLocalDevMode, setLocalDevMode } from '../lib/supabase';
-import { isUserAdmin } from '../lib/accountManager';
+import {
+  getUserRoleBadge,
+  hasSessionPassAccess,
+  hasUnlimitedQuotaAccess,
+  isUserAdmin,
+} from '../lib/accountManager';
+import { RoleBadgePill } from './RoleBadgePill';
 import { 
   AppStyle, 
   getAppStyle, 
@@ -120,7 +126,11 @@ export function SettingsModal({
 
   const isBlueRilis = currentAppStyle === 'blue_rilis';
 
-  const isAdmin = isUserAdmin(user);
+  const roleBadge = getUserRoleBadge(user);
+  const isAdmin = roleBadge === 'admin';
+  const isCoAdmin = roleBadge === 'co-admin';
+  const canAccessSessionPass = hasSessionPassAccess(user);
+  const hasNoLimit = isDevMode || hasUnlimitedQuotaAccess(user);
   const [isSessionPassOpen, setIsSessionPassOpen] = useState<boolean>(false);
   const [gtaBuffActive, setGtaBuffActive] = useState<boolean>(() => isGtaBuffActive());
   const [gtaBuffTimer, setGtaBuffTimer] = useState<string>(() => formatGtaBuffRemaining());
@@ -455,8 +465,8 @@ export function SettingsModal({
 
                 {/* Settings Rows */}
                 <div className="space-y-1.5">
-                  {/* 0. Admin-only Single Button: Session Pass */}
-                  {isAdmin && (
+                  {/* 0. Session Pass GTB (Admin & Co-admin) */}
+                  {canAccessSessionPass && (
                     <button
                       onClick={() => setIsSessionPassOpen(true)}
                       className="w-full text-left flex items-center justify-between gap-3 py-3.5 px-4 rounded-2xl border border-[#F36A78]/35 bg-gradient-to-r from-[#F36A78]/10 via-[#FF9B55]/10 to-[#FFB458]/15 hover:from-[#F36A78]/20 hover:to-[#FFB458]/25 active:scale-[0.99] transition-all cursor-pointer mb-1.5"
@@ -513,11 +523,24 @@ export function SettingsModal({
                   onClick={() => setCurrentView('usage')}
                   className="w-full text-left flex items-start gap-4 py-4 px-4 rounded-2xl border border-transparent hover:border-slate-200 hover:bg-slate-50/80 active:bg-slate-100 transition-all group cursor-pointer"
                 >
-                  <div className="mt-1 flex-shrink-0 text-slate-400 group-hover:text-rose-600 transition-colors p-2 rounded-xl bg-slate-100 group-hover:bg-rose-50">
+                  <div className={cn(
+                    "mt-1 flex-shrink-0 transition-colors p-2 rounded-xl",
+                    hasNoLimit
+                      ? "text-emerald-600 bg-emerald-50 group-hover:bg-emerald-100"
+                      : "text-slate-400 group-hover:text-rose-600 bg-slate-100 group-hover:bg-rose-50"
+                  )}>
                     <Shield size={20} strokeWidth={2} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-[17px] font-semibold text-slate-900">{t.usageLimits}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-[17px] font-semibold text-slate-900">{t.usageLimits}</h3>
+                      {hasNoLimit && (
+                        <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Tanpa Batas
+                        </span>
+                      )}
+                    </div>
                     <p className="text-sm text-slate-500 mt-0.5">{t.usageLimitsDesc}</p>
                   </div>
                 </button>
@@ -540,7 +563,7 @@ export function SettingsModal({
                       <h3 className="text-[17px] font-semibold text-slate-900 group-hover:text-purple-600 transition-colors">
                         {t.redeemCode}
                       </h3>
-                      {isDevMode ? (
+                      {hasNoLimit ? (
                         <span className="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full font-mono flex items-center gap-1 shadow-2xs">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                           No Limit Aktif
@@ -992,56 +1015,95 @@ export function SettingsModal({
                         <div className="bg-white p-4 rounded-xl border border-slate-200 text-blue-600 font-bold text-sm tracking-wide shadow-xs uppercase">
                           {userTier || 'FREE (DEFAULT)'}
                         </div>
-                        {isUserAdmin(user) && (
-                          <div className="mt-2 flex items-center">
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border border-amber-500/30 text-amber-700 font-bold text-xs uppercase tracking-wider shadow-2xs">
-                              <ShieldCheck size={14} className="text-amber-600" />
-                              <span>Admin</span>
+                        {roleBadge && (
+                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <RoleBadgePill role={roleBadge} size="sm" />
+                            <span className="text-xs text-slate-500 font-medium">
+                              {isAdmin
+                                ? (lang === 'id'
+                                    ? 'Akses penuh: @image, @motion, Session Pass & MCP'
+                                    : 'Full access: @image, @motion, Session Pass & MCP')
+                                : isCoAdmin
+                                ? (lang === 'id'
+                                    ? 'Akses: Session Pass GTB + Batas No Limit (Tanpa Batas)'
+                                    : 'Access: Session Pass GTB + Unlimited (No Limit)')
+                                : (lang === 'id'
+                                    ? 'Akses Taster aktif'
+                                    : 'Taster access active')}
                             </span>
                           </div>
                         )}
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                          {lang === 'id' ? 'Daftar Badge Sistem' : 'System Badge Directory'}
+                        </label>
+                        <div className="bg-white p-3.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 flex-wrap shadow-xs">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <RoleBadgePill role="admin" size="xs" />
+                            <RoleBadgePill role="taster" size="xs" />
+                            <RoleBadgePill role="co-admin" size="xs" />
+                          </div>
+                          <span className="text-[11px] font-mono text-slate-500">
+                            Taster: 0
+                          </span>
+                        </div>
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                             {lang === 'id' ? 'Mode Pengembangan (No Limit)' : 'Development Mode (No Limit)'}
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => setCurrentView('redeem')}
-                            className="text-xs font-semibold text-purple-600 hover:text-purple-700 cursor-pointer"
-                          >
-                            {isDevMode ? (lang === 'id' ? 'Kelola Kode' : 'Manage Code') : (lang === 'id' ? 'Tukarkan Kode' : 'Redeem Code')}
-                          </button>
+                          {!isCoAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => setCurrentView('redeem')}
+                              className="text-xs font-semibold text-purple-600 hover:text-purple-700 cursor-pointer"
+                            >
+                              {isDevMode ? (lang === 'id' ? 'Kelola Kode' : 'Manage Code') : (lang === 'id' ? 'Tukarkan Kode' : 'Redeem Code')}
+                            </button>
+                          )}
                         </div>
                         <div className={cn(
                           "p-4 rounded-xl border flex items-center justify-between gap-3 shadow-xs",
-                          isDevMode 
+                          hasNoLimit 
                             ? "bg-emerald-50/70 border-emerald-300 text-emerald-900" 
                             : "bg-white border-slate-200 text-slate-700"
                         )}>
                           <div className="flex items-center gap-3">
                             <div className={cn(
                               "w-9 h-9 rounded-xl flex items-center justify-center shrink-0",
-                              isDevMode ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
+                              hasNoLimit ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-400"
                             )}>
                               <Key size={18} />
                             </div>
                             <div>
                               <div className="font-semibold text-sm flex items-center gap-2">
-                                <span>{isDevMode ? (lang === 'id' ? 'Aktif (Tanpa Batas Kuota)' : 'Active (No Limit)') : (lang === 'id' ? 'Mode Standar' : 'Standard Mode')}</span>
-                                {isDevMode && (
+                                <span>
+                                  {isCoAdmin
+                                    ? (lang === 'id' ? 'Co-admin No Limit (Tanpa Batas)' : 'Co-admin No Limit (Unlimited)')
+                                    : isDevMode
+                                    ? (lang === 'id' ? 'Aktif (Tanpa Batas Kuota)' : 'Active (No Limit)')
+                                    : (lang === 'id' ? 'Mode Standar' : 'Standard Mode')}
+                                </span>
+                                {hasNoLimit && (
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                                 )}
                               </div>
                               <p className="text-xs text-slate-500 mt-0.5">
-                                {isDevMode 
+                                {isCoAdmin
+                                  ? (lang === 'id' ? 'Akun Co-admin otomatis memiliki batas No Limit tanpa batas.' : 'Co-admin accounts automatically have unlimited No Limit quota.')
+                                  : isDevMode 
                                   ? (lang === 'id' ? 'Pengecekan batas kuota Supabase dilewati di perangkat ini.' : 'Supabase quota checks bypassed on this device.') 
                                   : (lang === 'id' ? 'Punya invite code? Aktifkan no limit di menu Redeem.' : 'Have an invite code? Activate no limit in Redeem menu.')}
                               </p>
                             </div>
                           </div>
-                          {isDevMode ? (
+                          {isCoAdmin ? (
+                            <span className="text-[11px] font-bold uppercase px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">
+                              Tanpa Batas
+                            </span>
+                          ) : isDevMode ? (
                             <button
                               type="button"
                               onClick={handleDeactivateDevMode}
@@ -1162,36 +1224,44 @@ export function SettingsModal({
                       </div>
                     )}
 
-                    {/* Banner Indikator Mode Development (No Limit) */}
-                    {isDevMode && (
+                    {/* Banner Indikator No Limit (Co-admin Tanpa Batas / Mode Development) */}
+                    {hasNoLimit && (
                       <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-300 rounded-2xl p-4.5 flex items-start justify-between gap-3 shadow-xs">
                         <div className="flex items-start gap-3">
                           <div className="p-2 bg-emerald-100 text-emerald-700 rounded-xl shrink-0 mt-0.5">
                             <Sparkles size={18} />
                           </div>
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <h4 className="font-bold text-emerald-950 text-sm">
-                                {lang === 'id' ? 'Mode Development / No Limit Aktif' : 'Development Mode / No Limit Active'}
+                                {isCoAdmin
+                                  ? (lang === 'id' ? 'Co-admin No Limit Aktif (Tanpa Batas)' : 'Co-admin No Limit Active (Unlimited)')
+                                  : (lang === 'id' ? 'Mode Development / No Limit Aktif' : 'Development Mode / No Limit Active')}
                               </h4>
                               <span className="text-[10px] font-bold bg-emerald-200 text-emerald-900 border border-emerald-300 px-2 py-0.2 rounded-full font-mono uppercase">
-                                Bypassed
+                                {isCoAdmin ? 'Co-admin Unlimited' : 'Bypassed'}
                               </span>
                             </div>
                             <p className="text-xs text-emerald-800/80 mt-1 leading-relaxed">
-                              {lang === 'id'
-                                ? 'Perangkat ini berjalan dalam mode bebas batas kuota (No Limit). Seluruh panggilan chat AI tidak memotong kuota database Supabase.'
-                                : 'This device is running in No Limit mode. All AI chat requests bypass Supabase quota tracking and limits.'}
+                              {isCoAdmin
+                                ? (lang === 'id'
+                                    ? 'Akun Co-admin memiliki akses No Limit tanpa batas penggunaan. Pemotongan kuota dinonaktifkan otomatis.'
+                                    : 'Co-admin account has unlimited No Limit access. Quota consumption is automatically disabled.')
+                                : (lang === 'id'
+                                    ? 'Perangkat ini berjalan dalam mode bebas batas kuota (No Limit). Seluruh panggilan chat AI tidak memotong kuota database Supabase.'
+                                    : 'This device is running in No Limit mode. All AI chat requests bypass Supabase quota tracking and limits.')}
                             </p>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setCurrentView('redeem')}
-                          className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 transition-colors cursor-pointer shrink-0 shadow-2xs"
-                        >
-                          {lang === 'id' ? 'Pengaturan' : 'Settings'}
-                        </button>
+                        {!isCoAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setCurrentView('redeem')}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 transition-colors cursor-pointer shrink-0 shadow-2xs"
+                          >
+                            {lang === 'id' ? 'Pengaturan' : 'Settings'}
+                          </button>
+                        )}
                       </div>
                     )}
 
@@ -2623,11 +2693,12 @@ export function SettingsModal({
               </motion.div>
             )}
           </AnimatePresence>
-          {/* Full-screen Admin-only Session Pass Modal */}
+          {/* Full-screen Session Pass Modal (Admin & Co-admin) */}
           <GtaSeasonPassBanner
             isOpen={isSessionPassOpen}
             onClose={() => setIsSessionPassOpen(false)}
             isAdmin={isAdmin}
+            canAccess={canAccessSessionPass}
             onNotify={showToast}
           />
         </motion.div>

@@ -23,6 +23,7 @@ interface GtaSeasonPassBannerProps {
   isOpen: boolean;
   onClose: () => void;
   isAdmin: boolean;
+  canAccess?: boolean;
   onNotify?: (message: string) => void;
 }
 
@@ -84,8 +85,10 @@ export function GtaSeasonPassBanner({
   isOpen,
   onClose,
   isAdmin,
+  canAccess,
   onNotify,
 }: GtaSeasonPassBannerProps) {
+  const hasPassAccess = canAccess ?? isAdmin;
   const [seasonState, setSeasonState] = useState<GtaSeasonPassState>(() =>
     getSeasonPassState()
   );
@@ -112,7 +115,7 @@ export function GtaSeasonPassBanner({
     };
   }, []);
 
-  if (!isAdmin) return null;
+  if (!hasPassAccess) return null;
 
   const triggerNotice = (msg: string) => {
     setInlineNotice(msg);
@@ -230,14 +233,20 @@ export function GtaSeasonPassBanner({
               </div>
 
               {/* Admin-Only Riset Button */}
-              <button
-                type="button"
-                onClick={handleRiset}
-                className="h-10 px-3.5 rounded-full bg-[#3B146B] hover:bg-[#7B208F] active:scale-95 text-white text-xs font-extrabold tracking-wide inline-flex items-center gap-1.5 border border-white/20 shadow-sm transition-all cursor-pointer shrink-0"
-              >
-                <RotateCcw size={13} strokeWidth={2.5} />
-                <span>Riset</span>
-              </button>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={handleRiset}
+                  className="h-10 px-3.5 rounded-full bg-[#3B146B] hover:bg-[#7B208F] active:scale-95 text-white text-xs font-extrabold tracking-wide inline-flex items-center gap-1.5 border border-white/20 shadow-sm transition-all cursor-pointer shrink-0"
+                >
+                  <RotateCcw size={13} strokeWidth={2.5} />
+                  <span>Riset</span>
+                </button>
+              ) : (
+                <span className="h-10 px-3 rounded-full bg-[#3B146B]/85 text-[#FFB458] text-[11px] font-extrabold tracking-wider uppercase inline-flex items-center border border-white/20 shrink-0">
+                  Co-admin
+                </span>
+              )}
             </header>
 
             {/* Clean Full-Screen Main Canvas */}

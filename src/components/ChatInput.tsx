@@ -1046,9 +1046,15 @@ export function ChatInput({
   };
 
   const handleSelectCommand = (cmd: TriggerCommand) => {
-    // Blokir jika non-admin memilih @image atau @motion
-    if (!isMotionAdmin && (cmd.name === '@image' || cmd.name === '@motion' || cmd.id === 'image-generation' || cmd.id === 'motion')) {
-      setActionToast(lang === 'id' ? `Perintah ${cmd.name} dinonaktifkan untuk non-admin (khusus Administrator).` : `Command ${cmd.name} is disabled for non-admin.`);
+    // Blokir jika non-admin memilih @image atau @motion (non-badge & Co-admin)
+    if (
+      !isMotionAdmin &&
+      (cmd.name === '@image' ||
+        cmd.name === '@motion' ||
+        cmd.id === 'image-generation' ||
+        cmd.id === 'motion')
+    ) {
+      setActionToast(lang === 'id' ? `Perintah ${cmd.name} dinonaktifkan untuk non-admin (khusus Admin).` : `Command ${cmd.name} is disabled for non-admin (Admin only).`);
       setTimeout(() => setActionToast(null), 3500);
       setIsCommandModalOpen(false);
       return;
@@ -1086,9 +1092,9 @@ export function ChatInput({
     e.preventDefault();
     const rawTrimmed = input.trim();
 
-    // Jika non-admin mengetikkan @image atau @motion, tolak pengiriman
+    // Jika non-admin (non-badge / Co-admin / Taster) mengetikkan @image atau @motion, tolak pengiriman
     if (!isMotionAdmin && (rawTrimmed.toLowerCase().includes('@image') || rawTrimmed.toLowerCase().includes('@motion'))) {
-      setActionToast(lang === 'id' ? 'Perintah @image dan @motion dinonaktifkan untuk non-admin (khusus Administrator).' : 'Commands @image and @motion are disabled for non-admin.');
+      setActionToast(lang === 'id' ? 'Perintah @image dan @motion dinonaktifkan untuk non-admin (khusus Admin).' : 'Commands @image and @motion are disabled for non-admin (Admin only).');
       setTimeout(() => setActionToast(null), 3500);
       return;
     }

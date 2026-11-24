@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, UserPlus, Sparkles, Check, Trash2, ArrowRight, 
-  ShieldCheck, Loader2, Users, Smartphone
+  Loader2, Users
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserGradientAvatar } from './UserGradientAvatar';
@@ -11,8 +11,9 @@ import {
   removeSavedAccount, 
   getOrCreateDeviceId,
   syncDeviceAccountsFromServer,
-  isUserAdmin
+  getUserRoleBadge
 } from '../lib/accountManager';
+import { RoleBadgePill } from './RoleBadgePill';
 import { useLanguage } from '../lib/i18n';
 
 interface ChooseAccountModalProps {
@@ -169,12 +170,7 @@ export function ChooseAccountModal({
                             {acc.tier}
                           </span>
                         )}
-                        {isUserAdmin(acc) && (
-                          <span className="inline-flex items-center gap-1 mt-0.5 px-1.5 py-0.2 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[9px] font-extrabold uppercase tracking-wider shadow-2xs">
-                            <ShieldCheck size={9} className="text-amber-500" />
-                            <span>Admin</span>
-                          </span>
-                        )}
+                        <RoleBadgePill role={getUserRoleBadge(acc)} size="xs" className="mt-0.5" />
                       </div>
                     </div>
 

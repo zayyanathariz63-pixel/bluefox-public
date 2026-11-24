@@ -19,53 +19,173 @@ export interface SavedAccount {
 
 const STORAGE_KEY = 'tmpa_saved_accounts';
 
-/**
- * Mengecek apakah akun yang sedang login memiliki hak akses Admin.
- * Kriteria: email zayyanathariz63@gmail.com atau zayyanathariz63-pixel
- */
-export function isUserAdmin(emailOrUser?: string | { email?: string; user_metadata?: any; name?: string } | null): boolean {
-  if (!emailOrUser) {
-    if (typeof window !== 'undefined') {
-      try {
-        const rawProfile = localStorage.getItem('tmpa_user_profile');
-        if (rawProfile) {
-          const profile = JSON.parse(rawProfile);
-          if (profile?.email || profile?.name) {
-            return isUserAdmin(profile);
-          }
-        }
-        const rawSelected = localStorage.getItem('tmpa_selected_account');
-        if (rawSelected) {
-          const sel = JSON.parse(rawSelected);
-          if (sel?.email || sel?.name) {
-            return isUserAdmin(sel);
-          }
-        }
-      } catch {}
-    }
-    return false;
-  }
-  let email = '';
-  let metaName = '';
-  let directName = '';
+export type UserRoleBadge = 'admin' | 'taster' | 'co-admin';
+
+const ADMIN_EMAILS = ['zayyanathariz63@gmail.com'];
+const ADMIN_GITHUB_USERNAMES = ['zayyanathariz63-pixels', 'zayyanathariz63-pixel', 'zayyanathariz63'];
+
+// Taster saat ini 0 / belum ada
+const TASTER_EMAILS: string[] = [];
+const TASTER_GITHUB_USERNAMES: string[] = [];
+
+const CO_ADMIN_EMAILS = ['wdp.dirga@gmail.com', 'wirya.dirga26@sd.belajar.id'];
+const CO_ADMIN_GITHUB_USERNAMES = ['wdpdirga-sys'];
+
+function extractIdentityTokens(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): { emails: string[]; handles: string[] } {
+  if (!emailOrUser) return { emails: [], handles: [] };
 
   if (typeof emailOrUser === 'string') {
-    email = emailOrUser.toLowerCase().trim();
-  } else {
-    email = (emailOrUser.email || '').toLowerCase().trim();
-    metaName = (emailOrUser.user_metadata?.full_name || emailOrUser.user_metadata?.user_name || '').toLowerCase().trim();
-    directName = (emailOrUser.name || '').toLowerCase().trim();
+    const val = emailOrUser.toLowerCase().trim();
+    return {
+      emails: val.includes('@') ? [val] : [],
+      handles: [val],
+    };
   }
 
-  return (
-    email === 'zayyanathariz63@gmail.com' ||
-    email.includes('zayyanathariz63-pixel') ||
-    email.includes('zayyanathariz63') ||
-    metaName.includes('zayyanathariz63-pixel') ||
-    metaName.includes('zayyanathariz63') ||
-    directName.includes('zayyanathariz63-pixel') ||
-    directName.includes('zayyanathariz63')
+  const emails = new Set<string>();
+  const handles = new Set<string>();
+
+  const pushEmail = (v?: any) => {
+    if (typeof v === 'string' && v.trim()) {
+      emails.add(v.toLowerCase().trim());
+    }
+  };
+  const pushHandle = (v?: any) => {
+    if (typeof v === 'string' && v.trim()) {
+      handles.add(v.toLowerCase().trim());
+    }
+  };
+
+  pushEmail(emailOrUser.email);
+  pushHandle(emailOrUser.email);
+  pushHandle(emailOrUser.name);
+  pushHandle(emailOrUser.user_metadata?.user_name);
+  pushHandle(emailOrUser.user_metadata?.preferred_username);
+  pushHandle(emailOrUser.user_metadata?.full_name);
+  pushHandle(emailOrUser.user_metadata?.name);
+  pushEmail(emailOrUser.user_metadata?.email);
+
+  if (Array.isArray(emailOrUser.identities)) {
+    for (const ident of emailOrUser.identities) {
+      const idData = ident?.identity_data;
+      if (idData) {
+        pushEmail(idData.email);
+        pushHandle(idData.user_name);
+        pushHandle(idData.preferred_username);
+        pushHandle(idData.full_name);
+        pushHandle(idData.name);
+      }
+    }
+  }
+
+  return {
+    emails: Array.from(emails),
+    handles: Array.from(handles),
+  };
+}
+
+function matchesAccountList(
+  tokens: { emails: string[]; handles: string[] },
+  targetEmails: string[],
+  targetHandles: string[]
+): boolean {
+  if (tokens.emails.some((e) => targetEmails.includes(e))) {
+    return true;
+  }
+  return tokens.handles.some((h) =>
+    targetHandles.some((target) => h === target || h.includes(target))
   );
+}
+
+function resolveUserSource(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null {
+  if (emailOrUser) return emailOrUser;
+  if (typeof window !== 'undefined') {
+    try {
+      const rawProfile = localStorage.getItem('tmpa_user_profile');
+      if (rawProfile) {
+        const profile = JSON.parse(rawProfile);
+        if (profile?.email || profile?.name || profile?.user_metadata) {
+          return profile;
+        }
+      }
+      const rawSelected = localStorage.getItem('tmpa_selected_account');
+      if (rawSelected) {
+        const sel = JSON.parse(rawSelected);
+        if (sel?.email || sel?.name || sel?.user_metadata) {
+          return sel;
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
+/**
+ * Mengembalikan badge role akun aktif: 'admin' | 'taster' | 'co-admin' | null
+ */
+export function getUserRoleBadge(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): UserRoleBadge | null {
+  const source = resolveUserSource(emailOrUser);
+  if (!source) return null;
+
+  const tokens = extractIdentityTokens(source);
+
+  if (matchesAccountList(tokens, ADMIN_EMAILS, ADMIN_GITHUB_USERNAMES)) {
+    return 'admin';
+  }
+  if (matchesAccountList(tokens, CO_ADMIN_EMAILS, CO_ADMIN_GITHUB_USERNAMES)) {
+    return 'co-admin';
+  }
+  if (matchesAccountList(tokens, TASTER_EMAILS, TASTER_GITHUB_USERNAMES)) {
+    return 'taster';
+  }
+  return null;
+}
+
+/**
+ * Mengecek apakah akun yang sedang login adalah Admin penuh.
+ * Akses Admin: perintah @image, @motion, Session Pass (termasuk Riset), dan MCP.
+ */
+export function isUserAdmin(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): boolean {
+  return getUserRoleBadge(emailOrUser) === 'admin';
+}
+
+export function isUserTaster(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): boolean {
+  return getUserRoleBadge(emailOrUser) === 'taster';
+}
+
+export function isUserCoAdmin(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): boolean {
+  return getUserRoleBadge(emailOrUser) === 'co-admin';
+}
+
+/**
+ * Akses Session Pass GTB: berlaku untuk Admin dan Co-admin.
+ */
+export function hasSessionPassAccess(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): boolean {
+  const role = getUserRoleBadge(emailOrUser);
+  return role === 'admin' || role === 'co-admin';
+}
+
+/**
+ * Batas No Limit otomatis tanpa batas (Co-admin).
+ */
+export function hasUnlimitedQuotaAccess(
+  emailOrUser?: string | { email?: string; user_metadata?: any; name?: string; identities?: any[] } | null
+): boolean {
+  return getUserRoleBadge(emailOrUser) === 'co-admin';
 }
 
 /**
