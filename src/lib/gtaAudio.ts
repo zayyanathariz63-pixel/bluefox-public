@@ -576,6 +576,116 @@ class GtaAudioEngine {
     osc.start(now);
     osc.stop(now + 0.27);
   }
+
+  public playHeatClearHitSfx(level: number) {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    const baseFreq = 460 + level * 95;
+    [baseFreq, baseFreq * 1.25].forEach((freq, idx) => {
+      if (!this.ctx || !this.masterGain) return;
+      const t = now + idx * 0.055;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t);
+      osc.stop(t + 0.2);
+    });
+  }
+
+  public playHeatClearMissSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(280, now);
+    osc.frequency.exponentialRampToValueAtTime(85, now + 0.35);
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.4);
+  }
+
+  public playEvilRiserSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    const duration = 2.6;
+
+    // Deep sub bass swell
+    const sub = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(48, now);
+    sub.frequency.exponentialRampToValueAtTime(98, now + duration);
+    subGain.gain.setValueAtTime(0.01, now);
+    subGain.gain.linearRampToValueAtTime(0.28, now + duration - 0.15);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.2);
+    sub.connect(subGain);
+    subGain.connect(this.masterGain);
+    sub.start(now);
+    sub.stop(now + duration + 0.22);
+
+    // Sweeping filtered sawtooth riser
+    const saw = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
+    const sawGain = ctx.createGain();
+    saw.type = 'sawtooth';
+    saw.frequency.setValueAtTime(110, now);
+    saw.frequency.exponentialRampToValueAtTime(590, now + duration);
+
+    filter.type = 'lowpass';
+    filter.Q.setValueAtTime(6, now);
+    filter.frequency.setValueAtTime(240, now);
+    filter.frequency.exponentialRampToValueAtTime(4200, now + duration);
+
+    sawGain.gain.setValueAtTime(0.005, now);
+    sawGain.gain.linearRampToValueAtTime(0.22, now + duration - 0.08);
+    sawGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.05);
+
+    saw.connect(filter);
+    filter.connect(sawGain);
+    sawGain.connect(this.masterGain);
+    saw.start(now);
+    saw.stop(now + duration + 0.08);
+
+    // High shimmer tension layer
+    const shimmer = ctx.createOscillator();
+    const shimGain = ctx.createGain();
+    shimmer.type = 'triangle';
+    shimmer.frequency.setValueAtTime(440, now + 0.4);
+    shimmer.frequency.exponentialRampToValueAtTime(880, now + duration);
+    shimGain.gain.setValueAtTime(0.001, now + 0.4);
+    shimGain.gain.linearRampToValueAtTime(0.11, now + duration - 0.08);
+    shimGain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.05);
+    shimmer.connect(shimGain);
+    shimGain.connect(this.masterGain);
+    shimmer.start(now + 0.4);
+    shimmer.stop(now + duration + 0.08);
+
+    // Hard blackout cut impact right at the end of the riser
+    const hit = ctx.createOscillator();
+    const hitGain = ctx.createGain();
+    const hitTime = now + duration;
+    hit.type = 'sine';
+    hit.frequency.setValueAtTime(130, hitTime);
+    hit.frequency.exponentialRampToValueAtTime(32, hitTime + 0.35);
+    hitGain.gain.setValueAtTime(0.42, hitTime);
+    hitGain.gain.exponentialRampToValueAtTime(0.001, hitTime + 0.38);
+    hit.connect(hitGain);
+    hitGain.connect(this.masterGain);
+    hit.start(hitTime);
+    hit.stop(hitTime + 0.4);
+  }
 }
 
 export const gtaAudio = new GtaAudioEngine();
