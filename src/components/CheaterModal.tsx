@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Activity,
   RotateCcw,
+  X,
 } from 'lucide-react';
 import {
   completeCheaterMission,
@@ -171,8 +172,8 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     isMissionCompleted('cheater', getSeasonPassState())
   );
 
-  // Underground laptop state
-  const [activeApp, setActiveApp] = useState<DesktopAppId>('store');
+  // Underground laptop state (null = desktop overview, non-null = open portaled app popup)
+  const [openApp, setOpenApp] = useState<DesktopAppId | null>(null);
   const [victims, setVictims] = useState<number>(0);
   const [credits, setCredits] = useState<number>(INITIAL_CREDITS);
   const [heat, setHeat] = useState<number>(0);
@@ -232,7 +233,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     setCredits(INITIAL_CREDITS);
     setHeat(0);
     setIsDetected(false);
-    setActiveApp('store');
+    setOpenApp(null);
     setModuleLevels({ dropper: 0, stealth: 0, botnet: 0, ssl: 0 });
     setSelectedPayloadId('basic');
     setCheatBaits(INITIAL_CHEAT_BAITS);
@@ -253,7 +254,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
         id: 'init-1',
         time: formatLogTime(),
         tag: 'SYSTEM',
-        text: 'Laptop underground aktif. Siapkan payload di Store Malware & Cheat Code.',
+        text: 'Laptop underground aktif. Pilih salah satu dari 5 aplikasi di bawah.',
       },
       {
         id: 'init-2',
@@ -310,7 +311,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
 
       const hasAnyPublish = Boolean(publishedModPkg || publishedFakeAsliPkg);
       const stealthReduction =
-        (moduleLevels.stealth * 22 + moduleLevels.ssl * 16) / 100; // up to ~1.14 -> clamp
+        (moduleLevels.stealth * 22 + moduleLevels.ssl * 16) / 100;
       const heatMultiplier = Math.max(0.28, 1 - Math.min(0.72, stealthReduction));
       const passiveCooling = moduleLevels.stealth > 0 ? 0.35 * moduleLevels.stealth : 0.15;
 
@@ -363,6 +364,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
           gtaAudio.stopHeistBgm();
           const updated = completeCheaterMission();
           setCompleted(true);
+          setOpenApp(null);
           onMissionSuccess?.(updated);
           setStage('victory_anim');
         }
@@ -377,13 +379,13 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
         if (nextHeat >= 100 && !detectedRef.current && !wonRef.current) {
           detectedRef.current = true;
           setIsDetected(true);
+          setOpenApp(null);
           gtaAudio.stopHeistBgm();
           gtaAudio.playBustedSfx();
         }
         return nextHeat;
       });
 
-      // Emit concise malware execution telemetry logs
       const roll = Math.random();
       if (publishedFakeAsliPkg && roll < 0.42) {
         pushLog(
@@ -418,7 +420,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const handleOpenApp = (app: DesktopAppId) => {
     gtaAudio.playCyberClickSfx();
     setPublishWarning(null);
-    setActiveApp(app);
+    setOpenApp(app);
   };
 
   const getModuleCost = (mod: MalwareModuleDef, lv: number) =>
@@ -614,6 +616,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
         gtaAudio.stopHeistBgm();
         const updated = completeCheaterMission();
         setCompleted(true);
+        setOpenApp(null);
         onMissionSuccess?.(updated);
         setStage('victory_anim');
       }
@@ -624,6 +627,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
       if (nextHeat >= 100 && !detectedRef.current && !wonRef.current) {
         detectedRef.current = true;
         setIsDetected(true);
+        setOpenApp(null);
         gtaAudio.stopHeistBgm();
         gtaAudio.playBustedSfx();
       }
@@ -655,39 +659,80 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const scrubLeftSec = Math.max(0, Math.ceil((scrubCooldownUntil - nowTick) / 1000));
   const modBoostLeftSec = Math.max(0, Math.ceil((modBoostCooldownUntil - nowTick) / 1000));
   const asliBoostLeftSec = Math.max(0, Math.ceil((asliBoostCooldownUntil - nowTick) / 1000));
+  const totalUpgradesBought =
+    moduleLevels.dropper + moduleLevels.stealth + moduleLevels.botnet + moduleLevels.ssl;
 
-  const dockApps: {
+  const desktopApps: {
     id: DesktopAppId;
     label: string;
     shortLabel: string;
+    subtitle: string;
     icon: typeof Bug;
-    badgeText?: string;
+    statusText: string;
     isLive?: boolean;
+    isReady?: boolean;
   }[] = [
-    { id: 'store', label: 'Store Malware', shortLabel: 'Malware', icon: Bug },
-    { id: 'cheat', label: 'Cheat Code GTB 6', shortLabel: 'Cheat', icon: Terminal },
+    {
+      id: 'store',
+      label: 'Store Malware',
+      shortLabel: 'Malware',
+      subtitle: 'Upgrade modul & stealth payload',
+      icon: Bug,
+      statusText: `${totalUpgradesBought}/12 Modul`,
+    },
+    {
+      id: 'cheat',
+      label: 'Cheat Code GTB 6',
+      shortLabel: 'Cheat',
+      subtitle: 'Buat kode promo umpan korban',
+      icon: Terminal,
+      statusText: activeBaitObj ? `+${activeBaitObj.victimBoostPct}% Tarik` : 'Pilih Umpan',
+    },
     {
       id: 'studio',
       label: 'GTB Studio',
       shortLabel: 'Studio',
+      subtitle: 'Rakit GTB Mod / Asli (Palsu)',
       icon: Wrench,
-      badgeText: builtModPkg || builtFakeAsliPkg ? 'Siap' : undefined,
+      statusText:
+        builtModPkg || builtFakeAsliPkg
+          ? `${builtModPkg ? 'Mod' : ''}${builtModPkg && builtFakeAsliPkg ? ' & ' : ''}${
+              builtFakeAsliPkg ? 'Asli' : ''
+            } Siap`
+          : 'Belum Build',
+      isReady: Boolean(builtModPkg || builtFakeAsliPkg),
     },
     {
       id: 'publish_mod',
       label: 'Publish GTB Mod',
       shortLabel: 'Pub Mod',
+      subtitle: 'Rilis paket mod stabil',
       icon: Upload,
+      statusText: publishedModPkg
+        ? `Live v${publishedModPkg.version}`
+        : builtModPkg
+        ? 'Siap Rilis'
+        : 'Perlu Build',
       isLive: Boolean(publishedModPkg),
+      isReady: Boolean(builtModPkg && !publishedModPkg),
     },
     {
       id: 'publish_asli',
       label: 'Publish GTB Asli (Palsu)',
       shortLabel: 'Pub Asli',
+      subtitle: 'Rilis game palsu gelombang besar',
       icon: Rocket,
+      statusText: publishedFakeAsliPkg
+        ? `Live v${publishedFakeAsliPkg.version}`
+        : builtFakeAsliPkg
+        ? 'Siap Rilis'
+        : 'Perlu Build',
       isLive: Boolean(publishedFakeAsliPkg),
+      isReady: Boolean(builtFakeAsliPkg && !publishedFakeAsliPkg),
     },
   ];
+
+  const activeAppMeta = desktopApps.find((a) => a.id === openApp);
 
   return (
     <>
@@ -726,7 +771,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
             }
           >
             {stage === 'briefing' && (
-              <div className="w-full max-h-[70dvh] overflow-y-auto flex flex-col justify-center p-4 sm:p-6">
+              <div className="w-full max-h-[min(68dvh,calc(92dvh-120px))] overflow-y-auto p-4 sm:p-6">
                 <div className="w-full max-w-2xl mx-auto space-y-4">
                   <div className="rounded-2xl bg-[#3B146B]/65 border border-[#7B208F]/70 p-4 space-y-2">
                     <div className="flex items-center gap-2 text-[#FFB458] text-xs font-extrabold uppercase tracking-wider">
@@ -802,32 +847,40 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
             )}
 
             {stage === 'playing' && (
-              <div className="w-full h-full flex flex-col p-2 sm:p-3 overflow-hidden">
-                {/* Underground Laptop Shell */}
-                <div className="flex-1 min-h-0 flex flex-col rounded-2xl bg-[#100720] border border-[#C9349B]/40 shadow-2xl overflow-hidden text-white">
-                  {/* Laptop Top Bar */}
-                  <div className="px-3 py-2 bg-[#1D0B38] border-b border-white/10 flex flex-wrap items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-[#7B208F]/50 border border-[#C9349B]/50 flex items-center justify-center text-[#FFB458]">
-                        <Laptop size={14} />
+              <div className="w-full max-h-[min(68dvh,calc(92dvh-120px))] overflow-y-auto p-2.5 sm:p-4 text-white">
+                <div className="w-full max-w-4xl mx-auto flex flex-col gap-3">
+                  {/* Compact Laptop Top Bar: Victims, Credits & Heat */}
+                  <div className="rounded-2xl bg-[#1D0B38] border border-[#C9349B]/40 p-3 sm:p-3.5 space-y-2.5 shadow-lg">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-xl bg-[#7B208F]/60 border border-[#C9349B]/50 flex items-center justify-center text-[#FFB458] shrink-0">
+                          <Laptop size={15} />
+                        </div>
+                        <div>
+                          <p className="text-xs sm:text-sm font-extrabold text-white leading-tight">
+                            Underground Laptop
+                          </p>
+                          <p className="text-[11px] text-white/65">
+                            Ketuk aplikasi untuk membuka popup kontrol
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs font-extrabold tracking-tight text-white leading-none">
-                          Underground Laptop
-                        </p>
-                        <p className="text-[10px] text-white/60 mt-0.5">
-                          Target 1.000 unduhan aktif
-                        </p>
+
+                      <div className="px-3 py-1 rounded-xl bg-[#3B146B] border border-[#FFB458]/45 font-mono tabular-nums text-xs font-extrabold text-[#FFB458]">
+                        {credits} Kredit
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                      {/* Victim Bar */}
-                      <div className="flex items-center gap-2 bg-[#120726] border border-white/10 rounded-lg px-2.5 py-1">
-                        <span className="text-[11px] font-mono tabular-nums font-bold text-[#FFB458]">
-                          Korban: {victims.toLocaleString('id-ID')} / 1.000
-                        </span>
-                        <div className="w-16 sm:w-24 h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      {/* Victim Progress */}
+                      <div className="rounded-xl bg-[#120726] border border-white/10 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums font-bold">
+                          <span className="text-white/80">Target Korban</span>
+                          <span className="text-[#FFB458]">
+                            {victims.toLocaleString('id-ID')} / 1.000 ({victimPct}%)
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
                           <div
                             className="h-full rounded-full transition-all duration-300"
                             style={{
@@ -838,677 +891,145 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
                         </div>
                       </div>
 
-                      {/* Operation Credits */}
-                      <div className="px-2.5 py-1 rounded-lg bg-[#3B146B] border border-[#FFB458]/40 font-mono tabular-nums text-[11px] font-extrabold text-[#FFB458]">
-                        {credits} Kredit
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Desktop Main Workspace (Active Window + Side Telemetry/Heat) */}
-                  <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_275px] overflow-hidden">
-                    {/* Active App Window */}
-                    <div className="min-h-0 overflow-y-auto p-3 sm:p-4 bg-[#140A26]">
-                      {/* Window Title Header */}
-                      <div className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-white/10">
-                        <div className="flex items-center gap-2">
-                          {activeApp === 'store' && <Bug size={16} className="text-[#F36A78]" />}
-                          {activeApp === 'cheat' && <Terminal size={16} className="text-[#FFB458]" />}
-                          {activeApp === 'studio' && <Wrench size={16} className="text-[#FF9B55]" />}
-                          {activeApp === 'publish_mod' && <Upload size={16} className="text-[#C9349B]" />}
-                          {activeApp === 'publish_asli' && <Rocket size={16} className="text-[#F87572]" />}
-                          <h3 className="text-sm font-extrabold tracking-tight text-white">
-                            {dockApps.find((a) => a.id === activeApp)?.label}
-                          </h3>
-                        </div>
-                        <span className="text-[11px] text-white/65 font-mono">
-                          {activeApp === 'store' && 'Modul & Payload'}
-                          {activeApp === 'cheat' && 'Generator Umpan'}
-                          {activeApp === 'studio' && 'Perakit Paket'}
-                          {activeApp === 'publish_mod' && 'Distribusi Mod'}
-                          {activeApp === 'publish_asli' && 'Distribusi Fake Full'}
-                        </span>
-                      </div>
-
-                      {/* APP 1: STORE MALWARE */}
-                      {activeApp === 'store' && (
-                        <div className="space-y-3">
-                          <div className="rounded-xl bg-[#1D0B38] border border-white/10 p-3 flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-xs font-bold text-[#FFB458]">
-                                Payload Aktif untuk GTB Studio
-                              </p>
-                              <p className="text-xs text-white/80 mt-0.5 font-mono">
-                                {activePayloadObj.name}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenApp('studio')}
-                              className="px-3 py-1.5 rounded-lg bg-[#7B208F] hover:bg-[#C9349B] text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
-                            >
-                              Ke GTB Studio
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {MALWARE_MODULES.map((mod) => {
-                              const lv = moduleLevels[mod.id];
-                              const isMax = lv >= mod.maxLevel;
-                              const cost = getModuleCost(mod, lv);
-                              const canBuy = !isMax && credits >= cost;
-                              const isSelected = selectedPayloadId === mod.id && lv > 0;
-
-                              return (
-                                <div
-                                  key={mod.id}
-                                  className={`rounded-xl border p-3 flex flex-col justify-between gap-2.5 transition-colors ${
-                                    isSelected
-                                      ? 'bg-[#29104E] border-[#FFB458]/70'
-                                      : 'bg-[#1A0B33] border-white/10'
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="text-xs font-extrabold text-white">
-                                        {mod.name}
-                                      </span>
-                                      <span className="text-[10px] font-mono font-bold text-[#FFB458]">
-                                        Lv {lv}/{mod.maxLevel}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-white/70 mt-1 leading-relaxed">
-                                      {mod.desc}
-                                    </p>
-                                  </div>
-
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUpgradeModule(mod)}
-                                      disabled={!canBuy}
-                                      className={`flex-1 min-h-[34px] px-2.5 rounded-lg text-[11px] font-extrabold font-mono transition-all ${
-                                        isMax
-                                          ? 'bg-white/10 text-white/50 cursor-default'
-                                          : canBuy
-                                          ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
-                                          : 'bg-white/10 text-white/40 cursor-not-allowed'
-                                      }`}
-                                    >
-                                      {isMax ? 'MAKS' : `${lv === 0 ? 'Beli' : 'Upgrade'} (${cost})`}
-                                    </button>
-
-                                    {lv > 0 && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          gtaAudio.playCyberClickSfx();
-                                          setSelectedPayloadId(mod.id);
-                                        }}
-                                        className={`min-h-[34px] px-2.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          isSelected
-                                            ? 'bg-[#FFB458] text-[#111827] border-[#FFB458]'
-                                            : 'bg-white/5 text-white/80 border-white/15 hover:bg-white/10'
-                                        }`}
-                                      >
-                                        {isSelected ? 'Dipilih' : 'Pakai'}
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* APP 2: CHEAT CODE GTB 6 */}
-                      {activeApp === 'cheat' && (
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <p className="text-xs text-white/80">
-                              Pilih atau buat kode promo palsu sebagai umpan unduhan korban.
-                            </p>
-                            <button
-                              type="button"
-                              onClick={handleGenerateCheatCode}
-                              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold inline-flex items-center gap-1.5 hover:brightness-110 active:scale-95 cursor-pointer shadow-sm"
-                            >
-                              <RefreshCw size={12} />
-                              <span>Generate Kode Baru</span>
-                            </button>
-                          </div>
-
-                          <div className="space-y-2">
-                            {cheatBaits.map((bait) => {
-                              const selected = selectedBaitId === bait.id;
-                              return (
-                                <button
-                                  key={bait.id}
-                                  type="button"
-                                  onClick={() => {
-                                    gtaAudio.playCyberClickSfx();
-                                    setSelectedBaitId(selected ? null : bait.id);
-                                  }}
-                                  className={`w-full text-left rounded-xl border p-3 flex items-center justify-between gap-3 transition-all cursor-pointer ${
-                                    selected
-                                      ? 'bg-[#2B1052] border-[#FFB458]'
-                                      : 'bg-[#1A0B33] border-white/10 hover:border-white/25'
-                                  }`}
-                                >
-                                  <div className="min-w-0">
-                                    <p className="font-mono text-xs sm:text-sm font-extrabold text-[#FFB458] truncate">
-                                      {bait.code}
-                                    </p>
-                                    <p className="text-[11px] text-white/75 mt-0.5 truncate">
-                                      {bait.label}
-                                    </p>
-                                  </div>
-                                  <div className="text-right shrink-0">
-                                    <span className="block text-[11px] font-mono font-bold text-emerald-400">
-                                      +{bait.victimBoostPct}% Korban
-                                    </span>
-                                    <span className="block text-[10px] font-mono text-[#F36A78]">
-                                      +{bait.heatAdd}% Heat/tick
-                                    </span>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* APP 3: GTB STUDIO */}
-                      {activeApp === 'studio' && (
-                        <div className="space-y-3.5">
-                          {/* Step 1: Build Type */}
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-white/70 mb-1.5">
-                              1. Pilih Tipe Paket
-                            </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  gtaAudio.playCyberClickSfx();
-                                  setStudioBuildType('gtb_mod');
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                                  studioBuildType === 'gtb_mod'
-                                    ? 'bg-[#2B1052] border-[#C9349B]'
-                                    : 'bg-[#1A0B33] border-white/10 hover:border-white/25'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-extrabold text-white">
-                                    GTB 6 Mod
-                                  </span>
-                                  <Upload size={14} className="text-[#C9349B]" />
-                                </div>
-                                <p className="text-[11px] text-white/70 mt-1">
-                                  Stabil &amp; lebih aman dari deteksi, aliran korban konstan.
-                                </p>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  gtaAudio.playCyberClickSfx();
-                                  setStudioBuildType('gtb_asli_palsu');
-                                }}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                                  studioBuildType === 'gtb_asli_palsu'
-                                    ? 'bg-[#2B1052] border-[#FF9B55]'
-                                    : 'bg-[#1A0B33] border-white/10 hover:border-white/25'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-extrabold text-white">
-                                    GTB 6 Asli (Palsu)
-                                  </span>
-                                  <Rocket size={14} className="text-[#FF9B55]" />
-                                </div>
-                                <p className="text-[11px] text-white/70 mt-1">
-                                  Gelombang korban besar &amp; cepat, risiko Heat lebih tinggi.
-                                </p>
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Step 2: Malware Payload */}
-                          <div>
-                            <p className="text-[11px] font-bold uppercase tracking-wider text-white/70 mb-1.5">
-                              2. Pasang Payload dari Store Malware
-                            </p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {ownedPayloads.map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  disabled={!p.unlocked}
-                                  onClick={() => {
-                                    gtaAudio.playCyberClickSfx();
-                                    setSelectedPayloadId(p.id);
-                                  }}
-                                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center gap-1.5 ${
-                                    !p.unlocked
-                                      ? 'bg-white/5 border-white/10 text-white/35 cursor-not-allowed'
-                                      : activePayloadObj.id === p.id
-                                      ? 'bg-[#FFB458] text-[#111827] border-[#FFB458] cursor-pointer'
-                                      : 'bg-[#1A0B33] text-white/85 border-white/15 hover:border-white/30 cursor-pointer'
-                                  }`}
-                                >
-                                  {!p.unlocked && <Lock size={10} />}
-                                  <span>{p.name}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Step 3: Cheat Bait summary */}
-                          <div className="rounded-xl bg-[#1D0B38] border border-white/10 p-3 flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">
-                                Umpan Cheat Code
-                              </p>
-                              <p className="text-xs font-mono font-bold text-[#FFB458] truncate mt-0.5">
-                                {activeBaitObj
-                                  ? `${activeBaitObj.code} (+${activeBaitObj.victimBoostPct}%)`
-                                  : 'Tanpa Umpan Cheat'}
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenApp('cheat')}
-                              className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-[11px] font-bold text-white cursor-pointer shrink-0"
-                            >
-                              Ubah
-                            </button>
-                          </div>
-
-                          {/* Build Action */}
-                          <button
-                            type="button"
-                            onClick={handleBuildPackage}
-                            disabled={isBuilding}
-                            className="relative overflow-hidden w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:brightness-105 active:scale-[0.985] cursor-pointer disabled:opacity-90"
-                          >
-                            {isBuilding && (
-                              <div
-                                className="absolute inset-y-0 left-0 bg-white/30"
-                                style={{ width: `${buildProgress}%` }}
-                              />
-                            )}
-                            <Wrench size={15} className="relative z-10" />
-                            <span className="relative z-10">
-                              {isBuilding
-                                ? `Merakit Paket... ${buildProgress}%`
-                                : `Build Paket ${
-                                    studioBuildType === 'gtb_asli_palsu'
-                                      ? 'GTB 6 Asli (Palsu)'
-                                      : 'GTB 6 Mod'
-                                  }`}
-                            </span>
-                          </button>
-
-                          {(builtModPkg || builtFakeAsliPkg) && (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                              {builtModPkg && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenApp('publish_mod')}
-                                  className="p-2.5 rounded-xl bg-[#3B146B]/70 border border-[#C9349B]/60 text-left hover:bg-[#3B146B] transition-colors cursor-pointer"
-                                >
-                                  <p className="text-[10px] font-bold text-[#FFB458] uppercase">
-                                    Mod Siap Publikasi (v{builtModPkg.version})
-                                  </p>
-                                  <p className="text-[11px] text-white/80 mt-0.5 truncate">
-                                    Klik untuk buka Publish GTB Mod
-                                  </p>
-                                </button>
-                              )}
-                              {builtFakeAsliPkg && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenApp('publish_asli')}
-                                  className="p-2.5 rounded-xl bg-[#3B146B]/70 border border-[#FF9B55]/60 text-left hover:bg-[#3B146B] transition-colors cursor-pointer"
-                                >
-                                  <p className="text-[10px] font-bold text-[#FFB458] uppercase">
-                                    Asli (Palsu) Siap (v{builtFakeAsliPkg.version})
-                                  </p>
-                                  <p className="text-[11px] text-white/80 mt-0.5 truncate">
-                                    Klik untuk buka Publish GTB Asli (Palsu)
-                                  </p>
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* APP 4: PUBLISH GTB MOD */}
-                      {activeApp === 'publish_mod' && (
-                        <div className="space-y-3">
-                          {publishWarning && (
-                            <div className="rounded-xl bg-rose-950/70 border border-[#F36A78] p-3 flex items-start justify-between gap-2">
-                              <div className="flex items-start gap-2 text-xs text-rose-100">
-                                <AlertTriangle size={15} className="text-[#F36A78] shrink-0 mt-0.5" />
-                                <span>{publishWarning}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setStudioBuildType('gtb_mod');
-                                  handleOpenApp('studio');
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-[#F36A78] text-[#111827] text-[11px] font-extrabold shrink-0 cursor-pointer"
-                              >
-                                Buka Studio
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="rounded-xl bg-[#1D0B38] border border-white/10 p-3.5 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-extrabold text-white">
-                                Paket Build GTB 6 Mod
-                              </span>
-                              <span
-                                className={`text-[10px] font-mono font-bold ${
-                                  publishedModPkg
-                                    ? 'text-emerald-400'
-                                    : builtModPkg
-                                    ? 'text-[#FFB458]'
-                                    : 'text-white/50'
-                                }`}
-                              >
-                                {publishedModPkg
-                                  ? `LIVE v${publishedModPkg.version}`
-                                  : builtModPkg
-                                  ? `SIAP v${builtModPkg.version}`
-                                  : 'BELUM DIRAKIT'}
-                              </span>
-                            </div>
-
-                            {builtModPkg ? (
-                              <div className="text-xs text-white/80 space-y-1 font-mono">
-                                <p>Payload: {builtModPkg.payloadName}</p>
-                                <p>
-                                  Umpan: {builtModPkg.cheatBait ? builtModPkg.cheatBait.code : 'Tanpa Umpan'}
-                                </p>
-                                <p className="text-[#FFB458]">
-                                  Estimasi: ~{builtModPkg.victimsPerTick} korban/detik
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-white/65">
-                                Rakit paket tipe GTB 6 Mod di GTB Studio agar bisa dipublikasikan.
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={handlePublishMod}
-                              className="flex-1 min-h-[42px] px-4 rounded-xl bg-gradient-to-r from-[#7B208F] to-[#C9349B] text-white font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.985] cursor-pointer shadow-md"
-                            >
-                              <Upload size={15} />
-                              <span>
-                                {publishedModPkg &&
-                                builtModPkg &&
-                                publishedModPkg.version === builtModPkg.version
-                                  ? 'GTB 6 Mod Sedang Live'
-                                  : 'Publish GTB 6 Mod'}
-                              </span>
-                            </button>
-
-                            {publishedModPkg && (
-                              <button
-                                type="button"
-                                onClick={() => handleManualWaveBoost('mod')}
-                                disabled={modBoostLeftSec > 0}
-                                className="min-h-[42px] px-3.5 rounded-xl bg-[#FFB458] text-[#111827] font-extrabold text-xs inline-flex items-center gap-1.5 hover:brightness-105 active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                              >
-                                <Zap size={14} />
-                                <span>
-                                  {modBoostLeftSec > 0
-                                    ? `Tunggu ${modBoostLeftSec}s`
-                                    : 'Sebar Link Forum'}
-                                </span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* APP 5: PUBLISH GTB ASLI (PALSU) */}
-                      {activeApp === 'publish_asli' && (
-                        <div className="space-y-3">
-                          {publishWarning && (
-                            <div className="rounded-xl bg-rose-950/70 border border-[#F36A78] p-3 flex items-start justify-between gap-2">
-                              <div className="flex items-start gap-2 text-xs text-rose-100">
-                                <AlertTriangle size={15} className="text-[#F36A78] shrink-0 mt-0.5" />
-                                <span>{publishWarning}</span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setStudioBuildType('gtb_asli_palsu');
-                                  handleOpenApp('studio');
-                                }}
-                                className="px-2.5 py-1 rounded-lg bg-[#F36A78] text-[#111827] text-[11px] font-extrabold shrink-0 cursor-pointer"
-                              >
-                                Buka Studio
-                              </button>
-                            </div>
-                          )}
-
-                          <div className="rounded-xl bg-[#1D0B38] border border-white/10 p-3.5 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-extrabold text-white">
-                                Paket Build GTB 6 Asli (Palsu)
-                              </span>
-                              <span
-                                className={`text-[10px] font-mono font-bold ${
-                                  publishedFakeAsliPkg
-                                    ? 'text-emerald-400'
-                                    : builtFakeAsliPkg
-                                    ? 'text-[#FFB458]'
-                                    : 'text-white/50'
-                                }`}
-                              >
-                                {publishedFakeAsliPkg
-                                  ? `LIVE v${publishedFakeAsliPkg.version}`
-                                  : builtFakeAsliPkg
-                                  ? `SIAP v${builtFakeAsliPkg.version}`
-                                  : 'BELUM DIRAKIT'}
-                              </span>
-                            </div>
-
-                            {builtFakeAsliPkg ? (
-                              <div className="text-xs text-white/80 space-y-1 font-mono">
-                                <p>Payload: {builtFakeAsliPkg.payloadName}</p>
-                                <p>
-                                  Umpan:{' '}
-                                  {builtFakeAsliPkg.cheatBait
-                                    ? builtFakeAsliPkg.cheatBait.code
-                                    : 'Tanpa Umpan'}
-                                </p>
-                                <p className="text-[#FFB458]">
-                                  Estimasi: ~{builtFakeAsliPkg.victimsPerTick} korban/detik (Dampak Tinggi)
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-white/65">
-                                Rakit paket tipe GTB 6 Asli (Palsu) di GTB Studio untuk gelombang
-                                korban besar.
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              onClick={handlePublishFakeAsli}
-                              className="flex-1 min-h-[42px] px-4 rounded-xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.985] cursor-pointer shadow-md"
-                            >
-                              <Rocket size={15} />
-                              <span>
-                                {publishedFakeAsliPkg &&
-                                builtFakeAsliPkg &&
-                                publishedFakeAsliPkg.version === builtFakeAsliPkg.version
-                                  ? 'GTB Asli (Palsu) Sedang Live'
-                                  : 'Publish GTB Asli (Palsu)'}
-                              </span>
-                            </button>
-
-                            {publishedFakeAsliPkg && (
-                              <button
-                                type="button"
-                                onClick={() => handleManualWaveBoost('asli')}
-                                disabled={asliBoostLeftSec > 0}
-                                className="min-h-[42px] px-3.5 rounded-xl bg-[#C9349B] text-white font-extrabold text-xs inline-flex items-center gap-1.5 hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-                              >
-                                <Zap size={14} />
-                                <span>
-                                  {asliBoostLeftSec > 0
-                                    ? `Tunggu ${asliBoostLeftSec}s`
-                                    : 'Dorong Wave Viral'}
-                                </span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Right Side Panel: Detection/Heat Meter + Live Malware Log Feed */}
-                    <aside className="min-h-0 flex flex-col border-t lg:border-t-0 lg:border-l border-white/10 bg-[#120724]">
-                      {/* Detection / Heat Meter */}
-                      <div className="p-3 border-b border-white/10 space-y-2 shrink-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-white/85">
+                      {/* Detection / Heat Meter + Quick Scrub */}
+                      <div className="rounded-xl bg-[#120726] border border-white/10 p-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums font-bold">
+                          <span className="inline-flex items-center gap-1 text-white/80">
                             <Shield
-                              size={13}
+                              size={12}
                               className={heat >= 80 ? 'text-[#F36A78]' : 'text-[#FFB458]'}
                             />
                             <span>Deteksi / Heat</span>
                           </span>
                           <span
-                            className={`text-xs font-mono font-extrabold tabular-nums ${
+                            className={
                               heat >= 80
                                 ? 'text-[#F36A78]'
                                 : heat >= 45
                                 ? 'text-[#FFB458]'
                                 : 'text-emerald-400'
-                            }`}
+                            }
                           >
                             {heat.toFixed(1)}% · {heatStatusLabel}
                           </span>
                         </div>
-
-                        <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${Math.min(100, heat)}%`,
-                              background:
-                                heat >= 80
-                                  ? 'linear-gradient(90deg, #F36A78 0%, #EF4444 100%)'
-                                  : 'linear-gradient(90deg, #7B208F 0%, #FF9B55 100%)',
-                            }}
-                          />
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={handleScrubLogs}
-                          disabled={scrubLeftSec > 0 || credits < 30 || heat <= 0}
-                          className="w-full min-h-[32px] px-2.5 rounded-lg bg-[#3B146B] hover:bg-[#7B208F] disabled:opacity-45 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 border border-white/15 transition-colors cursor-pointer disabled:cursor-not-allowed"
-                        >
-                          <RotateCcw size={12} />
-                          <span>
-                            {scrubLeftSec > 0
-                              ? `Pendinginan (${scrubLeftSec}s)`
-                              : 'Hapus Jejak (-22% Heat · 30 Kredit)'}
-                          </span>
-                        </button>
-                      </div>
-
-                      {/* Live Activity / Malware Feed */}
-                      <div className="flex-1 min-h-[120px] max-h-[175px] lg:max-h-none flex flex-col p-3 overflow-hidden">
-                        <div className="flex items-center justify-between gap-2 mb-1.5 shrink-0">
-                          <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-white/75">
-                            <Activity size={12} className="text-[#C9349B]" />
-                            <span>Log Aktivitas Malware</span>
-                          </span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 font-mono text-[10px] leading-relaxed">
-                          {logs.map((entry) => (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
                             <div
-                              key={entry.id}
-                              className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-2 py-1.5 text-white/80"
-                            >
-                              <span className="text-white/45 mr-1.5">{entry.time}</span>
-                              <span
-                                className={`font-bold mr-1.5 ${
-                                  entry.tag === 'WARN' || entry.tag === 'ALERT'
-                                    ? 'text-[#F36A78]'
-                                    : entry.tag === 'PUBLISH' || entry.tag === 'INJECT'
-                                    ? 'text-[#FFB458]'
-                                    : entry.tag === 'BUILD'
-                                    ? 'text-emerald-400'
-                                    : 'text-[#C9349B]'
-                                }`}
-                              >
-                                [{entry.tag}]
-                              </span>
-                              <span>{entry.text}</span>
-                            </div>
-                          ))}
+                              className="h-full rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.min(100, heat)}%`,
+                                background:
+                                  heat >= 80
+                                    ? 'linear-gradient(90deg, #F36A78 0%, #EF4444 100%)'
+                                    : 'linear-gradient(90deg, #7B208F 0%, #FF9B55 100%)',
+                              }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleScrubLogs}
+                            disabled={scrubLeftSec > 0 || credits < 30 || heat <= 0}
+                            className="px-2.5 py-1 rounded-lg bg-[#3B146B] hover:bg-[#7B208F] disabled:opacity-45 text-white text-[10px] font-bold inline-flex items-center gap-1 border border-white/15 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                          >
+                            <RotateCcw size={10} />
+                            <span>
+                              {scrubLeftSec > 0 ? `${scrubLeftSec}s` : 'Hapus Jejak (30)'}
+                            </span>
+                          </button>
                         </div>
                       </div>
-                    </aside>
+                    </div>
                   </div>
 
-                  {/* Bottom 5-App Taskbar / Dock */}
-                  <nav
-                    aria-label="Taskbar Aplikasi Laptop"
-                    className="px-2 py-1.5 bg-[#1D0B38] border-t border-white/10 grid grid-cols-5 gap-1.5 shrink-0"
-                  >
-                    {dockApps.map((app) => {
+                  {/* 5 Desktop App Launcher Grid (Comfortable on Android & Desktop) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {desktopApps.map((app) => {
                       const Icon = app.icon;
-                      const isActive = activeApp === app.id;
                       return (
                         <button
                           key={app.id}
                           type="button"
                           onClick={() => handleOpenApp(app.id)}
-                          className={`relative min-h-[40px] px-1.5 py-1 rounded-xl flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-gradient-to-r from-[#7B208F] to-[#C9349B] text-white border border-[#FFB458]/60 shadow-sm'
-                              : 'bg-white/[0.05] hover:bg-white/[0.1] text-white/75 border border-transparent'
-                          }`}
+                          className="text-left rounded-2xl bg-[#1D0B38] hover:bg-[#29104E] active:scale-[0.985] border border-white/12 hover:border-[#C9349B] p-3 flex items-center justify-between gap-3 transition-all cursor-pointer shadow-sm"
                         >
-                          <Icon size={14} className="shrink-0" />
-                          <span className="truncate max-w-full">{app.shortLabel}</span>
-                          {app.isLive && (
-                            <span
-                              className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"
-                              title="Aktif"
-                            />
-                          )}
-                          {!app.isLive && app.badgeText && (
-                            <span className="hidden md:inline text-[9px] font-mono text-[#FFB458]">
-                              {app.badgeText}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                                app.isLive
+                                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                                  : app.isReady
+                                  ? 'bg-[#FFB458]/20 border-[#FFB458]/50 text-[#FFB458]'
+                                  : 'bg-[#7B208F]/45 border-[#C9349B]/50 text-[#FFB458]'
+                              }`}
+                            >
+                              <Icon size={18} strokeWidth={2.3} />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs sm:text-sm font-extrabold text-white truncate">
+                                {app.label}
+                              </p>
+                              <p className="text-[11px] text-white/65 truncate mt-0.5">
+                                {app.subtitle}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span
+                            className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-lg shrink-0 ${
+                              app.isLive
+                                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
+                                : app.isReady
+                                ? 'bg-[#FFB458]/20 text-[#FFB458] border border-[#FFB458]/40'
+                                : 'bg-white/10 text-white/75'
+                            }`}
+                          >
+                            {app.statusText}
+                          </span>
                         </button>
                       );
                     })}
-                  </nav>
+                  </div>
+
+                  {/* Live Activity / Malware Log Feed */}
+                  <div className="rounded-2xl bg-[#120724] border border-white/10 p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-white/80">
+                        <Activity size={13} className="text-[#C9349B]" />
+                        <span>Log Aktivitas Malware</span>
+                      </span>
+                      <span className="text-[10px] font-mono text-white/55">
+                        {publishedModPkg || publishedFakeAsliPkg
+                          ? 'Distribusi Aktif'
+                          : 'Menunggu Publish'}
+                      </span>
+                    </div>
+
+                    <div className="max-h-[150px] overflow-y-auto space-y-1.5 pr-1 font-mono text-[10px] sm:text-[11px] leading-relaxed">
+                      {logs.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-lg bg-white/[0.04] border border-white/[0.06] px-2.5 py-1.5 text-white/85"
+                        >
+                          <span className="text-white/45 mr-1.5">{entry.time}</span>
+                          <span
+                            className={`font-bold mr-1.5 ${
+                              entry.tag === 'WARN' || entry.tag === 'ALERT'
+                                ? 'text-[#F36A78]'
+                                : entry.tag === 'PUBLISH' || entry.tag === 'INJECT'
+                                ? 'text-[#FFB458]'
+                                : entry.tag === 'BUILD'
+                                ? 'text-emerald-400'
+                                : 'text-[#C9349B]'
+                            }`}
+                          >
+                            [{entry.tag}]
+                          </span>
+                          <span>{entry.text}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1516,57 +1037,661 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
         )}
       </AnimatePresence>
 
-      {/* External Full-Viewport Detected Modal (100% Heat) */}
+      {/* External Full-Viewport Popups Portaled to document.body (Escape-from-Prison Shop style, scrollable top-to-bottom on Android) */}
       {typeof document !== 'undefined' &&
         createPortal(
-          <AnimatePresence>
-            {isOpen && stage === 'playing' && isDetected && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
-                className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 select-none"
-                role="alertdialog"
-                aria-modal="true"
-                aria-label="Terdeteksi"
-              >
+          <>
+            <AnimatePresence>
+              {isOpen && stage === 'playing' && openApp && !isDetected && activeAppMeta && (
                 <motion.div
-                  initial={{ y: 14, opacity: 0, scale: 0.96 }}
-                  animate={{ y: 0, opacity: 1, scale: 1 }}
-                  exit={{ y: 10, opacity: 0, scale: 0.96 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
                   transition={{ duration: 0.18 }}
-                  className="max-w-sm w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-5 text-center space-y-3.5 shadow-2xl"
+                  onClick={() => setOpenApp(null)}
+                  className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 select-none"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={activeAppMeta.label}
                 >
-                  <div className="w-12 h-12 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
-                    <AlertTriangle size={24} strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-wide text-[#F36A78]">
-                      TERDETEKSI!
-                    </h3>
-                    <p className="text-xs sm:text-sm text-white/85 mt-1.5 leading-relaxed">
-                      Deteksi / Heat mencapai 100% sebelum 1.000 korban tercapai. Gunakan Rootkit
-                      Stealth dan hapus jejak lebih rutin.
-                    </p>
-                    <p className="text-xs font-mono font-bold text-[#FFB458] mt-2">
-                      Korban terakhir: {victims.toLocaleString('id-ID')} / 1.000
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      resetSimulation();
-                      gtaAudio.startCheaterBgm();
-                    }}
-                    className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer transition-all"
+                  <motion.div
+                    initial={{ y: 14, opacity: 0, scale: 0.96 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 10, opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.18 }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-[#250D47] border-2 border-[#C9349B] p-4 sm:p-5 shadow-2xl space-y-3.5 text-white"
                   >
-                    Coba Lagi
-                  </button>
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-full bg-[#C9349B]/25 border border-[#FFB458]/50 text-[#FFB458] flex items-center justify-center shrink-0">
+                          {(() => {
+                            const Icon = activeAppMeta.icon;
+                            return <Icon size={17} strokeWidth={2.5} />;
+                          })()}
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
+                            {activeAppMeta.label}
+                          </h3>
+                          <p className="text-[11px] text-white/75 truncate">
+                            {activeAppMeta.subtitle}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setOpenApp(null)}
+                        aria-label="Tutup Aplikasi"
+                        className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                      >
+                        <X size={18} strokeWidth={2.5} />
+                      </button>
+                    </div>
+
+                    {/* Quick Status Bar */}
+                    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#3B146B]/85 border border-white/10 text-[11px] font-mono tabular-nums font-bold">
+                      <span className="text-[#FFB458]">
+                        {victims.toLocaleString('id-ID')} / 1.000 Korban
+                      </span>
+                      <span className="text-white/90">{credits} Kredit</span>
+                      <span className={heat >= 80 ? 'text-[#F36A78]' : 'text-emerald-300'}>
+                        Heat {heat.toFixed(0)}%
+                      </span>
+                    </div>
+
+                    {/* Quick App Switcher Tabs inside Popup */}
+                    <div className="grid grid-cols-5 gap-1 bg-[#16082C] p-1 rounded-xl border border-white/10">
+                      {desktopApps.map((tab) => {
+                        const TabIcon = tab.icon;
+                        const active = openApp === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => handleOpenApp(tab.id)}
+                            className={`py-1.5 px-1 rounded-lg flex flex-col items-center justify-center gap-0.5 text-[9px] font-bold transition-colors cursor-pointer ${
+                              active
+                                ? 'bg-gradient-to-r from-[#7B208F] to-[#C9349B] text-white'
+                                : 'text-white/65 hover:text-white hover:bg-white/5'
+                            }`}
+                          >
+                            <TabIcon size={13} />
+                            <span className="truncate max-w-full">{tab.shortLabel}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* APP 1: STORE MALWARE */}
+                    {openApp === 'store' && (
+                      <div className="space-y-2.5">
+                        <div className="rounded-xl bg-[#3B146B]/70 border border-white/10 p-3 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-[#FFB458]">
+                              Payload Aktif untuk Studio
+                            </p>
+                            <p className="text-xs text-white font-mono truncate mt-0.5">
+                              {activePayloadObj.name}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenApp('studio')}
+                            className="px-3 py-1.5 rounded-lg bg-[#C9349B] hover:brightness-110 text-white text-xs font-bold shrink-0 cursor-pointer"
+                          >
+                            Ke Studio
+                          </button>
+                        </div>
+
+                        {MALWARE_MODULES.map((mod) => {
+                          const lv = moduleLevels[mod.id];
+                          const isMax = lv >= mod.maxLevel;
+                          const cost = getModuleCost(mod, lv);
+                          const canBuy = !isMax && credits >= cost;
+                          const isSelected = selectedPayloadId === mod.id && lv > 0;
+
+                          return (
+                            <div
+                              key={mod.id}
+                              className={`rounded-xl border p-3 space-y-2 ${
+                                isSelected
+                                  ? 'bg-[#3B146B]/85 border-[#FFB458]/70'
+                                  : 'bg-white/[0.06] border-white/10'
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs sm:text-sm font-extrabold text-white">
+                                    {mod.name} ({lv}/{mod.maxLevel})
+                                  </p>
+                                  <p className="text-[11px] text-white/75 mt-0.5 leading-relaxed">
+                                    {mod.desc}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpgradeModule(mod)}
+                                  disabled={!canBuy}
+                                  className={`flex-1 min-h-[38px] px-3 rounded-lg font-mono tabular-nums font-extrabold text-xs transition-all ${
+                                    isMax
+                                      ? 'bg-white/10 text-white/50 cursor-default'
+                                      : canBuy
+                                      ? 'bg-gradient-to-r from-[#F36A78] to-[#FFB458] text-[#111827] hover:brightness-105 active:scale-95 cursor-pointer'
+                                      : 'bg-white/10 text-white/40 cursor-not-allowed'
+                                  }`}
+                                >
+                                  {isMax
+                                    ? 'MAKS'
+                                    : `${lv === 0 ? 'Beli' : 'Upgrade'} · ${cost} Kredit`}
+                                </button>
+
+                                {lv > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      gtaAudio.playCyberClickSfx();
+                                      setSelectedPayloadId(mod.id);
+                                    }}
+                                    className={`min-h-[38px] px-3 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                                      isSelected
+                                        ? 'bg-[#FFB458] text-[#111827] border-[#FFB458]'
+                                        : 'bg-white/10 text-white border-white/15 hover:bg-white/15'
+                                    }`}
+                                  >
+                                    {isSelected ? 'Dipilih' : 'Pakai'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* APP 2: CHEAT CODE GTB 6 */}
+                    {openApp === 'cheat' && (
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-xs text-white/80">
+                            Pilih kode promo palsu sebagai umpan.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleGenerateCheatCode}
+                            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-[#C9349B] to-[#FF9B55] text-white text-xs font-extrabold inline-flex items-center gap-1.5 hover:brightness-110 active:scale-95 cursor-pointer shrink-0"
+                          >
+                            <RefreshCw size={12} />
+                            <span>Kode Baru</span>
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {cheatBaits.map((bait) => {
+                            const selected = selectedBaitId === bait.id;
+                            return (
+                              <button
+                                key={bait.id}
+                                type="button"
+                                onClick={() => {
+                                  gtaAudio.playCyberClickSfx();
+                                  setSelectedBaitId(selected ? null : bait.id);
+                                }}
+                                className={`w-full text-left rounded-xl border p-3 flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                                  selected
+                                    ? 'bg-[#3B146B] border-[#FFB458]'
+                                    : 'bg-white/[0.06] border-white/10 hover:border-white/25'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-mono text-xs sm:text-sm font-extrabold text-[#FFB458] truncate">
+                                    {bait.code}
+                                  </p>
+                                  <p className="text-[11px] text-white/75 mt-0.5 truncate">
+                                    {bait.label}
+                                  </p>
+                                </div>
+                                <div className="text-right shrink-0 font-mono">
+                                  <span className="block text-[11px] font-bold text-emerald-400">
+                                    +{bait.victimBoostPct}%
+                                  </span>
+                                  <span className="block text-[10px] text-[#F36A78]">
+                                    +{bait.heatAdd}% Heat
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* APP 3: GTB STUDIO */}
+                    {openApp === 'studio' && (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                            1. Tipe Paket
+                          </p>
+                          <div className="grid grid-cols-1 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                gtaAudio.playCyberClickSfx();
+                                setStudioBuildType('gtb_mod');
+                              }}
+                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                studioBuildType === 'gtb_mod'
+                                  ? 'bg-[#3B146B] border-[#C9349B]'
+                                  : 'bg-white/[0.06] border-white/10 hover:border-white/25'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs sm:text-sm font-extrabold text-white">
+                                  GTB 6 Mod
+                                </span>
+                                <Upload size={14} className="text-[#C9349B]" />
+                              </div>
+                              <p className="text-[11px] text-white/75 mt-0.5">
+                                Stabil &amp; lebih aman dari deteksi, aliran korban konstan.
+                              </p>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                gtaAudio.playCyberClickSfx();
+                                setStudioBuildType('gtb_asli_palsu');
+                              }}
+                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                studioBuildType === 'gtb_asli_palsu'
+                                  ? 'bg-[#3B146B] border-[#FF9B55]'
+                                  : 'bg-white/[0.06] border-white/10 hover:border-white/25'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs sm:text-sm font-extrabold text-white">
+                                  GTB 6 Asli (Palsu)
+                                </span>
+                                <Rocket size={14} className="text-[#FF9B55]" />
+                              </div>
+                              <p className="text-[11px] text-white/75 mt-0.5">
+                                Gelombang korban besar &amp; cepat, risiko Heat lebih tinggi.
+                              </p>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-white/70">
+                            2. Payload Malware
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ownedPayloads.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                disabled={!p.unlocked}
+                                onClick={() => {
+                                  gtaAudio.playCyberClickSfx();
+                                  setSelectedPayloadId(p.id);
+                                }}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center gap-1.5 ${
+                                  !p.unlocked
+                                    ? 'bg-white/5 border-white/10 text-white/35 cursor-not-allowed'
+                                    : activePayloadObj.id === p.id
+                                    ? 'bg-[#FFB458] text-[#111827] border-[#FFB458] cursor-pointer'
+                                    : 'bg-white/[0.06] text-white/85 border-white/15 hover:border-white/30 cursor-pointer'
+                                }`}
+                              >
+                                {!p.unlocked && <Lock size={10} />}
+                                <span>{p.name}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-white/60">
+                              Umpan Cheat Code
+                            </p>
+                            <p className="text-xs font-mono font-bold text-[#FFB458] truncate mt-0.5">
+                              {activeBaitObj
+                                ? `${activeBaitObj.code} (+${activeBaitObj.victimBoostPct}%)`
+                                : 'Tanpa Umpan'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenApp('cheat')}
+                            className="px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-xs font-bold text-white cursor-pointer shrink-0"
+                          >
+                            Ubah
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleBuildPackage}
+                          disabled={isBuilding}
+                          className="relative overflow-hidden w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md hover:brightness-105 active:scale-[0.985] cursor-pointer"
+                        >
+                          {isBuilding && (
+                            <div
+                              className="absolute inset-y-0 left-0 bg-white/30"
+                              style={{ width: `${buildProgress}%` }}
+                            />
+                          )}
+                          <Wrench size={15} className="relative z-10" />
+                          <span className="relative z-10">
+                            {isBuilding
+                              ? `Merakit Paket... ${buildProgress}%`
+                              : `Build ${
+                                  studioBuildType === 'gtb_asli_palsu'
+                                    ? 'GTB 6 Asli (Palsu)'
+                                    : 'GTB 6 Mod'
+                                }`}
+                          </span>
+                        </button>
+
+                        {(builtModPkg || builtFakeAsliPkg) && (
+                          <div className="space-y-2">
+                            {builtModPkg && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenApp('publish_mod')}
+                                className="w-full p-3 rounded-xl bg-[#3B146B] border border-[#C9349B]/70 text-left hover:brightness-110 transition-all cursor-pointer"
+                              >
+                                <p className="text-[11px] font-extrabold text-[#FFB458]">
+                                  Mod v{builtModPkg.version} Siap Publikasi
+                                </p>
+                                <p className="text-[11px] text-white/80 mt-0.5">
+                                  Ketuk untuk buka Publish GTB Mod
+                                </p>
+                              </button>
+                            )}
+                            {builtFakeAsliPkg && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenApp('publish_asli')}
+                                className="w-full p-3 rounded-xl bg-[#3B146B] border border-[#FF9B55]/70 text-left hover:brightness-110 transition-all cursor-pointer"
+                              >
+                                <p className="text-[11px] font-extrabold text-[#FFB458]">
+                                  Asli (Palsu) v{builtFakeAsliPkg.version} Siap Publikasi
+                                </p>
+                                <p className="text-[11px] text-white/80 mt-0.5">
+                                  Ketuk untuk buka Publish GTB Asli (Palsu)
+                                </p>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* APP 4: PUBLISH GTB MOD */}
+                    {openApp === 'publish_mod' && (
+                      <div className="space-y-3">
+                        {publishWarning && (
+                          <div className="rounded-xl bg-rose-950/75 border border-[#F36A78] p-3 space-y-2">
+                            <div className="flex items-start gap-2 text-xs text-rose-100">
+                              <AlertTriangle size={15} className="text-[#F36A78] shrink-0 mt-0.5" />
+                              <span>{publishWarning}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudioBuildType('gtb_mod');
+                                handleOpenApp('studio');
+                              }}
+                              className="w-full py-2 rounded-lg bg-[#F36A78] text-[#111827] text-xs font-extrabold cursor-pointer"
+                            >
+                              Buka GTB Studio
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs sm:text-sm font-extrabold text-white">
+                              Paket GTB 6 Mod
+                            </span>
+                            <span
+                              className={`text-[10px] font-mono font-bold ${
+                                publishedModPkg
+                                  ? 'text-emerald-400'
+                                  : builtModPkg
+                                  ? 'text-[#FFB458]'
+                                  : 'text-white/55'
+                              }`}
+                            >
+                              {publishedModPkg
+                                ? `LIVE v${publishedModPkg.version}`
+                                : builtModPkg
+                                ? `SIAP v${builtModPkg.version}`
+                                : 'BELUM DIRAKIT'}
+                            </span>
+                          </div>
+
+                          {builtModPkg ? (
+                            <div className="text-xs text-white/80 space-y-1 font-mono">
+                              <p>Payload: {builtModPkg.payloadName}</p>
+                              <p>
+                                Umpan: {builtModPkg.cheatBait ? builtModPkg.cheatBait.code : 'Tanpa Umpan'}
+                              </p>
+                              <p className="text-[#FFB458]">
+                                Kecepatan: ~{builtModPkg.victimsPerTick} korban/detik
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-white/70 leading-relaxed">
+                              Rakit paket tipe GTB 6 Mod di GTB Studio terlebih dahulu.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={handlePublishMod}
+                            className="w-full min-h-[44px] px-4 rounded-xl bg-gradient-to-r from-[#7B208F] to-[#C9349B] text-white font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 hover:brightness-110 active:scale-[0.985] cursor-pointer shadow-md"
+                          >
+                            <Upload size={15} />
+                            <span>
+                              {publishedModPkg &&
+                              builtModPkg &&
+                              publishedModPkg.version === builtModPkg.version
+                                ? 'GTB 6 Mod Sedang Live'
+                                : 'Publish GTB 6 Mod'}
+                            </span>
+                          </button>
+
+                          {publishedModPkg && (
+                            <button
+                              type="button"
+                              onClick={() => handleManualWaveBoost('mod')}
+                              disabled={modBoostLeftSec > 0}
+                              className="w-full min-h-[42px] px-3.5 rounded-xl bg-[#FFB458] text-[#111827] font-extrabold text-xs inline-flex items-center justify-center gap-1.5 hover:brightness-105 active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <Zap size={14} />
+                              <span>
+                                {modBoostLeftSec > 0
+                                  ? `Tunggu ${modBoostLeftSec}s`
+                                  : 'Sebar Link Forum (Boost Korban)'}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* APP 5: PUBLISH GTB ASLI (PALSU) */}
+                    {openApp === 'publish_asli' && (
+                      <div className="space-y-3">
+                        {publishWarning && (
+                          <div className="rounded-xl bg-rose-950/75 border border-[#F36A78] p-3 space-y-2">
+                            <div className="flex items-start gap-2 text-xs text-rose-100">
+                              <AlertTriangle size={15} className="text-[#F36A78] shrink-0 mt-0.5" />
+                              <span>{publishWarning}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudioBuildType('gtb_asli_palsu');
+                                handleOpenApp('studio');
+                              }}
+                              className="w-full py-2 rounded-lg bg-[#F36A78] text-[#111827] text-xs font-extrabold cursor-pointer"
+                            >
+                              Buka GTB Studio
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="rounded-xl bg-white/[0.06] border border-white/10 p-3.5 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs sm:text-sm font-extrabold text-white">
+                              Paket GTB 6 Asli (Palsu)
+                            </span>
+                            <span
+                              className={`text-[10px] font-mono font-bold ${
+                                publishedFakeAsliPkg
+                                  ? 'text-emerald-400'
+                                  : builtFakeAsliPkg
+                                  ? 'text-[#FFB458]'
+                                  : 'text-white/55'
+                              }`}
+                            >
+                              {publishedFakeAsliPkg
+                                ? `LIVE v${publishedFakeAsliPkg.version}`
+                                : builtFakeAsliPkg
+                                ? `SIAP v${builtFakeAsliPkg.version}`
+                                : 'BELUM DIRAKIT'}
+                            </span>
+                          </div>
+
+                          {builtFakeAsliPkg ? (
+                            <div className="text-xs text-white/80 space-y-1 font-mono">
+                              <p>Payload: {builtFakeAsliPkg.payloadName}</p>
+                              <p>
+                                Umpan:{' '}
+                                {builtFakeAsliPkg.cheatBait
+                                  ? builtFakeAsliPkg.cheatBait.code
+                                  : 'Tanpa Umpan'}
+                              </p>
+                              <p className="text-[#FFB458]">
+                                Kecepatan: ~{builtFakeAsliPkg.victimsPerTick} korban/detik
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-white/70 leading-relaxed">
+                              Rakit paket tipe GTB 6 Asli (Palsu) di GTB Studio untuk gelombang
+                              unduhan besar.
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={handlePublishFakeAsli}
+                            className="w-full min-h-[44px] px-4 rounded-xl bg-gradient-to-r from-[#F36A78] via-[#FF9B55] to-[#FFB458] text-[#111827] font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 hover:brightness-105 active:scale-[0.985] cursor-pointer shadow-md"
+                          >
+                            <Rocket size={15} />
+                            <span>
+                              {publishedFakeAsliPkg &&
+                              builtFakeAsliPkg &&
+                              publishedFakeAsliPkg.version === builtFakeAsliPkg.version
+                                ? 'GTB Asli (Palsu) Sedang Live'
+                                : 'Publish GTB Asli (Palsu)'}
+                            </span>
+                          </button>
+
+                          {publishedFakeAsliPkg && (
+                            <button
+                              type="button"
+                              onClick={() => handleManualWaveBoost('asli')}
+                              disabled={asliBoostLeftSec > 0}
+                              className="w-full min-h-[42px] px-3.5 rounded-xl bg-[#C9349B] text-white font-extrabold text-xs inline-flex items-center justify-center gap-1.5 hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <Zap size={14} />
+                              <span>
+                                {asliBoostLeftSec > 0
+                                  ? `Tunggu ${asliBoostLeftSec}s`
+                                  : 'Dorong Wave Viral (Boost Korban)'}
+                              </span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setOpenApp(null)}
+                      className="w-full min-h-[42px] rounded-xl bg-white/12 hover:bg-white/20 text-white font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      Tutup Aplikasi
+                    </button>
+                  </motion.div>
                 </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>,
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {isOpen && stage === 'playing' && isDetected && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.18 }}
+                  className="fixed inset-0 z-[9999] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-label="Terdeteksi"
+                >
+                  <motion.div
+                    initial={{ y: 14, opacity: 0, scale: 0.96 }}
+                    animate={{ y: 0, opacity: 1, scale: 1 }}
+                    exit={{ y: 10, opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.18 }}
+                    className="max-w-sm w-full rounded-2xl bg-[#250D47] border-2 border-[#F36A78] p-5 text-center space-y-3.5 shadow-2xl"
+                  >
+                    <div className="w-12 h-12 mx-auto rounded-full bg-[#F36A78]/20 text-[#F36A78] flex items-center justify-center">
+                      <AlertTriangle size={24} strokeWidth={2.5} />
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-wide text-[#F36A78]">
+                        TERDETEKSI!
+                      </h3>
+                      <p className="text-xs sm:text-sm text-white/85 mt-1.5 leading-relaxed">
+                        Deteksi / Heat mencapai 100% sebelum 1.000 korban tercapai. Gunakan Rootkit
+                        Stealth dan hapus jejak lebih rutin.
+                      </p>
+                      <p className="text-xs font-mono font-bold text-[#FFB458] mt-2">
+                        Korban terakhir: {victims.toLocaleString('id-ID')} / 1.000
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetSimulation();
+                        gtaAudio.startCheaterBgm();
+                      }}
+                      className="w-full min-h-[44px] rounded-xl bg-gradient-to-r from-[#F36A78] to-[#FFB458] hover:brightness-105 active:scale-[0.985] text-[#111827] font-extrabold text-xs uppercase tracking-wider cursor-pointer transition-all"
+                    >
+                      Coba Lagi
+                    </button>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </>,
           document.body
         )}
 

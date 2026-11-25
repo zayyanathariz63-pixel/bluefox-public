@@ -151,7 +151,7 @@ export function ViceCityGameFrame({
         {/* Horizontal Middle Section: Side-by-side Game Screen + Conditional Right Controller */}
         <div className="flex-1 min-h-0 flex flex-col sm:flex-row items-stretch">
           {/* Layar Mini Game */}
-          <main className="flex-1 min-w-0 min-h-0 flex items-center justify-center bg-[#140A26]/95 border-y border-[#111827]/20">
+          <main className="flex-1 min-w-0 min-h-0 overflow-hidden flex items-center justify-center bg-[#140A26]/95 border-y border-[#111827]/20">
             {children}
           </main>
 
