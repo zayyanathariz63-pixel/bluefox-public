@@ -51,6 +51,8 @@ import { PWAInstallButton } from './PWAInstallButton';
 import { GtaSeasonPassBanner } from './GtaSeasonPassBanner';
 import {
   isGtaBuffActive,
+  hasGtbLimit30Active,
+  getActiveQuotaDiscountPercent,
   formatGtaBuffRemaining,
   formatDiscountedPercent,
   GTA_SEASON_PASS_EVENT,
@@ -133,6 +135,8 @@ export function SettingsModal({
   const hasNoLimit = isDevMode || hasUnlimitedQuotaAccess(user);
   const [isSessionPassOpen, setIsSessionPassOpen] = useState<boolean>(false);
   const [gtaBuffActive, setGtaBuffActive] = useState<boolean>(() => isGtaBuffActive());
+  const [gtbLimit30Active, setGtbLimit30Active] = useState<boolean>(() => hasGtbLimit30Active());
+  const [activeDiscountPct, setActiveDiscountPct] = useState<number>(() => getActiveQuotaDiscountPercent());
   const [gtaBuffTimer, setGtaBuffTimer] = useState<string>(() => formatGtaBuffRemaining());
 
   useEffect(() => {
@@ -145,6 +149,8 @@ export function SettingsModal({
   useEffect(() => {
     const syncBuff = () => {
       setGtaBuffActive(isGtaBuffActive());
+      setGtbLimit30Active(hasGtbLimit30Active());
+      setActiveDiscountPct(getActiveQuotaDiscountPercent());
       setGtaBuffTimer(formatGtaBuffRemaining());
     };
     window.addEventListener(GTA_SEASON_PASS_EVENT, syncBuff);
@@ -480,11 +486,15 @@ export function SettingsModal({
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {gtaBuffActive && (
+                        {gtbLimit30Active ? (
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#3B146B] text-[#FFB458] border border-[#FFB458]/50">
+                            GTB Limit 30%
+                          </span>
+                        ) : gtaBuffActive ? (
                           <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#3B146B] text-[#FFB458]">
                             20% OFF
                           </span>
-                        )}
+                        ) : null}
                         <ChevronRight size={18} className="text-[#7B208F] shrink-0" />
                       </div>
                     </button>
@@ -1328,10 +1338,10 @@ export function SettingsModal({
                             {lang === 'id' ? 'Konsumsi kuota pencarian per 5 jam dan per minggu' : 'Search quota consumption per 5 hours and per week'}
                           </p>
                         </div>
-                        {gtaBuffActive && (
+                        {activeDiscountPct > 0 && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#3B146B] text-[#FFB458] text-[10px] font-extrabold uppercase tracking-wider">
                             <Zap size={11} strokeWidth={2.5} />
-                            20% OFF
+                            {gtbLimit30Active ? 'GTB Limit 30% · 30% OFF' : '20% OFF'}
                           </span>
                         )}
                       </div>
@@ -1342,10 +1352,10 @@ export function SettingsModal({
                             <tr>
                               <th className="py-2.5 px-3.5">Jenis Pencarian</th>
                               <th className="py-2.5 px-3.5 text-blue-700">
-                                Per 5 Jam {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                Per 5 Jam {activeDiscountPct > 0 && <span className="text-[#C9349B]">({activeDiscountPct}% OFF)</span>}
                               </th>
                               <th className="py-2.5 px-3.5 text-emerald-700">
-                                Per Minggu {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                Per Minggu {activeDiscountPct > 0 && <span className="text-[#C9349B]">({activeDiscountPct}% OFF)</span>}
                               </th>
                             </tr>
                           </thead>
@@ -1359,20 +1369,20 @@ export function SettingsModal({
                               <tr key={row.name} className="hover:bg-slate-50/70">
                                 <td className="py-2 px-3.5 font-sans font-medium text-slate-900">{row.name}</td>
                                 <td className="py-2 px-3.5 text-blue-600 font-bold">
-                                  {gtaBuffActive ? (
+                                  {activeDiscountPct > 0 ? (
                                     <span className="inline-flex items-center gap-1.5">
                                       <span className="line-through text-slate-400 font-normal">{row.h}%</span>
-                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.h)}</span>
+                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.h, activeDiscountPct)}</span>
                                     </span>
                                   ) : (
                                     `${row.h}%`
                                   )}
                                 </td>
                                 <td className="py-2 px-3.5 text-emerald-600 font-bold">
-                                  {gtaBuffActive ? (
+                                  {activeDiscountPct > 0 ? (
                                     <span className="inline-flex items-center gap-1.5">
                                       <span className="line-through text-slate-400 font-normal">{row.w}%</span>
-                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.w)}</span>
+                                      <span className="text-[#7B208F]">{formatDiscountedPercent(row.w, activeDiscountPct)}</span>
                                     </span>
                                   ) : (
                                     `${row.w}%`
@@ -1381,14 +1391,18 @@ export function SettingsModal({
                               </tr>
                             ))}
                           </tbody>
-                          {gtaBuffActive && (
+                          {activeDiscountPct > 0 && (
                             <tfoot className="bg-[#3B146B]/5 border-t border-[#7B208F]/20 font-mono">
                               <tr>
                                 <td className="py-2.5 px-3.5 font-sans font-bold text-[#3B146B]">
-                                  Total Limit (20% OFF)
+                                  Total Limit ({activeDiscountPct}% OFF)
                                 </td>
-                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">16.8% / 21%</td>
-                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">9.6% / 12%</td>
+                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">
+                                  {activeDiscountPct === 30 ? '14.7% / 21%' : '16.8% / 21%'}
+                                </td>
+                                <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">
+                                  {activeDiscountPct === 30 ? '8.4% / 12%' : '9.6% / 12%'}
+                                </td>
                               </tr>
                             </tfoot>
                           )}
@@ -1400,9 +1414,9 @@ export function SettingsModal({
                           <h4 className="text-base font-bold text-slate-900">
                             {lang === 'id' ? 'Rincian Tarif Model AI' : 'AI Model Usage Rates'}
                           </h4>
-                          {gtaBuffActive && (
+                          {activeDiscountPct > 0 && (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#3B146B] text-[#FFB458] text-[10px] font-extrabold uppercase tracking-wider">
-                              20% OFF
+                              {gtbLimit30Active ? 'GTB Limit 30%' : '20% OFF'}
                             </span>
                           )}
                         </div>
@@ -1412,10 +1426,10 @@ export function SettingsModal({
                               <tr>
                                 <th className="py-2.5 px-3.5">Nama Model</th>
                                 <th className="py-2.5 px-3.5 text-blue-700">
-                                  Per 5 Jam {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                  Per 5 Jam {activeDiscountPct > 0 && <span className="text-[#C9349B]">({activeDiscountPct}% OFF)</span>}
                                 </th>
                                 <th className="py-2.5 px-3.5 text-emerald-700">
-                                  Per Minggu {gtaBuffActive && <span className="text-[#C9349B]">(20% OFF)</span>}
+                                  Per Minggu {activeDiscountPct > 0 && <span className="text-[#C9349B]">({activeDiscountPct}% OFF)</span>}
                                 </th>
                               </tr>
                             </thead>
@@ -1429,20 +1443,20 @@ export function SettingsModal({
                                 <tr key={row.name} className="hover:bg-slate-50/70">
                                   <td className="py-2 px-3.5 font-sans font-medium text-slate-900">{row.name}</td>
                                   <td className="py-2 px-3.5 text-blue-600 font-bold">
-                                    {gtaBuffActive ? (
+                                    {activeDiscountPct > 0 ? (
                                       <span className="inline-flex items-center gap-1.5">
                                         <span className="line-through text-slate-400 font-normal">{row.h}%</span>
-                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.h)}</span>
+                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.h, activeDiscountPct)}</span>
                                       </span>
                                     ) : (
                                       `${row.h}%`
                                     )}
                                   </td>
                                   <td className="py-2 px-3.5 text-emerald-600 font-bold">
-                                    {gtaBuffActive ? (
+                                    {activeDiscountPct > 0 ? (
                                       <span className="inline-flex items-center gap-1.5">
                                         <span className="line-through text-slate-400 font-normal">{row.w}%</span>
-                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.w)}</span>
+                                        <span className="text-[#7B208F]">{formatDiscountedPercent(row.w, activeDiscountPct)}</span>
                                       </span>
                                     ) : (
                                       `${row.w}%`
@@ -1451,14 +1465,18 @@ export function SettingsModal({
                                 </tr>
                               ))}
                             </tbody>
-                            {gtaBuffActive && (
+                            {activeDiscountPct > 0 && (
                               <tfoot className="bg-[#3B146B]/5 border-t border-[#7B208F]/20 font-mono">
                                 <tr>
                                   <td className="py-2.5 px-3.5 font-sans font-bold text-[#3B146B]">
-                                    Total Limit (20% OFF)
+                                    Total Limit ({activeDiscountPct}% OFF)
                                   </td>
-                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">9.6% / 12%</td>
-                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">12.8% / 16%</td>
+                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">
+                                    {activeDiscountPct === 30 ? '8.4% / 12%' : '9.6% / 12%'}
+                                  </td>
+                                  <td className="py-2.5 px-3.5 font-extrabold text-[#7B208F]">
+                                    {activeDiscountPct === 30 ? '11.2% / 16%' : '12.8% / 16%'}
+                                  </td>
                                 </tr>
                               </tfoot>
                             )}
@@ -1466,10 +1484,16 @@ export function SettingsModal({
                         </div>
                       </div>
 
-                      {gtaBuffActive && (
-                        <div className="rounded-xl p-3.5 bg-[#3B146B] text-white flex items-center justify-between gap-3 text-xs">
-                          <span className="font-bold text-[#FFB458]">Total Limit dari 20% OFF (Kapasitas Efektif)</span>
-                          <span className="font-mono font-extrabold text-white">125% (Hemat 20%)</span>
+                      {activeDiscountPct > 0 && (
+                        <div className="rounded-xl p-3.5 bg-[#3B146B] text-white flex items-center justify-between gap-3 text-xs flex-wrap">
+                          <span className="font-bold text-[#FFB458]">
+                            {gtbLimit30Active
+                              ? `GTB Limit 30% Aktif · Total Limit (${activeDiscountPct}% OFF)`
+                              : `Total Limit dari ${activeDiscountPct}% OFF (Kapasitas Efektif · ${gtaBuffTimer})`}
+                          </span>
+                          <span className="font-mono font-extrabold text-white">
+                            {activeDiscountPct === 30 ? '142.8% (Hemat 30%)' : '125% (Hemat 20%)'}
+                          </span>
                         </div>
                       )}
                     </div>

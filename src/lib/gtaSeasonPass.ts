@@ -7,12 +7,14 @@ export interface GtaSeasonPassState {
   bestClearTimeSec: number | null;
   unlockedItems: SeasonRewardItemId[];
   equippedHat: boolean;
+  gtbLimit30Active: boolean;
   lastUpdatedAt: number;
 }
 
 const STORAGE_KEY = 'tmpa_gta_season_pass_v1';
 export const GTA_BUFF_DURATION_MS = 60 * 60 * 1000; // 1 hour
 export const GTA_BUFF_MULTIPLIER = 0.8; // 20% OFF AI quota consumption
+export const GTA_LIMIT_30_MULTIPLIER = 0.7; // 30% OFF AI quota consumption (Mission 3 reward)
 export const GTA_SEASON_PASS_EVENT = 'tmpa_gta_season_pass_updated';
 
 const DEFAULT_STATE: GtaSeasonPassState = {
@@ -21,6 +23,7 @@ const DEFAULT_STATE: GtaSeasonPassState = {
   bestClearTimeSec: null,
   unlockedItems: [],
   equippedHat: false,
+  gtbLimit30Active: false,
   lastUpdatedAt: 0,
 };
 
@@ -30,10 +33,11 @@ export function getSeasonPassState(): GtaSeasonPassState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_STATE };
     const parsed = JSON.parse(raw);
+    const completedMissions: SeasonMissionId[] = Array.isArray(parsed.completedMissions)
+      ? parsed.completedMissions
+      : [];
     return {
-      completedMissions: Array.isArray(parsed.completedMissions)
-        ? parsed.completedMissions
-        : [],
+      completedMissions,
       gtaBuffExpiresAt:
         typeof parsed.gtaBuffExpiresAt === 'number' ? parsed.gtaBuffExpiresAt : null,
       bestClearTimeSec:
@@ -42,6 +46,8 @@ export function getSeasonPassState(): GtaSeasonPassState {
         ? parsed.unlockedItems
         : [],
       equippedHat: Boolean(parsed.equippedHat),
+      gtbLimit30Active:
+        Boolean(parsed.gtbLimit30Active) || completedMissions.includes('cheater'),
       lastUpdatedAt: typeof parsed.lastUpdatedAt === 'number' ? parsed.lastUpdatedAt : 0,
     };
   } catch {
@@ -87,6 +93,18 @@ export function isGtaBuffActive(state?: GtaSeasonPassState): boolean {
   const current = state || getSeasonPassState();
   if (!current.gtaBuffExpiresAt) return false;
   return current.gtaBuffExpiresAt > Date.now();
+}
+
+export function hasGtbLimit30Active(state?: GtaSeasonPassState): boolean {
+  const current = state || getSeasonPassState();
+  return Boolean(current.gtbLimit30Active || current.completedMissions.includes('cheater'));
+}
+
+export function getActiveQuotaDiscountPercent(state?: GtaSeasonPassState): number {
+  const current = state || getSeasonPassState();
+  if (hasGtbLimit30Active(current)) return 30;
+  if (isGtaBuffActive(current)) return 20;
+  return 0;
 }
 
 export function getGtaBuffRemainingMs(state?: GtaSeasonPassState): number {
@@ -167,6 +185,20 @@ export function completeEscapePrisonMission(): GtaSeasonPassState {
   });
 }
 
+export function completeCheaterMission(): GtaSeasonPassState {
+  const current = getSeasonPassState();
+  const completed = current.completedMissions.includes('cheater')
+    ? current.completedMissions
+    : [...current.completedMissions, 'cheater' as SeasonMissionId];
+
+  return saveSeasonPassState({
+    ...current,
+    completedMissions: completed,
+    gtbLimit30Active: true,
+    lastUpdatedAt: Date.now(),
+  });
+}
+
 export function resetSeasonPassProgress(): GtaSeasonPassState {
   return saveSeasonPassState({
     ...DEFAULT_STATE,
@@ -174,12 +206,48 @@ export function resetSeasonPassProgress(): GtaSeasonPassState {
   });
 }
 
-export function applyGtaBuffDiscount(value: number): number {
-  if (!isGtaBuffActive()) return value;
-  return Number((value * GTA_BUFF_MULTIPLIER).toFixed(2));
+export function resetSeasonPassFromMission(fromMission: 1 | 2 | 3): GtaSeasonPassState {
+  if (fromMission === 1) {
+    return resetSeasonPassProgress();
+  }
+
+  const current = getSeasonPassState();
+  if (fromMission === 2) {
+    return saveSeasonPassState({
+      ...current,
+      completedMissions: ['kriminal-bank'],
+      unlockedItems: [],
+      equippedHat: false,
+      gtbLimit30Active: false,
+      lastUpdatedAt: Date.now(),
+    });
+  }
+
+  // fromMission === 3: keep Mission 1 & Mission 2 complete so Mission 3 (Cheater) is unlocked immediately
+  return saveSeasonPassState({
+    ...current,
+    completedMissions: ['kriminal-bank', 'escape-prison'],
+    unlockedItems: ['topi-gtb-6'],
+    equippedHat: current.unlockedItems.includes('topi-gtb-6') ? current.equippedHat : true,
+    gtbLimit30Active: false,
+    lastUpdatedAt: Date.now(),
+  });
 }
 
-export function formatDiscountedPercent(basePercent: number): string {
-  const val = Number((basePercent * GTA_BUFF_MULTIPLIER).toFixed(1));
+export function applyGtaBuffDiscount(value: number): number {
+  const discountPct = getActiveQuotaDiscountPercent();
+  if (discountPct === 30) {
+    return Number((value * GTA_LIMIT_30_MULTIPLIER).toFixed(2));
+  }
+  if (discountPct === 20) {
+    return Number((value * GTA_BUFF_MULTIPLIER).toFixed(2));
+  }
+  return value;
+}
+
+export function formatDiscountedPercent(basePercent: number, discountPct?: number): string {
+  const pct = typeof discountPct === 'number' ? discountPct : getActiveQuotaDiscountPercent();
+  const multiplier = pct === 30 ? GTA_LIMIT_30_MULTIPLIER : pct === 20 ? GTA_BUFF_MULTIPLIER : 1;
+  const val = Number((basePercent * multiplier).toFixed(1));
   return Number.isInteger(val) ? `${val}%` : `${val}%`;
 }

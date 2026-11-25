@@ -479,6 +479,103 @@ class GtaAudioEngine {
       osc.stop(t + 0.26);
     });
   }
+
+  public startCheaterBgm() {
+    this.stopHeistBgm();
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain) return;
+
+    this.step = 0;
+    const pulseNotes = [110, 146.83, 164.81, 130.81, 110, 196, 164.81, 146.83];
+    const tick = () => {
+      if (!this.ctx || !this.masterGain || this.muted) return;
+      const now = this.ctx.currentTime;
+      const freq = pulseNotes[this.step % pulseNotes.length];
+
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, now);
+      gain.gain.setValueAtTime(0.085, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.25);
+
+      if (this.step % 4 === 0) {
+        const sub = this.ctx.createOscillator();
+        const sGain = this.ctx.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(72, now);
+        sub.frequency.exponentialRampToValueAtTime(40, now + 0.14);
+        sGain.gain.setValueAtTime(0.14, now);
+        sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+        sub.connect(sGain);
+        sGain.connect(this.masterGain);
+        sub.start(now);
+        sub.stop(now + 0.16);
+      }
+      this.step += 1;
+    };
+
+    tick();
+    this.bgmTimer = setInterval(tick, 280);
+  }
+
+  public playCyberClickSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(740, now);
+    osc.frequency.exponentialRampToValueAtTime(1020, now + 0.045);
+    gain.gain.setValueAtTime(0.11, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  public playBuildCompleteSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => {
+      if (!this.ctx || !this.masterGain) return;
+      const t = now + i * 0.06;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.16, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(t);
+      osc.stop(t + 0.27);
+    });
+  }
+
+  public playPublishLaunchSfx() {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.masterGain || this.muted) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(660, now + 0.22);
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + 0.27);
+  }
 }
 
 export const gtaAudio = new GtaAudioEngine();

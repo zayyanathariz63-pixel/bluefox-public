@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Lock, Check, Zap, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Lock, Check, Zap, RotateCcw, X } from 'lucide-react';
 import {
   formatGtaBuffRemaining,
   getSeasonPassState,
   GTA_SEASON_PASS_EVENT,
   GtaSeasonPassState,
+  hasGtbLimit30Active,
   hasTopiGtb6Unlocked,
   isGtaBuffActive,
   isMissionCompleted,
   isMissionUnlocked,
   isTopiGtb6Equipped,
-  resetSeasonPassProgress,
+  resetSeasonPassFromMission,
   SeasonMissionId,
   toggleTopiGtb6Equipped,
 } from '../lib/gtaSeasonPass';
 import { KriminalBankModal } from './KriminalBankModal';
 import { EscapePrisonModal } from './EscapePrisonModal';
+import { CheaterModal } from './CheaterModal';
 import { TopiGtb6Svg } from './TopiGtb6Svg';
 
 interface GtaSeasonPassBannerProps {
@@ -94,6 +97,8 @@ export function GtaSeasonPassBanner({
   );
   const [isKriminalBankOpen, setIsKriminalBankOpen] = useState(false);
   const [isEscapePrisonOpen, setIsEscapePrisonOpen] = useState(false);
+  const [isCheaterOpen, setIsCheaterOpen] = useState(false);
+  const [isRisetModalOpen, setIsRisetModalOpen] = useState(false);
   const [buffRemaining, setBuffRemaining] = useState<string>(() =>
     formatGtaBuffRemaining()
   );
@@ -127,10 +132,20 @@ export function GtaSeasonPassBanner({
 
   const handleRiset = () => {
     if (!isAdmin) return;
-    const next = resetSeasonPassProgress();
+    setIsRisetModalOpen(true);
+  };
+
+  const handleConfirmRisetFrom = (fromMission: 1 | 2 | 3) => {
+    if (!isAdmin) return;
+    const next = resetSeasonPassFromMission(fromMission);
     setSeasonState(next);
-    setBuffRemaining('00m 00s');
-    triggerNotice('Event direset oleh Admin.');
+    setBuffRemaining(formatGtaBuffRemaining(next));
+    setIsRisetModalOpen(false);
+    triggerNotice(
+      fromMission === 1
+        ? 'Event direset penuh dari Misi 1 oleh Admin.'
+        : `Event direset mulai Misi ${fromMission} oleh Admin.`
+    );
   };
 
   const handleNodeClick = (mission: MissionNode) => {
@@ -150,17 +165,19 @@ export function GtaSeasonPassBanner({
     }
 
     if (mission.id === 'cheater') {
-      triggerNotice(
-        unlocked
-          ? 'Cheater (Mission 3) telah terbuka.'
-          : 'Selesaikan Escape from prison terlebih dahulu.'
-      );
+      if (!unlocked) {
+        triggerNotice('Selesaikan Escape from prison terlebih dahulu.');
+        return;
+      }
+      setIsCheaterOpen(true);
     }
   };
 
   const mission1Done = isMissionCompleted('kriminal-bank', seasonState);
   const mission2Done = isMissionCompleted('escape-prison', seasonState);
+  const mission3Done = isMissionCompleted('cheater', seasonState);
   const buffActive = isGtaBuffActive(seasonState);
+  const limit30Active = hasGtbLimit30Active(seasonState);
   const hatUnlocked = hasTopiGtb6Unlocked(seasonState);
   const hatEquipped = isTopiGtb6Equipped(seasonState);
 
@@ -207,7 +224,14 @@ export function GtaSeasonPassBanner({
                   SEASON PASS
                 </span>
 
-                {buffActive && (
+                {limit30Active && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#3B146B] text-[#FFB458] text-[11px] font-extrabold border border-[#FFB458]/60 shadow-xs">
+                    <Zap size={11} strokeWidth={2.6} />
+                    <span>GTB Limit 30%</span>
+                  </span>
+                )}
+
+                {buffActive && !limit30Active && (
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#7B208F] text-[#FFB458] text-[11px] font-bold border border-white/20 shadow-xs">
                     <Zap size={11} strokeWidth={2.6} />
                     <span>20% OFF · {buffRemaining}</span>
@@ -339,7 +363,7 @@ export function GtaSeasonPassBanner({
                           </div>
                         </button>
 
-                        {idx < MISSIONS.length - 1 && (
+                        {idx < MISSIONS.length - 1 ? (
                           <div
                             aria-hidden="true"
                             className="flex items-center h-[80px] w-[86px] sm:w-[116px] -mx-4 shrink-0"
@@ -365,6 +389,75 @@ export function GtaSeasonPassBanner({
                               )}
                             </div>
                           </div>
+                        ) : (
+                          <>
+                            {/* Progress segment beyond Node 3 -> GTB Limit 30% Reward */}
+                            <div
+                              aria-hidden="true"
+                              className="flex items-center h-[80px] w-[70px] sm:w-[96px] -mx-4 shrink-0"
+                            >
+                              <div className="relative w-full h-[7px] rounded-full bg-[#64748B]/35 overflow-hidden">
+                                {mission3Done ? (
+                                  <div
+                                    className="h-full w-full rounded-full transition-all duration-500"
+                                    style={{
+                                      background:
+                                        'linear-gradient(90deg, #7B208F 0%, #C9349B 100%)',
+                                    }}
+                                  />
+                                ) : (
+                                  mission2Done && (
+                                    <div
+                                      className="h-full w-[40%] rounded-full"
+                                      style={{
+                                        background:
+                                          'linear-gradient(90deg, #7B208F 0%, #C9349B 100%)',
+                                      }}
+                                    />
+                                  )
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col items-center w-[112px] sm:w-[132px] shrink-0">
+                              <div
+                                className={`w-[64px] h-[64px] my-[8px] rounded-full flex items-center justify-center transition-all duration-300 ${
+                                  mission3Done
+                                    ? 'shadow-[0_10px_24px_rgba(59,20,107,0.42)] ring-2 ring-[#FFB458]'
+                                    : 'ring-2 ring-slate-200/45 shadow-sm'
+                                }`}
+                                style={{
+                                  background: mission3Done
+                                    ? 'linear-gradient(135deg, #3B146B 0%, #7B208F 55%, #C9349B 100%)'
+                                    : '#94A3B8',
+                                }}
+                              >
+                                {mission3Done ? (
+                                  <Zap size={26} className="text-[#FFB458]" strokeWidth={2.5} />
+                                ) : (
+                                  <Lock size={20} className="text-slate-100/90" strokeWidth={2.4} />
+                                )}
+                              </div>
+                              <div className="mt-3 text-center leading-[1.08]">
+                                <span
+                                  className={`block text-[16px] sm:text-[18px] font-bold tracking-tight ${
+                                    mission3Done ? 'text-[#111827]' : 'text-[#3B146B]/50'
+                                  }`}
+                                  style={{ fontFamily: 'var(--font-slab)' }}
+                                >
+                                  GTB Limit
+                                </span>
+                                <span
+                                  className={`block text-[16px] sm:text-[18px] font-bold tracking-tight ${
+                                    mission3Done ? 'text-[#111827]' : 'text-[#3B146B]/50'
+                                  }`}
+                                  style={{ fontFamily: 'var(--font-slab)' }}
+                                >
+                                  30%
+                                </span>
+                              </div>
+                            </div>
+                          </>
                         )}
                       </div>
                     );
@@ -403,6 +496,126 @@ export function GtaSeasonPassBanner({
           onNotify?.('Escape from Prison selesai! Topi GTB 6 terpasang di avatar Bluefox.');
         }}
       />
+
+      <CheaterModal
+        isOpen={isCheaterOpen}
+        onClose={() => setIsCheaterOpen(false)}
+        onMissionSuccess={(nextState) => {
+          setSeasonState(nextState);
+          onNotify?.('Cheater selesai! Hadiah GTB Limit 30% aktif di akun Anda.');
+        }}
+      />
+
+      {/* Admin-Only Selective Mission Reset Popup (portaled to document.body) */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {isRisetModalOpen && isAdmin && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                onClick={() => setIsRisetModalOpen(false)}
+                className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 select-none"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Riset Mission Session Pass"
+              >
+                <motion.div
+                  initial={{ y: 14, opacity: 0, scale: 0.96 }}
+                  animate={{ y: 0, opacity: 1, scale: 1 }}
+                  exit={{ y: 10, opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.18 }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-md rounded-2xl bg-[#250D47] border-2 border-[#C9349B] p-5 shadow-2xl space-y-4 text-white"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-[#7B208F]/60 border border-[#FFB458]/40 text-[#FFB458] flex items-center justify-center shrink-0">
+                        <RotateCcw size={17} strokeWidth={2.4} />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-extrabold text-white">
+                          Riset Progres Mission
+                        </h3>
+                        <p className="text-xs text-white/75">
+                          Pilih mulai dari angka misi berapa untuk meriset
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsRisetModalOpen(false)}
+                      aria-label="Tutup popup riset"
+                      className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                    >
+                      <X size={18} strokeWidth={2.5} />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmRisetFrom(1)}
+                      className="w-full text-left p-3.5 rounded-xl bg-white/[0.06] hover:bg-[#3B146B] border border-white/15 hover:border-[#F36A78] transition-all flex items-center gap-3 cursor-pointer"
+                    >
+                      <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3B146B] to-[#C9349B] border border-[#FFB458]/50 text-[#FFB458] font-extrabold text-base flex items-center justify-center shrink-0">
+                        1
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-white">
+                          Riset dari Misi 1 (Kriminal Bank)
+                        </p>
+                        <p className="text-[11px] text-white/70">
+                          Ulang penuh dari awal (semua misi &amp; hadiah direset).
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmRisetFrom(2)}
+                      className="w-full text-left p-3.5 rounded-xl bg-white/[0.06] hover:bg-[#3B146B] border border-white/15 hover:border-[#FF9B55] transition-all flex items-center gap-3 cursor-pointer"
+                    >
+                      <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3B146B] to-[#C9349B] border border-[#FFB458]/50 text-[#FFB458] font-extrabold text-base flex items-center justify-center shrink-0">
+                        2
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-white">
+                          Riset dari Misi 2 (Escape from Prison)
+                        </p>
+                        <p className="text-[11px] text-white/70">
+                          Misi 1 tetap selesai, langsung buka Misi 2 &amp; riset Misi 2-3.
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmRisetFrom(3)}
+                      className="w-full text-left p-3.5 rounded-xl bg-white/[0.06] hover:bg-[#3B146B] border border-white/15 hover:border-[#FFB458] transition-all flex items-center gap-3 cursor-pointer"
+                    >
+                      <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#3B146B] to-[#C9349B] border border-[#FFB458]/50 text-[#FFB458] font-extrabold text-base flex items-center justify-center shrink-0">
+                        3
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-white">
+                          Riset dari Misi 3 (Cheater)
+                        </p>
+                        <p className="text-[11px] text-white/70">
+                          Misi 1 &amp; 2 tetap selesai, langsung main ulang Misi 3.
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
     </>
   );
 }
