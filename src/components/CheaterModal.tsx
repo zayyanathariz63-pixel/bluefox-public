@@ -151,13 +151,41 @@ const INITIAL_CHEAT_BAITS: CheatBaitItem[] = [
 const CHEAT_PREFIXES = ['GTB6-VIP', 'VICE-MOD', 'FOX-ELITE', 'CRYPTO-PASS', 'HYPER-UNLOCK'];
 const CHEAT_SUFFIXES = ['PRO99', 'MAX77', 'ULTRA', 'ZEROX', 'PRIME', 'ALPHA'];
 
-const HEAT_CLEAR_LEVELS = [
-  { level: 1, greenWidthPct: 26, speedSweepsPerSec: 0.85 },
-  { level: 2, greenWidthPct: 20, speedSweepsPerSec: 1.15 },
-  { level: 3, greenWidthPct: 15, speedSweepsPerSec: 1.45 },
-  { level: 4, greenWidthPct: 11, speedSweepsPerSec: 1.8 },
-  { level: 5, greenWidthPct: 7.5, speedSweepsPerSec: 2.2 },
-];
+interface HeatClearLevelConfig {
+  level: number;
+  greenWidthPct: number;
+  speedMultiplier: number;
+  modeLabel: string;
+}
+
+const HEAT_CLEAR_TOTAL_LEVELS = 5;
+const HEAT_CLEAR_MIN_SPEED = 0.85;
+const HEAT_CLEAR_MAX_SPEED = 2.0;
+
+function generateHeatClearRun(): HeatClearLevelConfig[] {
+  const profiles = [
+    { minW: 16, maxW: 19, minS: 0.85, maxS: 1.05, label: 'Zona Kecil · Pelan' },
+    { minW: 22, maxW: 26, minS: 1.15, maxS: 1.45, label: 'Seimbang' },
+    { minW: 28, maxW: 35, minS: 1.6, maxS: 2.0, label: 'Zona Besar · Cepat' },
+  ];
+
+  return Array.from({ length: HEAT_CLEAR_TOTAL_LEVELS }, (_, idx) => {
+    const pick = profiles[Math.floor(Math.random() * profiles.length)];
+    const t = Math.random();
+    const greenWidthPct = Math.round(pick.minW + t * (pick.maxW - pick.minW));
+    const rawSpeed = pick.minS + t * (pick.maxS - pick.minS);
+    const speedMultiplier = Math.min(
+      HEAT_CLEAR_MAX_SPEED,
+      Math.max(HEAT_CLEAR_MIN_SPEED, Number(rawSpeed.toFixed(2)))
+    );
+    return {
+      level: idx + 1,
+      greenWidthPct,
+      speedMultiplier,
+      modeLabel: pick.label,
+    };
+  });
+}
 
 function formatLogTime(): string {
   const d = new Date();
@@ -220,8 +248,9 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const [publishedModPkg, setPublishedModPkg] = useState<BuiltPackage | null>(null);
   const [publishedFakeAsliPkg, setPublishedFakeAsliPkg] = useState<BuiltPackage | null>(null);
 
-  // Heat Clear 5-level mini-game state
+  // Heat Clear 5-level randomized balanced mini-game state
   const [heatClearOpen, setHeatClearOpen] = useState<boolean>(false);
+  const [hcLevels, setHcLevels] = useState<HeatClearLevelConfig[]>(() => generateHeatClearRun());
   const [hcLevel, setHcLevel] = useState<number>(1);
   const [hcGreenStart, setHcGreenStart] = useState<number>(37);
   const [hcPointerPct, setHcPointerPct] = useState<number>(0);
@@ -439,11 +468,12 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     triggerVictory,
   ]);
 
-  // Heat Clear 5-Level White Line Sweep Animation
+  // Heat Clear 5-Level White Line Sweep Animation (speed clamped 0.85x - 2.00x)
   useEffect(() => {
     if (!isOpen || stage !== 'playing' || !heatClearOpen || hcFeedback !== 'idle') return;
 
-    const cfg = HEAT_CLEAR_LEVELS[Math.min(HEAT_CLEAR_LEVELS.length - 1, hcLevel - 1)];
+    const cfg = hcLevels[Math.min(hcLevels.length - 1, hcLevel - 1)];
+    const BASE_PCT_PER_SEC = 65; // keeps 0.85x-2.00x responsive & playable on Android touch
     hcPosDirRef.current = { pos: 4, dir: 1 };
     hcPointerRef.current = 4;
     setHcPointerPct(4);
@@ -456,7 +486,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
       lastTime = now;
 
       let { pos, dir } = hcPosDirRef.current;
-      pos += dir * cfg.speedSweepsPerSec * 100 * dt;
+      pos += dir * cfg.speedMultiplier * BASE_PCT_PER_SEC * dt;
       if (pos >= 100) {
         pos = 100 - (pos - 100);
         dir = -1;
@@ -475,7 +505,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
 
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isOpen, stage, heatClearOpen, hcLevel, hcFeedback]);
+  }, [isOpen, stage, heatClearOpen, hcLevels, hcLevel, hcFeedback]);
 
   const handleOpenApp = (app: DesktopAppId) => {
     gtaAudio.playCyberClickSfx();
@@ -681,13 +711,15 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     );
   };
 
-  // Start Heat Clear 5-level mini-game
+  // Start Heat Clear 5-level mini-game (randomized balanced speed & green width per level)
   const handleStartHeatClear = () => {
     if (heat <= 0 || arrestReason) return;
     gtaAudio.playCyberClickSfx();
+    const runLevels = generateHeatClearRun();
     setOpenApp(null);
+    setHcLevels(runLevels);
     setHcLevel(1);
-    setHcGreenStart(randomGreenStart(HEAT_CLEAR_LEVELS[0].greenWidthPct));
+    setHcGreenStart(randomGreenStart(runLevels[0].greenWidthPct));
     setHcFeedback('idle');
     setHeatClearOpen(true);
   };
@@ -695,13 +727,15 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const handleHeatClearStop = useCallback(() => {
     if (!heatClearOpen || hcFeedback !== 'idle' || arrestedRef.current) return;
 
-    const cfg = HEAT_CLEAR_LEVELS[Math.min(HEAT_CLEAR_LEVELS.length - 1, hcLevel - 1)];
+    const cfg = hcLevels[Math.min(hcLevels.length - 1, hcLevel - 1)];
     const pos = hcPointerRef.current;
-    const inGreen = pos >= hcGreenStart && pos <= hcGreenStart + cfg.greenWidthPct;
+    const edgeGrace = 1.2;
+    const inGreen =
+      pos >= hcGreenStart - edgeGrace && pos <= hcGreenStart + cfg.greenWidthPct + edgeGrace;
 
     if (inGreen) {
       gtaAudio.playHeatClearHitSfx(hcLevel);
-      if (hcLevel >= HEAT_CLEAR_LEVELS.length) {
+      if (hcLevel >= hcLevels.length) {
         // All 5 levels passed! -25% Heat
         setHcFeedback('won');
         setHeat((prev) => Math.max(0, Number((prev - 25).toFixed(1))));
@@ -711,11 +745,11 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
           setHcFeedback('idle');
         }, 650);
       } else {
-        // Advance to next level: smaller green zone & faster white line
+        // Advance to next randomized balanced level
         const nextLevel = hcLevel + 1;
         setHcFeedback('hit');
         setTimeout(() => {
-          const nextCfg = HEAT_CLEAR_LEVELS[nextLevel - 1];
+          const nextCfg = hcLevels[nextLevel - 1];
           setHcLevel(nextLevel);
           setHcGreenStart(randomGreenStart(nextCfg.greenWidthPct));
           setHcFeedback('idle');
@@ -731,7 +765,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
         triggerPoliceArrest('heat_clear_fail');
       }, 520);
     }
-  }, [heatClearOpen, hcFeedback, hcLevel, hcGreenStart, pushLog, triggerPoliceArrest]);
+  }, [heatClearOpen, hcFeedback, hcLevels, hcLevel, hcGreenStart, pushLog, triggerPoliceArrest]);
 
   // Allow Spacebar / Enter to press Stop during Heat Clear
   useEffect(() => {
@@ -753,8 +787,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const totalUpgradesBought =
     moduleLevels.trojan + moduleLevels.bookit + moduleLevels.botnet + moduleLevels.ssl;
 
-  const activeHcConfig =
-    HEAT_CLEAR_LEVELS[Math.min(HEAT_CLEAR_LEVELS.length - 1, hcLevel - 1)];
+  const activeHcConfig = hcLevels[Math.min(hcLevels.length - 1, hcLevel - 1)];
 
   const desktopApps: {
     id: DesktopAppId;
@@ -1817,7 +1850,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
 
                     {/* 5 Level Step Pills */}
                     <div className="grid grid-cols-5 gap-1.5">
-                      {HEAT_CLEAR_LEVELS.map((lvCfg) => {
+                      {hcLevels.map((lvCfg) => {
                         const done = lvCfg.level < hcLevel || hcFeedback === 'won';
                         const current = lvCfg.level === hcLevel && hcFeedback !== 'won';
                         return (
@@ -1837,12 +1870,15 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
 
                     {/* Timing Bar */}
                     <div className="rounded-xl bg-[#120724] border border-white/15 p-3 space-y-2.5">
-                      <div className="flex items-center justify-between text-[11px] font-mono">
-                        <span className="text-white/75">
-                          Zona Hijau: {activeHcConfig.greenWidthPct}%
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                        <span className="text-white/80">
+                          Hijau: {activeHcConfig.greenWidthPct}%
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-white/10 text-emerald-300 font-sans font-bold text-[10px]">
+                          {activeHcConfig.modeLabel}
                         </span>
                         <span className="text-[#FFB458]">
-                          Kecepatan: {activeHcConfig.speedSweepsPerSec.toFixed(2)}x
+                          {activeHcConfig.speedMultiplier.toFixed(2)}x
                         </span>
                       </div>
 
@@ -1866,7 +1902,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
                       <div className="h-5 flex items-center justify-center text-xs font-extrabold">
                         {hcFeedback === 'hit' && (
                           <span className="text-emerald-400">
-                            PAS! Masuk Level {hcLevel + 1}/5 (Zona mengecil &amp; lebih cepat)
+                            PAS! Lanjut ke Level {hcLevel + 1}/5
                           </span>
                         )}
                         {hcFeedback === 'won' && (
