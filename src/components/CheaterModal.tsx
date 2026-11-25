@@ -250,6 +250,8 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
 
   // Heat Clear 5-level randomized balanced mini-game state
   const [heatClearOpen, setHeatClearOpen] = useState<boolean>(false);
+  const heatClearOpenRef = useRef<boolean>(false);
+  const [heatDropFlash, setHeatDropFlash] = useState<boolean>(false);
   const [hcLevels, setHcLevels] = useState<HeatClearLevelConfig[]>(() => generateHeatClearRun());
   const [hcLevel, setHcLevel] = useState<number>(1);
   const [hcGreenStart, setHcGreenStart] = useState<number>(37);
@@ -283,6 +285,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const triggerPoliceArrest = useCallback((reason: ArrestReason) => {
     if (arrestedRef.current || wonRef.current) return;
     arrestedRef.current = true;
+    heatClearOpenRef.current = false;
     setArrestReason(reason);
     setOpenApp(null);
     setHeatClearOpen(false);
@@ -294,6 +297,7 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const triggerVictory = useCallback(() => {
     if (wonRef.current || arrestedRef.current) return;
     wonRef.current = true;
+    heatClearOpenRef.current = false;
     gtaAudio.stopHeistBgm();
     const updated = completeCheaterMission();
     setCompleted(true);
@@ -306,12 +310,14 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
   const resetSimulation = useCallback(() => {
     wonRef.current = false;
     arrestedRef.current = false;
+    heatClearOpenRef.current = false;
     setVictims(0);
     setHeat(0);
     setTimeLeftSec(MISSION_DURATION_SEC);
     setArrestReason(null);
     setOpenApp(null);
     setHeatClearOpen(false);
+    setHeatDropFlash(false);
     setHcLevel(1);
     setHcFeedback('idle');
     setModuleLevels({ trojan: 0, bookit: 0, botnet: 0, ssl: 0 });
@@ -381,12 +387,12 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     return () => clearInterval(t);
   }, [isOpen, stage]);
 
-  // 10-minute Mission Countdown Timer (runs continuously while playing & not arrested)
+  // 10-minute Mission Countdown Timer (also frozen during Heat Clear mini-game)
   useEffect(() => {
-    if (!isOpen || stage !== 'playing' || arrestReason) return;
+    if (!isOpen || stage !== 'playing' || arrestReason || heatClearOpen) return;
 
     const timer = setInterval(() => {
-      if (wonRef.current || arrestedRef.current) return;
+      if (wonRef.current || arrestedRef.current || heatClearOpenRef.current) return;
       setTimeLeftSec((prev) => {
         const next = prev - 1;
         if (next <= 0) {
@@ -398,14 +404,14 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [isOpen, stage, arrestReason, triggerPoliceArrest]);
+  }, [isOpen, stage, arrestReason, heatClearOpen, triggerPoliceArrest]);
 
-  // Passive simulation loop (paused during Heat Clear mini-game so Heat doesn't spike mid-challenge)
+  // Passive simulation loop (completely frozen during Heat Clear mini-game for BOTH Korban & Heat)
   useEffect(() => {
     if (!isOpen || stage !== 'playing' || arrestReason || heatClearOpen) return;
 
     const timer = setInterval(() => {
-      if (wonRef.current || arrestedRef.current) return;
+      if (wonRef.current || arrestedRef.current || heatClearOpenRef.current) return;
 
       const hasAnyPublish = Boolean(publishedModPkg || publishedFakeAsliPkg);
       if (!hasAnyPublish) return;
@@ -711,11 +717,12 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     );
   };
 
-  // Start Heat Clear 5-level mini-game (randomized balanced speed & green width per level)
+  // Start Heat Clear 5-level mini-game (freeze Korban, Heat, and Timer while active)
   const handleStartHeatClear = () => {
-    if (heat <= 0 || arrestReason) return;
+    if (heat <= 0 || arrestReason || heatClearOpenRef.current) return;
     gtaAudio.playCyberClickSfx();
     const runLevels = generateHeatClearRun();
+    heatClearOpenRef.current = true;
     setOpenApp(null);
     setHcLevels(runLevels);
     setHcLevel(1);
@@ -736,14 +743,17 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
     if (inGreen) {
       gtaAudio.playHeatClearHitSfx(hcLevel);
       if (hcLevel >= hcLevels.length) {
-        // All 5 levels passed! -25% Heat
+        // All 5 levels passed: close mini-game FIRST, then subtract -25% Heat & resume both Korban + Heat
         setHcFeedback('won');
-        setHeat((prev) => Math.max(0, Number((prev - 25).toFixed(1))));
-        pushLog('SYSTEM', 'Heat Clear 5/5 berhasil! Heat berkurang -25%.');
         setTimeout(() => {
+          heatClearOpenRef.current = false;
           setHeatClearOpen(false);
           setHcFeedback('idle');
-        }, 650);
+          setHeat((prev) => Math.max(0, Number((prev - 25).toFixed(1))));
+          setHeatDropFlash(true);
+          pushLog('SYSTEM', 'Heat Clear 5/5 selesai! Heat -25%, laju Korban & Heat kembali berjalan.');
+          setTimeout(() => setHeatDropFlash(false), 1600);
+        }, 520);
       } else {
         // Advance to next randomized balanced level
         const nextLevel = hcLevel + 1;
@@ -1037,6 +1047,11 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
                               className={heat >= 80 ? 'text-[#F36A78]' : 'text-[#FFB458]'}
                             />
                             <span>Deteksi / Heat</span>
+                            {heatDropFlash && (
+                              <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/25 text-emerald-300 text-[10px]">
+                                -25%
+                              </span>
+                            )}
                           </span>
                           <span
                             className={
@@ -1846,6 +1861,13 @@ export function CheaterModal({ isOpen, onClose, onMissionSuccess }: CheaterModal
                       <span className="px-2.5 py-1 rounded-full bg-[#3B146B] border border-[#FFB458]/50 font-mono text-xs font-extrabold text-[#FFB458]">
                         Level {hcLevel}/5
                       </span>
+                    </div>
+
+                    {/* Freeze Indicator while playing Heat Clear */}
+                    <div className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl bg-[#16082C] border border-cyan-400/35 text-[10px] font-mono font-bold text-cyan-200">
+                      <span>FREEZE: Korban {victims.toLocaleString('id-ID')}/1.000</span>
+                      <span>Heat {heat.toFixed(1)}%</span>
+                      <span>{formatCountdown(timeLeftSec)}</span>
                     </div>
 
                     {/* 5 Level Step Pills */}
